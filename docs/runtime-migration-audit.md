@@ -13,11 +13,16 @@ Date: 2026-07-08
 > Chat are implemented; detailed Research/Quiz cutover and two upstream gates
 > remain in
 > `docs/plans/2026-07-23-runtime-knowledge-a6-migration-plan.md`.
+>
+> Update (2026-07-24): the repository is pinned to runtime `e9b72ed`. Runtime
+> final-answer citation validation and trusted workflow request propagation are
+> now available and consumed. Detailed Research is migrated; Quiz is the next
+> Knowledge cutover.
 
 ## Current Evidence
 
 - The project pins all `llm-harness-*` crates to
-  `8ab2a3770bee0e7a1731b8074552ef9b6d70653a`.
+  `e9b72ed351970035b6b81192de693c40ecaa2900`.
 - The aligned `llm-api-adapter` revision is
   `16a22ad284b8deb8c3a77664a0876f565f4a6eb9`.
 - `Cargo.toml` and `Cargo.lock` pin all `llm-harness-*` crates to the same
@@ -54,13 +59,14 @@ Date: 2026-07-08
   Exec now enter the harness through `RunRequest`. Product integration coverage
   proves a typed extension reaches a Chat product Tool through
   `ToolContext.run`.
-- Knowledge-enabled Chat and outer Research Chat install the runtime
-  `KnowledgePlugin`, use
-  `knowledge_search` followed by `knowledge_read`, and no longer mounts the
-  legacy `rag_search` Tool. The detailed Research workflow remains on the
-  legacy Tool until workflow run extensions are available. Runtime-issued read
-  citation records are mapped to product `SourceReferences`; the ephemeral read
-  body remains absent from durable Session replay.
+- Knowledge-enabled Chat and both Research paths install the runtime
+  `KnowledgePlugin`, use `knowledge_search` followed by `knowledge_read`, and
+  no longer mount the legacy `rag_search` Tool. Detailed Research receives
+  trusted access through `WorkflowRunRequest`; its final report step re-reads
+  selected Knowledge refs so runtime can validate fresh step-local citation
+  handles. Runtime-issued read citation records are mapped to product
+  `SourceReferences`; the ephemeral read body remains absent from durable
+  Session replay.
 - All 26 production Tools use explicit `Projected` or `Ephemeral` Session
   projection. The checked inventory lives in
   `docs/runtime-tool-projections.json`.
@@ -119,18 +125,17 @@ mentions, and citations.
 ## Latest Runtime API Recheck
 
 Checked against runtime `codex/session-projection` commit `8ab2a377` on
-2026-07-23. Rechecked on 2026-07-24: the branch still points to `8ab2a377`;
-runtime `main` and run-safety PR #76 (`071f703`) still start workflow LLM steps
-with `harness.prompt(&prompt_text)`, and no final-answer Knowledge validator
-has landed. Both gates remain open.
+2026-07-23. Rechecked and upgraded on 2026-07-24 to `e9b72ed`, which adds
+`WorkflowRunRequest` propagation and the runtime final-answer Knowledge
+validator. Both gates are closed in the pinned product baseline.
 
 | Area | Runtime evidence | Product decision |
 | --- | --- | --- |
 | Typed run context | `AgentHarness::run(RunRequest)` constructs one immutable `RunContext`, and Tools receive it through `ToolContext.run`. | Ordinary product capabilities now use `RunRequest`; integration coverage proves typed extensions reach Chat Tools. |
-| Workflow run context | `WorkflowEngine::run_llm_step` still starts each step through `harness.prompt(&prompt_text)`, with no extension-bearing request. | Keep Knowledge out of workflow steps until runtime can propagate trusted extensions; do not add product-owned run state. |
+| Workflow run context | `WorkflowEngine::run_with_request(WorkflowRunRequest)` shares immutable typed extensions with every LLM step attempt without serializing them into workflow state. | Detailed Research passes trusted `KnowledgeAccessContext` through this boundary and mounts Knowledge only on the relevant steps. |
 | Tool Session projection | `ToolResult::projected` and `ToolResult::ephemeral` control durable model-visible Tool content. | All production Tools have an audited explicit projection; Full and struct-literal results fail the release audit. |
 | Structured workflow output | `Step::with_structured(Some(true))` extracts final assistant JSON and supports provider response-format escalation. | Quiz, Memory, and Research use structured final output; product code retains domain deserialization and validation. |
-| Knowledge citation validation | `CitationValidator` reads run-local evidence, but the plugin does not validate the candidate final answer before persistence. | Chat may consume and display runtime-issued read evidence, but treat the Knowledge release cutover as blocked until runtime owns the final-answer validation boundary. |
+| Knowledge citation validation | `KnowledgePlugin` installs a final-answer validator controlled by `KnowledgeCitationPolicy`; `RequireWhenEvidenceRead` rejects missing, forged, and cross-run handles. | Chat and detailed Research use the strict policy. The report step re-reads selected refs because each workflow LLM step has its own run-local citation registry. |
 | Declarative workflow routing | `workflow::judge::EdgeConditionJudge` and `NoopJudge` exist, but both are still `pub(crate)`. `WorkflowEngine` can auto-select the edge judge only when the provided judge reports `is_noop()`. | Keep the tiny `RuntimeDeclarativeJudge` marker until runtime exposes a public constructor/helper. |
 | Bounded verifier repair | `WorkflowEngine::with_max_steps` is a global step-count guard. Runtime docs recommend loop counters in structured state for custom routing; no transition-level visit cap is public. | Keep `QuizWorkflowJudge` for the current "repair once, then fail" semantic verifier loop. |
 | Harness setup | `HarnessBuilder` exposes `system_prompt`, `model_info`, `final_answer_mode`, provider registration, tools, and plugin hook registration. | Chat and Code Exec use `HarnessBuilder`; product hook vectors are injected through a tiny plugin. |
@@ -143,14 +148,12 @@ has landed. Both gates remain open.
 
 ## Next Runtime API Requests
 
-1. Workflow-level propagation of trusted `RunRequest` extensions.
-2. Final-answer Knowledge citation validation with the current `RunContext`.
-3. Public declarative workflow constructor or no-op judge helper.
-4. Declarative bounded semantic repair / step visit policies.
-5. Provider-aware typed structured domain output helper.
-6. Safe budget policy helper that separates accounting from loop continuation.
-7. Normalized model metadata discovery.
-8. Per-delta final/progress classification for streaming UI.
+1. Public declarative workflow constructor or no-op judge helper.
+2. Declarative bounded semantic repair / step visit policies.
+3. Provider-aware typed structured domain output helper.
+4. Safe budget policy helper that separates accounting from loop continuation.
+5. Normalized model metadata discovery.
+6. Per-delta final/progress classification for streaming UI.
 
 ## Verification Coverage
 
@@ -158,7 +161,9 @@ has landed. Both gates remain open.
   setup, runtime final/progress splitting for Chat and Code Exec, tool routing,
   typed RunRequest extension propagation, runtime usage traces, Research
   workflow behavior, Code Exec sandbox execution, Chat Knowledge Tool
-  installation, and absence of `knowledge_read` bodies from Session replay.
+  installation, strict citation validation, detailed Research Knowledge
+  search/read/final re-read, and absence of `knowledge_read` bodies from
+  Session replay.
 - `scripts/check-tool-projections.ps1` compares every production Tool name with
   the reviewed projection inventory and rejects Full/struct-literal results.
 - `cargo test -p tutor-agent quiz --lib` covers Quiz runtime workflow generation,

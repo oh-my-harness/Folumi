@@ -20,7 +20,7 @@
 
 ## Friction Points
 
-- **Workflow LLM steps cannot receive trusted `RunRequest` extensions**
+- **Resolved 2026-07-24: Workflow LLM steps can receive trusted request extensions**
   - Checked against `codex/session-projection` commit `8ab2a377` on 2026-07-23.
     Ordinary product Chat now calls `AgentHarness::run(RunRequest)` and an
     integration test proves that a typed extension reaches
@@ -39,8 +39,13 @@
     extensions are propagated to every LLM step, or add a trusted per-step
     `RunRequest` factory to `WorkflowEngineConfig`. The runtime should preserve
     extension non-serialization and run-local immutability.
+  - Resolution: runtime `e9b72ed` adds `WorkflowRunRequest` and
+    `WorkflowEngine::run_with_request`. `llm-tutor` now passes the trusted
+    `KnowledgeAccessContext` into detailed Research and has an integration test
+    proving `knowledge_search` and `knowledge_read` succeed inside workflow
+    steps without product-owned run state.
 
-- **Knowledge citation validation needs a final-answer runtime boundary**
+- **Resolved 2026-07-24: Knowledge citation validation has a runtime final-answer boundary**
   - Checked against `codex/session-projection` commit `8ab2a377` on 2026-07-23.
     `KnowledgeReadTool` correctly issues and verifies evidence, registers a
     run-scoped citation handle, and persists only an ephemeral summary plus
@@ -58,6 +63,11 @@
     `RunContext` and the candidate assistant message, or let
     `KnowledgePlugin` install a validator that can reject/repair unknown
     handles before final-answer persistence.
+  - Resolution: runtime `526c186` adds the final-answer validator and
+    `KnowledgeCitationPolicy`. `llm-tutor` uses
+    `RequireWhenEvidenceRead`, including per-step Research plugins, and tests
+    both ordinary Chat and a multi-step Research report with fresh run-local
+    citation handles.
 
 - **Historical: runtime `workflow` / issue #43 fix branch compiled, with provider tool-call adjacency improved**
   - `llm-tutor` tested `llm-harness-runtime` issue #43 fix branch commit `e200c12` and aligned `llm-api-adapter` to `69a868f`.
@@ -93,6 +103,10 @@
   - Twenty-first migration step: Quiz and Memory workflow helpers now return runtime `TaskResult.cost` alongside domain output, so callers no longer need to reconstruct workflow usage from app-layer state.
   - Twenty-second migration step: upgraded runtime crates to PR #44 commit `e200c12` and adapter to `69a868f`. Chat/Code Exec returned to `HarnessBuilder`, with product hooks injected through a minimal plugin, so runtime owns cost hook injection again.
   - Twenty-third migration step: Research detailed runs now use runtime `WorkflowEngine` with explicit search, read, citation-check, and report steps. Product code only prepares the confirmed request, mounts existing tools, bridges workflow events into Research trace events, and persists the final report back to the current runtime session.
+  - Twenty-fourth migration step: runtime `e9b72ed` closes both Knowledge A6
+    gates. Chat now enforces final-answer citations after evidence reads, and
+    detailed Research receives trusted access through `WorkflowRunRequest`,
+    uses step-scoped Knowledge plugins, and no longer mounts `rag_search`.
   - Historical completion audit at that checkpoint: the project pin was
     `e200c12`; `cargo tree -p tutor-agent` showed one `llm_adapter` source
     (`69a868f`) and one runtime revision. Active source no longer contained the
@@ -229,8 +243,6 @@
 
 | Gap | Description | Severity |
 |-----|-------------|----------|
-| Workflow steps cannot receive run extensions | Trusted Knowledge access reaches ordinary Chat tools but cannot reach Research/Quiz workflow step tools | High |
-| No final-answer Knowledge citation validation boundary | The product cannot atomically reject forged or unread handles without duplicating runtime run state | High |
 | No test-helper constructors for hook context types | Building `BeforeToolCallCtx` in tests is unnecessarily hard | Medium |
 | Session options/metadata missing from root/prelude exports | Apps need mixed import paths for common session operations | Low |
 | SessionInfo does not update metadata name | Session titles need app-layer workaround | Medium |

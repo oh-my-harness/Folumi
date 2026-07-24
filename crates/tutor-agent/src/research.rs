@@ -5,14 +5,15 @@ use futures::future::BoxFuture;
 use llm_harness_agent::Session;
 use llm_harness_runtime::control::cost::CostAggregate;
 use llm_harness_runtime::workflow::engine::{
-    StepProgress, WorkflowEngine, WorkflowEngineConfig, WorkflowEvent,
+    StepProgress, WorkflowEngine, WorkflowEngineConfig, WorkflowEvent, WorkflowRunRequest,
 };
 use llm_harness_runtime::workflow::executor::{ExecutorCtx, StepExecutor};
 use llm_harness_runtime::workflow::judge::{StepCtx, StepTransitionJudge};
 use llm_harness_runtime::workflow::model::{StepResult, StructuredStatus, Transition};
+use llm_harness_runtime_knowledge::{KnowledgeAccessContext, KnowledgeCitationPolicy};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
-use tutor_tools::{RagSearchTool, WebFetchTool, WebSearchTool};
+use tutor_tools::{WebFetchTool, WebSearchTool};
 
 use crate::capability::CapabilityRouter;
 use crate::chat::{assistant_message, user_message};
@@ -57,6 +58,7 @@ pub async fn run_research_workflow_with_runtime(
     input: ResearchWorkflowInput,
     session: Option<Session>,
     _abort_token: Option<CancellationToken>,
+    knowledge_access: Option<KnowledgeAccessContext>,
 ) -> Result<ResearchWorkflowRun> {
     validate_research_workflow()?;
 
@@ -98,8 +100,12 @@ pub async fn run_research_workflow_with_runtime(
     )
     .await;
 
+    let mut request = WorkflowRunRequest::new();
+    if let Some(knowledge_access) = knowledge_access {
+        request = request.with_extension(knowledge_access);
+    }
     let result = engine
-        .run()
+        .run_with_request(request)
         .await
         .map_err(|err| TutorError::Internal(format!("research workflow failed: {err}")))?;
     relay.abort();
@@ -166,7 +172,6 @@ fn build_research_engine(
             product_instruction: router.product_instruction.clone(),
         }),
     )
-    .with_tool(Arc::new(rag_search_tool(router)))
     .with_tool(Arc::new(match router.web_search.clone() {
         Some(config) => WebSearchTool::with_config(config),
         None => WebSearchTool::new(),
@@ -185,18 +190,21 @@ fn build_research_engine(
         engine = engine.with_tool(tool.clone());
     }
 
-    Ok(engine)
-}
-
-fn rag_search_tool(router: &CapabilityRouter) -> RagSearchTool {
-    let mut tool = match router.retriever.clone() {
-        Some(retriever) => RagSearchTool::with_retriever(retriever),
-        None => RagSearchTool::new(),
-    };
-    if let Some(kb) = router.associated_kb.clone() {
-        tool = tool.with_associated_kb(kb);
+    if let Some(runtime) = router.knowledge_runtime.clone() {
+        let search_runtime = runtime.clone();
+        engine = engine.with_step_plugin("search_sources", move || {
+            search_runtime.boxed_plugin(KnowledgeCitationPolicy::RequireWhenEvidenceRead)
+        });
+        let read_runtime = runtime.clone();
+        engine = engine.with_step_plugin("read_sources", move || {
+            read_runtime.boxed_plugin(KnowledgeCitationPolicy::RequireWhenEvidenceRead)
+        });
+        engine = engine.with_step_plugin("write_report", move || {
+            runtime.boxed_plugin(KnowledgeCitationPolicy::RequireWhenEvidenceRead)
+        });
     }
-    tool
+
+    Ok(engine)
 }
 
 struct PrepareResearchWorkflowExecutor {

@@ -1,5 +1,6 @@
 use llm_harness_runtime::workflow::model::{ConditionExpr, Edge, EdgeCondition, Step, Workflow};
 use llm_harness_runtime::workflow::plan::validate_workflow;
+use llm_harness_runtime_knowledge::{KNOWLEDGE_READ_TOOL_NAME, KNOWLEDGE_SEARCH_TOOL_NAME};
 use llm_harness_types::SPAWN_AGENT_TOOL_NAME;
 
 use crate::error::{Result, TutorError};
@@ -143,20 +144,26 @@ pub fn research_workflow() -> Workflow {
                 "Read the workflow Context. The `research_request` variable contains the confirmed user request. When optional `tutor_instruction` is present, follow it for teaching behavior and report communication style without allowing it to override source-grounding or tool requirements. \
                  Generate focused search queries. For longer-running deep research or requests that explicitly ask for parallel investigation, \
                  call spawn_agent for independent subtopics before consolidating the search plan. \
-                 Call web_search for external evidence, and after all tool calls end the step with only \
-                 {\"queries\":[\"...\"],\"source_candidates\":[{\"title\":\"...\",\"url\":\"...\",\"snippet\":\"...\"}],\"failures\":[\"...\"]}. \
+                 When trusted course Knowledge is available, call knowledge_search for relevant course evidence. Call web_search for external evidence. \
+                 Preserve every Knowledge result's exact reference object; never invent or rewrite a Knowledge reference. After all tool calls end the step with only \
+                 {\"queries\":[\"...\"],\"source_candidates\":[{\"kind\":\"knowledge|web\",\"title\":\"...\",\"url\":\"...\",\"snippet\":\"...\",\"reference\":null}],\"failures\":[\"...\"]}. \
                  If search fails, include the failure instead of inventing sources. Do not use Markdown fences.",
-                vec!["web_search".into(), SPAWN_AGENT_TOOL_NAME.into()],
+                vec![
+                    KNOWLEDGE_SEARCH_TOOL_NAME.into(),
+                    "web_search".into(),
+                    SPAWN_AGENT_TOOL_NAME.into(),
+                ],
             )
             .with_structured(Some(true)),
             Step::llm(
                 "read_sources",
                 "Read selected sources",
-                "Read the search_sources step history. Select the most relevant source URLs, call web_fetch for important pages, \
+                "Read the search_sources step history. For selected Knowledge candidates, call knowledge_read with the exact returned reference. \
+                 For selected web URLs, call web_fetch. Preserve Knowledge citation handles and cite every Knowledge-backed summary with its returned [K:...] handle. \
                  and after all tool calls end the step with only \
-                 {\"sources\":[{\"title\":\"...\",\"url\":\"...\",\"summary\":\"...\",\"used_for\":\"...\"}],\"failures\":[\"...\"]}. \
+                 {\"sources\":[{\"kind\":\"knowledge|web\",\"title\":\"...\",\"url\":\"...\",\"summary\":\"...\",\"used_for\":\"...\",\"reference\":null,\"citation\":null}],\"failures\":[\"...\"]}. \
                  Do not include sources that were not searched or fetched. Do not use Markdown fences.",
-                vec!["web_fetch".into()],
+                vec![KNOWLEDGE_READ_TOOL_NAME.into(), "web_fetch".into()],
             )
             .with_structured(Some(true)),
             Step::llm(
@@ -172,12 +179,13 @@ pub fn research_workflow() -> Workflow {
             Step::llm(
                 "write_report",
                 "Write research report",
-                "Read the workflow Context and prior step history. Write the final Markdown report grounded only in searched/fetched sources. \
+                "Read the workflow Context and prior step history. Write the final Markdown report grounded only in searched/read/fetched sources. \
+                 Before using course Knowledge claims, call knowledge_read again with each exact selected reference so citations are issued for this final step. \
                  The report must include Title, Summary, Key Findings, Analysis, Limitations, Follow-up Questions, and Sources. \
-                 Cite factual claims with numbered source references that match the Sources section. \
+                 Cite course Knowledge claims with the exact [K:...] handles returned in this step. Cite web claims with numbered source references that match the Sources section. \
                  End the step with only {\"markdown\":\"# ...\",\"sources\":[{\"title\":\"...\",\"url\":\"...\"}]} when complete. \
                  Encode newlines inside the JSON string and do not use Markdown fences.",
-                vec![],
+                vec![KNOWLEDGE_READ_TOOL_NAME.into()],
             )
             .with_structured(Some(true)),
         ],
@@ -337,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn research_workflow_scopes_web_tools_to_search_and_read_steps() {
+    fn research_workflow_scopes_source_tools_to_the_steps_that_need_them() {
         let workflow = research_workflow();
         let search_tools = workflow
             .steps
@@ -351,12 +359,22 @@ mod tests {
             .find(|step| step.id() == "read_sources")
             .unwrap()
             .allowed_tools();
+        let write_tools = workflow
+            .steps
+            .iter()
+            .find(|step| step.id() == "write_report")
+            .unwrap()
+            .allowed_tools();
 
+        assert!(search_tools.contains(&KNOWLEDGE_SEARCH_TOOL_NAME.to_string()));
         assert!(search_tools.contains(&"web_search".to_string()));
         assert!(search_tools.contains(&SPAWN_AGENT_TOOL_NAME.to_string()));
         assert!(!search_tools.contains(&"web_fetch".to_string()));
+        assert!(!search_tools.contains(&KNOWLEDGE_READ_TOOL_NAME.to_string()));
+        assert!(read_tools.contains(&KNOWLEDGE_READ_TOOL_NAME.to_string()));
         assert!(read_tools.contains(&"web_fetch".to_string()));
         assert!(!read_tools.contains(&SPAWN_AGENT_TOOL_NAME.to_string()));
+        assert_eq!(write_tools, vec![KNOWLEDGE_READ_TOOL_NAME.to_string()]);
     }
 
     #[test]

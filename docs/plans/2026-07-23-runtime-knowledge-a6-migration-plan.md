@@ -1,10 +1,10 @@
 # Runtime Knowledge A6 Migration Plan
 
-> Status: in progress (Phase 0-3 implemented; Phase 4 outer Chat migrated; two upstream gates open) |
+> Status: in progress (Phase 0-4 implemented; Phase 5 Quiz migration next) |
 > Date: 2026-07-23 | Tracks:
 > [llm-tutor issue #1](https://github.com/oh-my-harness/llm-tutor/issues/1) |
 > Upstream baseline:
-> [`llm-harness-runtime@8ab2a377`](https://github.com/oh-my-harness/llm-harness-runtime/commit/8ab2a3770bee0e7a1731b8074552ef9b6d70653a)
+> [`llm-harness-runtime@e9b72ed`](https://github.com/oh-my-harness/llm-harness-runtime/commit/e9b72ed351970035b6b81192de693c40ecaa2900)
 
 ## 1. Goal
 
@@ -50,6 +50,8 @@ The `codex/session-projection` branch implements the runtime prerequisites:
 | A4 | `50d61d4` | Local source reference implementation and contract tests |
 | A5 | `8f54607` | Knowledge tools, evidence receipts, citations and safe projections |
 | Tracking | `8ab2a377` | Design status records A1-A5 complete and A6 pending |
+| A6 gate | `526c186` | Runtime final-answer Knowledge citation validator and policy |
+| A6 gate | `e9b72ed` | Trusted workflow request extensions propagated to every LLM step |
 
 The reviewed branch uses `llm-api-adapter` revision
 `16a22ad284b8deb8c3a77664a0876f565f4a6eb9`.
@@ -66,7 +68,7 @@ shall not replace LanceDB in the product.
 
 The current implementation has the following migration surface:
 
-- Root runtime dependencies are pinned to `8ab2a377`; `llm_adapter` is aligned
+- Root runtime dependencies are pinned to `e9b72ed`; `llm_adapter` is aligned
   to `16a22ad`.
 - All 26 production Tools use `ToolFailure`, typed result data, and an explicit
   `Projected` or `Ephemeral` Session projection.
@@ -86,22 +88,21 @@ The current implementation has the following migration surface:
 - A single process-held `EvidenceAuthority`, product authorizer, registry, and
   `KnowledgePlugin` are assembled without exposing the secret or trusted scope
   to prompts, Tool arguments, Session data, or frontend state.
-- `tutor-rag::KnowledgeRetriever` exposes product-defined search.
-- `tutor-tools::RagSearchTool` accepts a model-provided optional `kb` argument.
-- `RagSearchTool` returns complete chunk bodies in the search response.
+- `tutor-rag::KnowledgeRetriever` and `tutor-tools::RagSearchTool` remain only
+  for the not-yet-migrated Quiz and legacy cleanup surface.
 - `CapabilityRouter` carries a retriever and associated KB separately.
-- Chat installs the runtime `KnowledgePlugin` and uses `knowledge_search` /
-  `knowledge_read`. Outer Research Chat uses the same runtime tools, while the
-  detailed Research workflow still mounts `rag_search`; Quiz source collection
-  still calls the retriever directly.
+- Chat and both Research paths install the runtime `KnowledgePlugin` and use
+  `knowledge_search` / `knowledge_read`. Detailed Research passes trusted access
+  through `WorkflowRunRequest` and validates run-local handles before accepting
+  Knowledge-backed step output. Quiz source collection still calls the
+  retriever directly.
 - The web layer derives a trusted run-scoped Knowledge context from the selected
   KB, session, and current Tutor resource permissions.
 
 The A1/A2 API baseline, runtime-compatible LanceDB source, trusted access
-assembly, Chat product wiring, and outer Research Chat wiring are complete. The
-legacy retrieval boundary remains active for the detailed Research workflow and
-Quiz until their runtime paths are migrated and the two upstream gates are
-resolved.
+assembly, Chat product wiring, and Research migration are complete. Both
+upstream A6 gates are consumed from `e9b72ed`. The legacy retrieval boundary
+remains active for Quiz until Phase 5 is complete.
 
 ## 4. Ownership Boundaries
 
@@ -383,11 +384,11 @@ Security tests:
 - [x] Verify Session replay contains safe search/evidence projections but no
   `knowledge_read` body.
 
-Implementation note: the product path now displays Runtime-issued read evidence
-without duplicating receipt validation or persisting read bodies. Phase 3
-remains release-gated by the upstream final-answer citation validation boundary:
-the product does not independently claim that every handle shown in assistant
-text was cited by the final answer validator.
+Implementation note: the product path displays runtime-issued read evidence
+without duplicating receipt validation or persisting read bodies. The
+`KnowledgePlugin` now uses `RequireWhenEvidenceRead`, so runtime rejects a final
+answer that omits a citation after reading trusted evidence and rejects handles
+that were not issued in the current run.
 
 Acceptance:
 
@@ -399,20 +400,21 @@ Acceptance:
 ### Phase 4: Research migration
 
 - [x] Register the same Knowledge assembly in the outer Research Chat agent.
-- [ ] Pass trusted access and Knowledge tools into detailed Research workflow
+- [x] Pass trusted access and Knowledge tools into detailed Research workflow
   LLM steps that use course material.
-- [ ] Remove `rag_search` from Research workflow Tool scopes and prompts.
-- [ ] Keep web search/web fetch evidence distinct from course Knowledge
+- [x] Remove `rag_search` from Research workflow Tool scopes and prompts.
+- [x] Keep web search/web fetch evidence distinct from course Knowledge
   evidence.
-- [ ] Validate course Knowledge handles before publishing the report.
-- [ ] Keep saved reports and source lists compatible with Notebook and
+- [x] Validate course Knowledge handles before publishing the report.
+- [x] Keep saved reports and source lists compatible with Notebook and
   `SourceReferences`.
 
-Implementation note: outer Research Chat now performs the same atomic Tool
-cutover as Chat and can emit Runtime-issued read citations through the shared
-`SourceReferences` bridge. The detailed workflow deliberately retains
-`rag_search` until `WorkflowEngine` propagates trusted per-run extensions; the
-product does not create a parallel workflow run context.
+Implementation note: detailed Research calls
+`WorkflowEngine::run_with_request`, mounts Knowledge as step plugins, and
+declares only `knowledge_search` or `knowledge_read` on the steps that need
+them. Because citation handles are scoped to one step run, `write_report`
+re-reads selected Knowledge refs and cites the fresh handles issued in that
+final step. Web sources continue to use numbered report references.
 
 Acceptance:
 

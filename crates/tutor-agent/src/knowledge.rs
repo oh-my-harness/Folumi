@@ -4,8 +4,9 @@ use futures::future::BoxFuture;
 use llm_harness_agent::Plugin;
 use llm_harness_runtime_knowledge::{
     AuthorizationDecision, EvidenceAuthority, EvidenceProviderId, KnowledgeAccessContext,
-    KnowledgeAccessControl, KnowledgeAction, KnowledgeAuthorizer, KnowledgePlugin,
-    KnowledgeRegistry, KnowledgeResourceRef, KnowledgeToolConfig,
+    KnowledgeAccessControl, KnowledgeAction, KnowledgeAuthorizer, KnowledgeCitationPolicy,
+    KnowledgePlugin, KnowledgePluginConfig, KnowledgeRegistry, KnowledgeResourceRef,
+    KnowledgeToolConfig,
 };
 use tutor_rag::LanceDbKnowledgeSource;
 
@@ -15,12 +16,32 @@ pub const COURSE_EVIDENCE_PROVIDER_ID: &str = "llm-tutor.course-knowledge";
 
 #[derive(Clone)]
 pub struct KnowledgeRuntime {
-    plugin: Arc<dyn Plugin>,
+    registry: Arc<KnowledgeRegistry>,
+    authority: Arc<EvidenceAuthority>,
+    provider_id: EvidenceProviderId,
+    tool_config: KnowledgeToolConfig,
 }
 
 impl KnowledgeRuntime {
     pub fn plugin(&self) -> Arc<dyn Plugin> {
-        self.plugin.clone()
+        Arc::new(self.build_plugin(KnowledgeCitationPolicy::RequireWhenEvidenceRead))
+    }
+
+    pub fn boxed_plugin(&self, citation_policy: KnowledgeCitationPolicy) -> Box<dyn Plugin> {
+        Box::new(self.build_plugin(citation_policy))
+    }
+
+    fn build_plugin(&self, citation_policy: KnowledgeCitationPolicy) -> KnowledgePlugin {
+        KnowledgePlugin::new(
+            self.registry.clone(),
+            self.authority.clone(),
+            self.provider_id.clone(),
+            KnowledgePluginConfig {
+                tools: self.tool_config.clone(),
+                citation_policy,
+            },
+        )
+        .expect("course knowledge plugin configuration was validated during assembly")
     }
 }
 
@@ -39,15 +60,24 @@ pub fn assemble_course_knowledge(
         .source(Arc::new(source))
         .build()
         .map_err(|error| TutorError::Internal(error.to_string()))?;
-    let plugin = KnowledgePlugin::new(
-        Arc::new(registry),
-        authority,
-        course_evidence_provider_id(),
-        KnowledgeToolConfig::default(),
+    let registry = Arc::new(registry);
+    let provider_id = course_evidence_provider_id();
+    let tool_config = KnowledgeToolConfig::default();
+    KnowledgePlugin::new(
+        registry.clone(),
+        authority.clone(),
+        provider_id.clone(),
+        KnowledgePluginConfig {
+            tools: tool_config.clone(),
+            citation_policy: KnowledgeCitationPolicy::RequireWhenEvidenceRead,
+        },
     )
     .map_err(|error| TutorError::Internal(error.to_string()))?;
     Ok(KnowledgeRuntime {
-        plugin: Arc::new(plugin),
+        registry,
+        authority,
+        provider_id,
+        tool_config,
     })
 }
 
