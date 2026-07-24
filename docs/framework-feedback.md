@@ -39,7 +39,7 @@
     extensions are propagated to every LLM step, or add a trusted per-step
     `RunRequest` factory to `WorkflowEngineConfig`. The runtime should preserve
     extension non-serialization and run-local immutability.
-  - Resolution: runtime `e9b72ed` adds `WorkflowRunRequest` and
+  - Resolution: runtime `7aebdca` adds `WorkflowRunRequest` and
     `WorkflowEngine::run_with_request`. `llm-tutor` now passes the trusted
     `KnowledgeAccessContext` into detailed Research and has an integration test
     proving `knowledge_search` and `knowledge_read` succeed inside workflow
@@ -63,7 +63,7 @@
     `RunContext` and the candidate assistant message, or let
     `KnowledgePlugin` install a validator that can reject/repair unknown
     handles before final-answer persistence.
-  - Resolution: runtime `526c186` adds the final-answer validator and
+  - Resolution: runtime `bff00c1` adds the final-answer validator and
     `KnowledgeCitationPolicy`. `llm-tutor` uses
     `RequireWhenEvidenceRead`, including per-step Research plugins, and tests
     both ordinary Chat and a multi-step Research report with fresh run-local
@@ -103,7 +103,7 @@
   - Twenty-first migration step: Quiz and Memory workflow helpers now return runtime `TaskResult.cost` alongside domain output, so callers no longer need to reconstruct workflow usage from app-layer state.
   - Twenty-second migration step: upgraded runtime crates to PR #44 commit `e200c12` and adapter to `69a868f`. Chat/Code Exec returned to `HarnessBuilder`, with product hooks injected through a minimal plugin, so runtime owns cost hook injection again.
   - Twenty-third migration step: Research detailed runs now use runtime `WorkflowEngine` with explicit search, read, citation-check, and report steps. Product code only prepares the confirmed request, mounts existing tools, bridges workflow events into Research trace events, and persists the final report back to the current runtime session.
-  - Twenty-fourth migration step: runtime `e9b72ed` closes both Knowledge A6
+  - Twenty-fourth migration step: runtime `83bef164` includes both Knowledge A6
     gates. Chat now enforces final-answer citations after evidence reads, and
     detailed Research receives trusted access through `WorkflowRunRequest`,
     uses step-scoped Knowledge plugins, and no longer mounts `rag_search`.

@@ -14,7 +14,8 @@ Date: 2026-07-08
 > remain in
 > `docs/plans/2026-07-23-runtime-knowledge-a6-migration-plan.md`.
 >
-> Update (2026-07-24): the repository is pinned to runtime `e9b72ed`. Runtime
+> Update (2026-07-24): the repository is pinned to the unified Knowledge and
+> Memory foundation at runtime `83bef164`. Runtime
 > final-answer citation validation and trusted workflow request propagation are
 > now available and consumed. Detailed Research and Quiz are migrated, and the
 > legacy Agent RAG boundary has been removed.
@@ -22,7 +23,7 @@ Date: 2026-07-08
 ## Current Evidence
 
 - The project pins all `llm-harness-*` crates to
-  `e9b72ed351970035b6b81192de693c40ecaa2900`.
+  `83bef164b36bd46ffa6f41cd6d3288a6b93cac4e`.
 - The aligned `llm-api-adapter` revision is
   `16a22ad284b8deb8c3a77664a0876f565f4a6eb9`.
 - `Cargo.toml` and `Cargo.lock` pin all `llm-harness-*` crates to the same
@@ -131,9 +132,11 @@ mentions, and citations.
 ## Latest Runtime API Recheck
 
 Checked against runtime `codex/session-projection` commit `8ab2a377` on
-2026-07-23. Rechecked and upgraded on 2026-07-24 to `e9b72ed`, which adds
-`WorkflowRunRequest` propagation and the runtime final-answer Knowledge
-validator. Both gates are closed in the pinned product baseline.
+2026-07-23. Rechecked and upgraded on 2026-07-24 to the unified
+`codex/knowledge-memory-foundation` revision `83bef164`, which includes
+`WorkflowRunRequest` propagation from `7aebdca` and the runtime final-answer
+Knowledge validator from `bff00c1`. Both gates are closed in the pinned product
+baseline.
 
 | Area | Runtime evidence | Product decision |
 | --- | --- | --- |

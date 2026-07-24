@@ -4,7 +4,7 @@
 > Date: 2026-07-23 | Tracks:
 > [llm-tutor issue #1](https://github.com/oh-my-harness/llm-tutor/issues/1) |
 > Upstream baseline:
-> [`llm-harness-runtime@e9b72ed`](https://github.com/oh-my-harness/llm-harness-runtime/commit/e9b72ed351970035b6b81192de693c40ecaa2900)
+> [`llm-harness-runtime@83bef164`](https://github.com/oh-my-harness/llm-harness-runtime/commit/83bef164b36bd46ffa6f41cd6d3288a6b93cac4e)
 
 ## 1. Goal
 
@@ -50,8 +50,8 @@ The `codex/session-projection` branch implements the runtime prerequisites:
 | A4 | `50d61d4` | Local source reference implementation and contract tests |
 | A5 | `8f54607` | Knowledge tools, evidence receipts, citations and safe projections |
 | Tracking | `8ab2a377` | Design status records A1-A5 complete and A6 pending |
-| A6 gate | `526c186` | Runtime final-answer Knowledge citation validator and policy |
-| A6 gate | `e9b72ed` | Trusted workflow request extensions propagated to every LLM step |
+| A6 gate | `bff00c1` | Runtime final-answer Knowledge citation validator and policy |
+| A6 gate | `7aebdca` | Trusted workflow request extensions propagated to every LLM step |
 
 The reviewed branch uses `llm-api-adapter` revision
 `16a22ad284b8deb8c3a77664a0876f565f4a6eb9`.
@@ -68,7 +68,7 @@ shall not replace LanceDB in the product.
 
 The current implementation has the following migration surface:
 
-- Root runtime dependencies are pinned to `e9b72ed`; `llm_adapter` is aligned
+- Root runtime dependencies are pinned to `83bef164`; `llm_adapter` is aligned
   to `16a22ad`.
 - All 25 production Tools use `ToolFailure`, typed result data, and an explicit
   `Projected` or `Ephemeral` Session projection.
@@ -103,8 +103,8 @@ The current implementation has the following migration surface:
 
 The A1/A2 API baseline, runtime-compatible LanceDB source, trusted access
 assembly, Chat product wiring, and Research migration are complete. Both
-upstream A6 gates are consumed from `e9b72ed`. Quiz source collection and
-legacy Agent RAG cleanup are also complete.
+upstream A6 gates are consumed from the unified `83bef164` baseline. Quiz
+source collection and legacy Agent RAG cleanup are also complete.
 
 ## 4. Ownership Boundaries
 
@@ -254,7 +254,7 @@ Display conversion does not create trust. A Knowledge citation is accepted only
 when its handle resolves through runtime `CitationValidator` in the same run.
 Unknown, forged, stale, or cross-run handles are rejected.
 
-Runtime `526c186` adds the final-answer citation validation hook and
+Runtime `bff00c1` adds the final-answer citation validation hook and
 `KnowledgeCitationPolicy`; the product consumes
 `RequireWhenEvidenceRead`. Citation enforcement remains inside the runtime and
 the product does not build a parallel run-state or receipt validator.
@@ -286,9 +286,9 @@ the product does not build a parallel run-state or receipt validator.
 
 Resolved upstream gates:
 
-- Runtime `e9b72ed` adds `WorkflowRunRequest` and propagates typed extensions
+- Runtime `7aebdca` adds `WorkflowRunRequest` and propagates typed extensions
   to every workflow LLM step attempt.
-- Runtime `526c186` lets `KnowledgePlugin` install a final-answer citation
+- Runtime `bff00c1` lets `KnowledgePlugin` install a final-answer citation
   validator with strict evidence-read policy.
 
 Both resolutions and product integration evidence are recorded in
