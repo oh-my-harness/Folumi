@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use axum::extract::DefaultBodyLimit;
 use tower_http::cors::{Any, CorsLayer};
 
+mod knowledge_runtime;
 mod knowledge_store;
 mod memory_store;
 mod memory_tool;

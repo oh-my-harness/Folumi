@@ -9,7 +9,6 @@ use arrow_array::{
 };
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use futures::TryStreamExt;
-use futures::future::BoxFuture;
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
 use llm_adapter::EmbeddingProvider;
 use llm_adapter::openai::OpenAIProvider;
@@ -87,15 +86,6 @@ pub enum IngestStage {
     Done,
 }
 
-pub trait KnowledgeRetriever: Send + Sync {
-    fn search<'a>(
-        &'a self,
-        kb: Option<&'a str>,
-        query: &'a str,
-        top_k: usize,
-    ) -> BoxFuture<'a, Result<Vec<SearchHit>>>;
-}
-
 #[derive(Clone)]
 pub struct LanceDbRag {
     root: PathBuf,
@@ -115,6 +105,21 @@ impl LanceDbRag {
             .unwrap_or_else(|_| PathBuf::from("."))
             .join(".llm-tutor")
             .join("rag")
+    }
+
+    pub async fn search_for_management(
+        &self,
+        kb: &str,
+        query: &str,
+        top_k: usize,
+    ) -> Result<Vec<SearchHit>> {
+        if kb.trim().is_empty() {
+            return Ok(vec![]);
+        }
+        let rows = self
+            .search_rows(kb, query, if top_k == 0 { DEFAULT_TOP_K } else { top_k })
+            .await?;
+        Ok(rows.into_iter().map(SearchHit::from).collect())
     }
 
     pub async fn ingest_text(&self, kb: &str, source: &str, text: &str) -> Result<usize> {
@@ -356,25 +361,6 @@ impl LanceDbRag {
             .try_collect::<Vec<_>>()
             .await?;
         Ok(knowledge_rows_from_batches(&batches).into_iter().next())
-    }
-}
-
-impl KnowledgeRetriever for LanceDbRag {
-    fn search<'a>(
-        &'a self,
-        kb: Option<&'a str>,
-        query: &'a str,
-        top_k: usize,
-    ) -> BoxFuture<'a, Result<Vec<SearchHit>>> {
-        Box::pin(async move {
-            let Some(kb) = kb.filter(|value| !value.trim().is_empty()) else {
-                return Ok(vec![]);
-            };
-            let rows = self
-                .search_rows(kb, query, if top_k == 0 { DEFAULT_TOP_K } else { top_k })
-                .await?;
-            Ok(rows.into_iter().map(SearchHit::from).collect())
-        })
     }
 }
 

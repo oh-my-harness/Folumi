@@ -110,14 +110,17 @@
 ## 5. Chat Mode
 
 - REQ-070: Chat mode shall answer open-ended user questions.
-- REQ-071: Chat mode shall be able to use `rag_search`.
+- REQ-071: Chat mode shall use runtime `knowledge_search` and `knowledge_read`
+  for selected Knowledge Base material. Status: implemented.
 - REQ-072: Chat mode shall be able to use `web_search`.
 - REQ-073: Chat mode shall be able to use `web_fetch`.
 - REQ-074: Chat mode shall be able to use `code_exec`.
 - REQ-075: Chat mode shall require web search for current, external, or fact-collection requests.
 - REQ-076: Chat mode shall avoid inventing facts when web search or fetch fails.
 - REQ-077: Chat mode shall display citations only when the agent actually used a citation-producing tool.
-- REQ-078: Chat mode shall not add backend-invented RAG citations when `rag_search` was not actually called.
+- REQ-078: Chat mode shall reject missing, forged, or cross-run Knowledge
+  citation handles after trusted evidence is read. Status: implemented through
+  the runtime final-answer validator.
 - REQ-079: Chat mode shall support user-selected `@` references to Space artifacts. Status: implemented.
 - REQ-080: `@` references shall be stored as structured artifact references, not only as plain text mentions. Status: implemented.
 - REQ-081: The first supported `@` reference targets shall include Notebook entries, Quiz sessions, and Quiz questions. Status: implemented.
@@ -173,8 +176,11 @@
 - REQ-121: The system shall store vectors in LanceDB.
 - REQ-122: The system shall store document metadata.
 - REQ-123: The system shall support searching a knowledge base.
-- REQ-124: `rag_search` shall return source chunks.
-- REQ-125: Answers using RAG shall show citation sources.
+- REQ-124: Runtime `knowledge_search` shall return lightweight refs/snippets and
+  `knowledge_read` shall return bounded source bodies plus verified evidence.
+  Status: implemented.
+- REQ-125: Answers using Knowledge evidence shall show runtime-validated
+  citation sources. Status: implemented.
 - REQ-126: Users shall be able to view document chunks.
 - REQ-127: Users shall be able to delete documents.
 - REQ-128: Users shall be able to reindex documents.
@@ -320,7 +326,9 @@ Remaining hardening: richer verifier booleans and repair guidance can be added l
 - REQ-301: Research mode shall create a brief research plan.
 - REQ-302: Research mode shall call `web_search` for external facts.
 - REQ-303: Research mode shall call `web_fetch` for important sources.
-- REQ-304: Research mode shall optionally call `rag_search` when a knowledge base is selected.
+- REQ-304: Research mode shall optionally use runtime `knowledge_search` /
+  `knowledge_read` when a Knowledge Base is selected, and the final report step
+  shall cite fresh run-local handles. Status: implemented.
 - REQ-305: Research mode shall produce a Markdown report.
 - REQ-306: Research reports shall include a structured title. The explicit workflow title is authoritative; the first Markdown heading and then the research request are fallback sources. Status: implemented.
 - REQ-307: Research reports shall include a summary.

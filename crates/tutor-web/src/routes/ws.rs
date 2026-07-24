@@ -437,16 +437,6 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
     send_task.abort();
 }
 
-fn course_evidence_authority() -> Arc<EvidenceAuthority> {
-    let mut secret = Vec::with_capacity(32);
-    secret.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
-    secret.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
-    Arc::new(
-        EvidenceAuthority::new(secret, [tutor_agent::course_evidence_provider_id()])
-            .expect("generated evidence secret and registered provider are valid"),
-    )
-}
-
 fn course_knowledge_access_context(
     session_id: &str,
     knowledge_base_id: &str,
@@ -492,7 +482,7 @@ pub fn ws_router(
         quizzes,
         tutors: tutor_runtime.profiles,
         tutor_memory: tutor_runtime.memory,
-        evidence_authority: course_evidence_authority(),
+        evidence_authority: crate::knowledge_runtime::course_evidence_authority(),
         rag_root: rag_root.into(),
     };
     Router::new()
@@ -671,6 +661,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                     knowledge: knowledge.clone(),
                     notebook: notebook.clone(),
                     memory: memory.clone(),
+                    evidence_authority: evidence_authority.clone(),
                     rag_root: rag_root.clone(),
                     workflow_root: rag_root.join("workflow-sessions").join("quiz"),
                 },
@@ -725,18 +716,14 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             ));
         }
         if let Some(embedding) = entry.embedding.clone() {
-            let retriever = tutor_rag::LanceDbRag::new(rag_root, embedding);
-            router = router.with_retriever(Arc::new(retriever.clone()));
+            let rag = tutor_rag::LanceDbRag::new(rag_root, embedding);
             if let Some(kb) = entry.kb.as_deref() {
                 let knowledge_runtime = tutor_agent::assemble_course_knowledge(
-                    tutor_rag::LanceDbKnowledgeSource::new(retriever, kb),
+                    tutor_rag::LanceDbKnowledgeSource::new(rag, kb),
                     evidence_authority.clone(),
                 )?;
                 router = router.with_knowledge_runtime(knowledge_runtime);
             }
-        }
-        if let Some(kb) = entry.kb.clone() {
-            router = router.with_associated_kb(kb);
         }
         if entry.capability == "research" {
             let workflow_router = router.clone();

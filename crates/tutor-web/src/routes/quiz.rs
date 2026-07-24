@@ -8,10 +8,13 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
+use llm_harness_runtime_knowledge::{
+    EvidenceAuthority, KnowledgeAccessContext, KnowledgeScope, PrincipalRef,
+};
 use llm_harness_runtime_sandbox_os::OsEnv;
 use llm_harness_types::ExecutionEnv;
 use serde::Deserialize;
-use tutor_rag::KnowledgeRetriever;
+use tokio_util::sync::CancellationToken;
 
 use crate::knowledge_store::KnowledgeStore;
 use crate::memory_store::{MemoryEventCategory, MemoryStore};
@@ -27,11 +30,12 @@ pub(crate) struct QuizState {
     pub(crate) knowledge: Arc<KnowledgeStore>,
     pub(crate) notebook: Arc<NotebookStore>,
     pub(crate) memory: Arc<MemoryStore>,
+    pub(crate) evidence_authority: Arc<EvidenceAuthority>,
     pub(crate) rag_root: PathBuf,
     pub(crate) workflow_root: PathBuf,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub(crate) struct CreateQuizRequest {
     pub(crate) title: Option<String>,
     pub(crate) kb_id: Option<String>,
@@ -42,6 +46,8 @@ pub(crate) struct CreateQuizRequest {
     pub(crate) difficulty: Option<QuizDifficulty>,
     pub(crate) question_count: Option<usize>,
     pub(crate) llm: Option<CreateLlmConfig>,
+    #[serde(skip)]
+    pub(crate) knowledge_access: Option<KnowledgeAccessContext>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -157,6 +163,7 @@ pub(crate) async fn create_quiz_for_request(
         source_text,
         source_label,
         memory_markdown.clone(),
+        req.knowledge_access,
     )
     .await
     {
@@ -297,6 +304,7 @@ fn quiz_router_with_rag_root(
         knowledge,
         notebook,
         memory,
+        evidence_authority: crate::knowledge_runtime::course_evidence_authority(),
         rag_root: rag_root.into(),
         workflow_root: workflow_root.into(),
     };
@@ -315,6 +323,7 @@ async fn generate_questions(
     source_text: Option<String>,
     source_label: String,
     memory_markdown: Option<String>,
+    knowledge_access: Option<KnowledgeAccessContext>,
 ) -> anyhow::Result<QuizSession> {
     if let Some(source_text) = source_text {
         let hits = source_hits_from_text(&quiz, &source_label, &source_text);
@@ -342,7 +351,36 @@ async fn generate_questions(
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(&kb.name);
     let rag = tutor_rag::LanceDbRag::new(state.rag_root.clone(), kb.embedding);
-    let hits = rag.search(Some(&quiz.kb_id), query, 12).await?;
+    let runtime = tutor_agent::assemble_course_knowledge(
+        tutor_rag::LanceDbKnowledgeSource::new(rag, &quiz.kb_id),
+        state.evidence_authority.clone(),
+    )?;
+    let access =
+        knowledge_access.unwrap_or_else(|| quiz_knowledge_access_context(&quiz.id, &quiz.kb_id));
+    let verified = runtime
+        .collect_verified_chunks(access, query, 10, CancellationToken::new())
+        .await?;
+    let hits = verified
+        .into_iter()
+        .map(|chunk| tutor_rag::SearchHit {
+            id: chunk
+                .metadata
+                .get("chunk_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(&chunk.reference.item_id)
+                .to_string(),
+            kb: quiz.kb_id.clone(),
+            source: chunk.title.clone(),
+            raw_source: chunk.uri.unwrap_or_else(|| chunk.title.clone()),
+            document_id: chunk
+                .metadata
+                .get("document_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            text: chunk.text,
+            score: chunk.score,
+        })
+        .collect::<Vec<_>>();
     if hits.is_empty() {
         anyhow::bail!("no source chunks found for quiz generation");
     }
@@ -354,6 +392,19 @@ async fn generate_questions(
         &quiz.id,
         quiz_verification_report(verification_method, Vec::new()),
     )
+}
+
+fn quiz_knowledge_access_context(quiz_id: &str, kb_id: &str) -> KnowledgeAccessContext {
+    let mut scope = KnowledgeScope::new(tutor_rag::COURSE_KNOWLEDGE_NAMESPACE);
+    scope.project = Some(quiz_id.to_string());
+    scope.attributes.insert(
+        tutor_rag::KNOWLEDGE_BASE_SCOPE_ATTRIBUTE.into(),
+        kb_id.to_string(),
+    );
+    let mut access =
+        KnowledgeAccessContext::new(scope, PrincipalRef::new("local-user", "local_user"));
+    access.authorization_version = Some("local-user:quiz-knowledge:v1".into());
+    access
 }
 
 async fn questions_for_hits(
@@ -732,9 +783,10 @@ mod tests {
             send_dimensions: false,
         };
         let kb = knowledge.create("Quiz KB", embedding.clone()).unwrap();
+        let kb_id = kb.id.clone();
         knowledge
             .add_document(
-                &kb.id,
+                &kb_id,
                 crate::knowledge_store::KnowledgeDocument {
                     id: "doc-1".into(),
                     name: "source.md".into(),
@@ -752,7 +804,7 @@ mod tests {
         let rag_root = dir.path().join("rag");
         tutor_rag::LanceDbRag::new(&rag_root, embedding)
             .ingest_text(
-                &kb.id,
+                &kb_id,
                 "source.md",
                 "OPC corrects lithography mask patterns before wafer exposure.",
             )
@@ -768,7 +820,7 @@ mod tests {
         );
 
         let create = serde_json::json!({
-            "kb_id": kb.id,
+            "kb_id": kb_id,
             "topic": "OPC",
             "question_count": 1
         });
@@ -781,6 +833,11 @@ mod tests {
         let body = body_json(response).await;
         let quiz_id = body["quiz"]["id"].as_str().unwrap();
         let question_id = body["quiz"]["questions"][0]["id"].as_str().unwrap();
+        let citation = &body["quiz"]["questions"][0]["citations"][0];
+        assert_eq!(citation["kb"], kb_id);
+        assert!(citation["document_id"].as_str().is_some());
+        assert!(citation["chunk_id"].as_str().is_some());
+        assert_eq!(body["quiz"]["verification"]["status"], "verified");
 
         let answer = serde_json::json!({
             "question_id": question_id,
@@ -929,6 +986,7 @@ mod tests {
             difficulty: None,
             question_count: None,
             llm: None,
+            knowledge_access: None,
         };
         assert!(should_use_memory_for_quiz(&req));
 
@@ -942,6 +1000,7 @@ mod tests {
             difficulty: None,
             question_count: None,
             llm: None,
+            knowledge_access: None,
         };
         assert!(!should_use_memory_for_quiz(&req));
     }

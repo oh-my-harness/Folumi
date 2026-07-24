@@ -1,3 +1,4 @@
+mod knowledge_runtime;
 pub mod knowledge_store;
 pub mod memory_store;
 pub mod memory_tool;

@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)] // Tool helpers must return the runtime-owned ToolFailure value.
+
 use std::sync::Arc;
 
 use futures::future::BoxFuture;

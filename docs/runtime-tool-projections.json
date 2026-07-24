@@ -5,11 +5,6 @@
     "reason": "Persist the bounded execution result and metadata used by the explanation turn."
   },
   {
-    "tool": "rag_search",
-    "projection": "ephemeral",
-    "reason": "Legacy full chunk bodies remain model-visible only until runtime Knowledge replaces this tool."
-  },
-  {
     "tool": "read_memory",
     "projection": "ephemeral",
     "reason": "Learner memory bodies are private context and must not be copied into Tool session entries."

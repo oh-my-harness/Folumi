@@ -16,8 +16,8 @@ Date: 2026-07-08
 >
 > Update (2026-07-24): the repository is pinned to runtime `e9b72ed`. Runtime
 > final-answer citation validation and trusted workflow request propagation are
-> now available and consumed. Detailed Research is migrated; Quiz is the next
-> Knowledge cutover.
+> now available and consumed. Detailed Research and Quiz are migrated, and the
+> legacy Agent RAG boundary has been removed.
 
 ## Current Evidence
 
@@ -27,8 +27,8 @@ Date: 2026-07-08
   `16a22ad284b8deb8c3a77664a0876f565f4a6eb9`.
 - `Cargo.toml` and `Cargo.lock` pin all `llm-harness-*` crates to the same
   runtime revision.
-- `main` is synchronized with `origin/main` after the latest runtime migration
-  commits.
+- The active migration branch contains the runtime A6 Research/Quiz cutover and
+  legacy Agent RAG cleanup.
 
 ## Runtime-Owned Capabilities In Use
 
@@ -67,7 +67,11 @@ Date: 2026-07-08
   handles. Runtime-issued read citation records are mapped to product
   `SourceReferences`; the ephemeral read body remains absent from durable
   Session replay.
-- All 26 production Tools use explicit `Projected` or `Ephemeral` Session
+- KB-backed Quiz source collection uses `KnowledgeRegistry` search/read plus
+  `EvidenceAuthority` issuance and verification. Only verified bounded bodies
+  enter the Quiz generation and verifier workflow; conversation and Notebook
+  source paths remain product-owned.
+- All 25 production Tools use explicit `Projected` or `Ephemeral` Session
   projection. The checked inventory lives in
   `docs/runtime-tool-projections.json`.
 - Workflow step progress was consumed from runtime `WorkflowEvent::StepProgress`
@@ -94,7 +98,9 @@ Date: 2026-07-08
 
 Active source no longer contains the old Deep Solve `PhaseManager`,
 `ReplanHook`, `ReplanTool`, `SolveContext`, or ordinary direct
-`AgentHarnessOptions` construction paths.
+`AgentHarnessOptions` construction paths. It also no longer contains the
+product-owned `KnowledgeRetriever` / `RagSearchTool` Agent protocol or
+retriever fields on `CapabilityRouter`.
 
 Product session storage does not duplicate message history. It stores product
 metadata and custom runtime session entries for UI concepts such as trace,
@@ -168,6 +174,11 @@ validator. Both gates are closed in the pinned product baseline.
   the reviewed projection inventory and rejects Full/struct-literal results.
 - `cargo test -p tutor-agent quiz --lib` covers Quiz runtime workflow generation,
   verifier repair, publish behavior, and returned workflow cost.
+- `verified_collection_reads_only_the_trusted_knowledge_scope` covers
+  runtime-registry Quiz source reads, evidence verification, and mismatched-KB
+  fail-closed behavior; `cargo test -p tutor-web routes::quiz` covers KB,
+  conversation, and Notebook source compatibility plus stored citation
+  metadata.
 - `cargo test -p tutor-agent memory --lib` covers Memory runtime workflow output
   validation and returned workflow cost.
 - `cargo test -p tutor-web routes::quiz --lib` and

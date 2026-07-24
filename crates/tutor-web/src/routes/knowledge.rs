@@ -594,7 +594,8 @@ async fn search_knowledge(
     };
 
     let rag = tutor_rag::LanceDbRag::new(state.rag_root.clone(), item.embedding);
-    match tutor_rag::KnowledgeRetriever::search(&rag, Some(&kb), &req.query, req.top_k.unwrap_or(5))
+    match rag
+        .search_for_management(&kb, &req.query, req.top_k.unwrap_or(5))
         .await
     {
         Ok(hits) => {

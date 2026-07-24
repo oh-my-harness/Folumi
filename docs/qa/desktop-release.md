@@ -36,7 +36,8 @@ Use this checklist after running:
 - [ ] Configure one embedding provider.
 - [ ] Create a knowledge base and upload a text file.
 - [ ] Create a knowledge base and upload a PDF file.
-- [ ] Ask a RAG question and confirm citation links appear only after `rag_search` was used.
+- [ ] Ask a Knowledge-grounded question and confirm citation links appear only
+      after `knowledge_search` followed by `knowledge_read`.
 - [ ] Generate a Quiz from conversation material.
 - [ ] Generate a Quiz from knowledge base material.
 - [ ] Save a Research report to Notebook.

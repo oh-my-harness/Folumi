@@ -107,6 +107,11 @@
     gates. Chat now enforces final-answer citations after evidence reads, and
     detailed Research receives trusted access through `WorkflowRunRequest`,
     uses step-scoped Knowledge plugins, and no longer mounts `rag_search`.
+  - Twenty-fifth migration step: KB-backed Quiz source collection now searches
+    and reads through `KnowledgeRegistry`, then issues and verifies evidence
+    with the runtime `EvidenceAuthority` before passing bounded bodies into the
+    Quiz workflow. The product-owned `KnowledgeRetriever` / `RagSearchTool`
+    Agent protocol and its `CapabilityRouter` fields have been removed.
   - Historical completion audit at that checkpoint: the project pin was
     `e200c12`; `cargo tree -p tutor-agent` showed one `llm_adapter` source
     (`69a868f`) and one runtime revision. Active source no longer contained the

@@ -472,7 +472,6 @@ async fn chat_uses_runtime_knowledge_tools_and_keeps_read_bodies_out_of_session(
     )
     .with_client(client)
     .with_knowledge_runtime(knowledge_runtime)
-    .with_associated_kb("kb-a")
     .with_event_sink(sink.clone());
 
     let repo = JsonlSessionRepo::new(dir.path().join("sessions"));
@@ -904,7 +903,6 @@ async fn research_workflow_uses_runtime_knowledge_and_refreshes_final_citations(
     )
     .with_client(client.clone())
     .with_knowledge_runtime(knowledge_runtime)
-    .with_associated_kb("kb-a")
     .with_workflow_root(dir.path().join("workflow-sessions"));
 
     let report = run_research_workflow_with_runtime(

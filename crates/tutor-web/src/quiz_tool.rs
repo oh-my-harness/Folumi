@@ -1,4 +1,7 @@
+#![allow(clippy::result_large_err)] // Tool helpers must return the runtime-owned ToolFailure value.
+
 use futures::future::BoxFuture;
+use llm_harness_runtime_knowledge::KnowledgeAccessContext;
 use llm_harness_types::{DataBlock, Tool, ToolContext, ToolFailure, ToolResult};
 use serde_json::json;
 
@@ -174,7 +177,7 @@ impl Tool for CreateQuizTool {
     fn execute<'a>(
         &'a self,
         args: serde_json::Value,
-        _ctx: &'a ToolContext,
+        ctx: &'a ToolContext,
     ) -> BoxFuture<'a, Result<ToolResult, ToolFailure>> {
         Box::pin(async move {
             let requested_kb =
@@ -199,12 +202,14 @@ impl Tool for CreateQuizTool {
                     .transpose()?,
                 question_count: args["question_count"].as_u64().map(|value| value as usize),
                 llm: self.llm.clone(),
+                knowledge_access: ctx.run.extension::<KnowledgeAccessContext>().cloned(),
             };
             let state = QuizState {
                 store: self.state.store.clone(),
                 knowledge: self.state.knowledge.clone(),
                 notebook: self.state.notebook.clone(),
                 memory: self.state.memory.clone(),
+                evidence_authority: self.state.evidence_authority.clone(),
                 rag_root: self.state.rag_root.clone(),
                 workflow_root: self.state.workflow_root.clone(),
             };

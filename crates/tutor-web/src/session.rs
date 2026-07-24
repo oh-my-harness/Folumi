@@ -1300,7 +1300,7 @@ mod tests {
         pool.append_trace(
             &id,
             "tool_call",
-            serde_json::json!({ "tool": "rag_search", "capability": "chat" }),
+            serde_json::json!({ "tool": "knowledge_search", "capability": "chat" }),
         )
         .await
         .unwrap();
@@ -1311,7 +1311,7 @@ mod tests {
 
         assert_eq!(traces.len(), 1);
         assert_eq!(traces[0].kind, "tool_call");
-        assert_eq!(traces[0].payload["tool"], "rag_search");
+        assert_eq!(traces[0].payload["tool"], "knowledge_search");
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -6,7 +6,6 @@ use llm_adapter::provider::Provider;
 use llm_harness_agent::Session;
 use llm_harness_types::{AgentMessage, ExecutionEnv, RunRequest, Tool};
 use tokio_util::sync::CancellationToken;
-use tutor_rag::KnowledgeRetriever;
 
 use crate::error::{Result, TutorError};
 use crate::event_sink::SharedEventSink;
@@ -54,8 +53,6 @@ pub struct CapabilityRouter {
     pub llm: LlmConfig,
     pub governance: GovernanceConfig,
     pub event_sink: Option<SharedEventSink>,
-    pub retriever: Option<Arc<dyn KnowledgeRetriever>>,
-    pub associated_kb: Option<String>,
     pub knowledge_runtime: Option<KnowledgeRuntime>,
     pub web_search: Option<WebSearchConfig>,
     pub product_tools: Vec<Arc<dyn Tool>>,
@@ -73,8 +70,6 @@ impl CapabilityRouter {
             llm,
             governance,
             event_sink: None,
-            retriever: None,
-            associated_kb: None,
             knowledge_runtime: None,
             web_search: None,
             product_tools: vec![],
@@ -95,19 +90,6 @@ impl CapabilityRouter {
     /// Attach an optional trace sink for web sessions.
     pub fn with_event_sink(mut self, sink: SharedEventSink) -> Self {
         self.event_sink = Some(sink);
-        self
-    }
-
-    pub fn with_retriever(mut self, retriever: Arc<dyn KnowledgeRetriever>) -> Self {
-        self.retriever = Some(retriever);
-        self
-    }
-
-    pub fn with_associated_kb(mut self, kb: impl Into<String>) -> Self {
-        let kb = kb.into();
-        if !kb.trim().is_empty() {
-            self.associated_kb = Some(kb);
-        }
         self
     }
 

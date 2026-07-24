@@ -3,11 +3,15 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use llm_harness_agent::Plugin;
 use llm_harness_runtime_knowledge::{
-    AuthorizationDecision, EvidenceAuthority, EvidenceProviderId, KnowledgeAccessContext,
-    KnowledgeAccessControl, KnowledgeAction, KnowledgeAuthorizer, KnowledgeCitationPolicy,
-    KnowledgePlugin, KnowledgePluginConfig, KnowledgeRegistry, KnowledgeResourceRef,
-    KnowledgeToolConfig,
+    AuthorizationDecision, ContentSelector, EvidenceAuthority, EvidenceProviderId,
+    KnowledgeAccessContext, KnowledgeAccessControl, KnowledgeAction, KnowledgeAuthorizer,
+    KnowledgeCitationPolicy, KnowledgePlugin, KnowledgePluginConfig, KnowledgeReadRequest,
+    KnowledgeRef, KnowledgeRegistry, KnowledgeResourceRef, KnowledgeSearchRequest,
+    KnowledgeToolConfig, PersistedKnowledgeEvidence,
 };
+use llm_harness_types::{DataBlock, RunContext, RunRequest};
+use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 use tutor_rag::LanceDbKnowledgeSource;
 
 use crate::error::{Result, TutorError};
@@ -20,6 +24,17 @@ pub struct KnowledgeRuntime {
     authority: Arc<EvidenceAuthority>,
     provider_id: EvidenceProviderId,
     tool_config: KnowledgeToolConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct VerifiedKnowledgeChunk {
+    pub reference: KnowledgeRef,
+    pub title: String,
+    pub text: String,
+    pub uri: Option<String>,
+    pub score: Option<f32>,
+    pub metadata: std::collections::BTreeMap<String, Value>,
+    pub evidence: PersistedKnowledgeEvidence,
 }
 
 impl KnowledgeRuntime {
@@ -42,6 +57,99 @@ impl KnowledgeRuntime {
             },
         )
         .expect("course knowledge plugin configuration was validated during assembly")
+    }
+
+    pub async fn collect_verified_chunks(
+        &self,
+        access: KnowledgeAccessContext,
+        query: impl Into<String>,
+        limit: usize,
+        abort: CancellationToken,
+    ) -> Result<Vec<VerifiedKnowledgeChunk>> {
+        let run = RunContext::new(RunRequest::default().with_extension(access));
+        let access = run
+            .extension::<KnowledgeAccessContext>()
+            .ok_or_else(|| TutorError::Internal("trusted Knowledge access is missing".into()))?;
+        let page = self
+            .registry
+            .search(
+                &run,
+                access,
+                KnowledgeSearchRequest {
+                    query: query.into(),
+                    domains: vec![],
+                    source_ids: vec![],
+                    filters: vec![],
+                    limit: limit.min(self.tool_config.max_search_results),
+                    cursor: None,
+                },
+                abort.clone(),
+            )
+            .await
+            .map_err(|error| TutorError::Internal(error.to_string()))?;
+        let issuer = self
+            .authority
+            .issuer(&self.provider_id, &run, access)
+            .map_err(|error| TutorError::Internal(error.into()))?;
+        let mut verified = Vec::with_capacity(page.hits.len());
+
+        for hit in page.hits {
+            let content = self
+                .registry
+                .read(
+                    &run,
+                    access,
+                    KnowledgeReadRequest {
+                        reference: hit.reference,
+                        selector: hit
+                            .suggested_selectors
+                            .first()
+                            .cloned()
+                            .unwrap_or(ContentSelector::Document),
+                        max_bytes: self.tool_config.max_read_bytes,
+                    },
+                    abort.clone(),
+                )
+                .await
+                .map_err(|error| TutorError::Internal(error.to_string()))?;
+            let evidence = issuer
+                .issue(
+                    None,
+                    content.reference.clone(),
+                    content.blocks.clone(),
+                    content.obtained_at,
+                )
+                .map_err(|error| TutorError::Internal(error.into()))?;
+            let persisted = self
+                .authority
+                .persisted(&evidence, &run, access, None)
+                .ok_or_else(|| {
+                    TutorError::Internal("Knowledge evidence verification failed".into())
+                })?;
+            let text = content
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    DataBlock::Text { text, .. } => Some(text.as_str()),
+                    DataBlock::Image { .. } | DataBlock::Document { .. } => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            verified.push(VerifiedKnowledgeChunk {
+                reference: content.reference,
+                title: content
+                    .title
+                    .or(hit.title)
+                    .unwrap_or_else(|| "Course knowledge".into()),
+                text,
+                uri: content.uri.or(hit.uri),
+                score: hit.score,
+                metadata: content.metadata,
+                evidence: persisted,
+            });
+        }
+
+        Ok(verified)
     }
 }
 
@@ -312,5 +420,57 @@ mod tests {
                 .pointer("/properties/kb")
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn verified_collection_reads_only_the_trusted_knowledge_scope() {
+        let temp = tempfile::tempdir().unwrap();
+        let rag = LanceDbRag::new(
+            temp.path(),
+            EmbeddingConfig {
+                provider: "hash".into(),
+                model: "test".into(),
+                api_key: String::new(),
+                base_url: None,
+                embeddings_path: None,
+                dimensions: Some(32),
+                send_dimensions: false,
+            },
+        );
+        rag.ingest_text(
+            "kb-a",
+            "document-a::Newton notes",
+            "Newton's laws describe motion and force.",
+        )
+        .await
+        .unwrap();
+        let provider_id = course_evidence_provider_id();
+        let authority = Arc::new(EvidenceAuthority::new(vec![7; 32], [provider_id]).unwrap());
+        let runtime =
+            assemble_course_knowledge(LanceDbKnowledgeSource::new(rag, "kb-a"), authority).unwrap();
+
+        let chunks = runtime
+            .collect_verified_chunks(
+                access(tutor_rag::COURSE_KNOWLEDGE_NAMESPACE, Some("kb-a")),
+                "Newton",
+                5,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert!(chunks[0].text.contains("motion and force"));
+        assert_eq!(chunks[0].reference, chunks[0].evidence.reference);
+
+        let error = runtime
+            .collect_verified_chunks(
+                access(tutor_rag::COURSE_KNOWLEDGE_NAMESPACE, Some("kb-b")),
+                "Newton",
+                5,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("unauthorized"));
     }
 }

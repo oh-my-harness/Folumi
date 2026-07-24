@@ -8,7 +8,7 @@ use llm_harness_types::{
     ContentBlock, HarnessError, RunRequest, StopReason, UserMessage,
 };
 use tokio_util::sync::CancellationToken;
-use tutor_tools::{CodeExecTool, RagSearchTool, WebFetchTool, WebSearchTool};
+use tutor_tools::{CodeExecTool, WebFetchTool, WebSearchTool};
 
 use crate::capability::CapabilityRouter;
 use crate::error::{Result, TutorError};
@@ -195,21 +195,10 @@ pub(crate) async fn run_conversation_with_request(
         Arc::new(CodeExecTool::new()),
     ];
     let mut plugins = Vec::new();
-    if conversation_uses_runtime_knowledge(capability) {
-        if let Some(knowledge_runtime) = &router.knowledge_runtime {
-            plugins.push(knowledge_runtime.plugin());
-        }
-    } else {
-        let rag_tool = router
-            .retriever
-            .clone()
-            .map(RagSearchTool::with_retriever)
-            .unwrap_or_default();
-        let rag_tool = match &router.associated_kb {
-            Some(kb) => rag_tool.with_associated_kb(kb.clone()),
-            None => rag_tool,
-        };
-        tools.insert(0, Arc::new(rag_tool));
+    if conversation_uses_runtime_knowledge(capability)
+        && let Some(knowledge_runtime) = &router.knowledge_runtime
+    {
+        plugins.push(knowledge_runtime.plugin());
     }
     tools.extend(router.learner_memory_tools());
     tools.extend(router.product_tools.iter().cloned());
@@ -614,7 +603,7 @@ fn quiz_system_prompt() -> String {
      Do not create a quiz just because the user selected Quiz mode. When the user asks for a plan, asks to discuss details, or gives an underspecified quiz request, call propose_quiz_plan and ask for confirmation. \
      Call create_quiz only when the user explicitly asks you to generate questions, create a quiz, test them, or confirms a quiz plan. \
      When the user references Space artifacts such as Notebook entries, Quiz sessions, or Quiz questions, call read_space_item before relying on their content. If Notebook is associated, you may use search_notebook to find relevant saved Markdown notes. \
-     If a Knowledge Base is associated and the user wants questions from course documents or indexed material, use rag_search to inspect relevant source chunks before creating the quiz. \
+     If a Knowledge Base is associated and the user wants questions from course documents or indexed material, call create_quiz with that kb_id; the product workflow collects and verifies runtime Knowledge evidence. Do not request or invent opaque Knowledge references. \
      If the user provides source material in the conversation or attachments, pass the relevant source text to create_quiz with a clear source_label. \
      After create_quiz succeeds, briefly tell the user what was generated and invite them to answer it in the rendered quiz card. If you are missing source material or the user's intent is unclear, ask a concise clarifying question instead of calling create_quiz."
         .into()
@@ -765,7 +754,8 @@ mod tests {
         assert!(prompt.contains("propose_quiz_plan"));
         assert!(prompt.contains("Call create_quiz only when"));
         assert!(prompt.contains("read_space_item"));
-        assert!(prompt.contains("rag_search"));
+        assert!(prompt.contains("runtime Knowledge evidence"));
+        assert!(!prompt.contains("rag_search"));
         assert!(prompt.contains("source_label"));
     }
 }
