@@ -24,6 +24,9 @@ Date: 2026-07-08
 
 - The project pins all `llm-harness-*` crates to
   `83bef164b36bd46ffa6f41cd6d3288a6b93cac4e`.
+- Knowledge A6 quality, latency, token accounting, raw Session persistence, and
+  cross-run citation evidence is recorded in
+  `docs/qa/knowledge-a6-acceptance.md`.
 - The aligned `llm-api-adapter` revision is
   `16a22ad284b8deb8c3a77664a0876f565f4a6eb9`.
 - `Cargo.toml` and `Cargo.lock` pin all `llm-harness-*` crates to the same

@@ -1,6 +1,6 @@
 # Runtime Knowledge A6 Migration Plan
 
-> Status: in progress (Phase 0-6 implemented; Phase 7 quality/release checks next) |
+> Status: complete (Phase 0-7 implemented and verified) |
 > Date: 2026-07-23 | Tracks:
 > [llm-tutor issue #1](https://github.com/oh-my-harness/llm-tutor/issues/1) |
 > Upstream baseline:
@@ -455,16 +455,19 @@ Acceptance:
 
 ### Phase 7: Quality, security, and release gate
 
-- [ ] Capture representative retrieval quality samples before and after.
-- [ ] Measure P50/P95 search and read latency.
-- [ ] Measure answer token use and durable Session size.
-- [ ] Verify no full read bodies appear in JSONL Session files.
-- [ ] Verify citation handle forgery and cross-run reuse fail.
-- [ ] Verify controlled diagnostics contain enough backend detail while public
+- [x] Capture representative retrieval quality samples before and after.
+- [x] Measure P50/P95 search and read latency.
+- [x] Measure answer token use and durable Session size.
+- [x] Verify no full read bodies appear in JSONL Session files.
+- [x] Verify citation handle forgery and cross-run reuse fail.
+- [x] Verify controlled diagnostics contain enough backend detail while public
   failures remain sanitized.
 - [x] Update README, manual, runtime audit, framework feedback, product
   requirements, and desktop QA checklist.
-- [ ] Update issue #1 checklist and link the landed commits.
+- [x] Update issue #1 checklist and link the landed commits.
+
+The reproducible fixture, measurements, environment, limitations, and security
+evidence are recorded in `docs/qa/knowledge-a6-acceptance.md`.
 
 Release commands:
 

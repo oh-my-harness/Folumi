@@ -234,6 +234,8 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> (String, bool) {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use llm_harness_runtime_knowledge::contract::{SourceContractCase, verify_source_contract};
     use llm_harness_runtime_knowledge::{
         KnowledgeAccessContext, KnowledgeErrorCode, KnowledgeScope, PrincipalRef,
@@ -282,6 +284,77 @@ mod tests {
         let run =
             RunContext::new(RunRequest::from_text("refund policy").with_extension(allowed.clone()));
         (temp, LanceDbKnowledgeSource::new(rag, "kb-a"), allowed, run)
+    }
+
+    const REPRESENTATIVE_DOCUMENTS: [(&str, &str); 5] = [
+        (
+            "refund-policy::refund-policy.md",
+            "The refund policy accepts refund requests within thirty days after purchase. \
+             Customers must provide the original receipt and order number.",
+        ),
+        (
+            "newton-laws::newton-laws.md",
+            "Newton's laws explain how force changes motion. The second law relates force, \
+             mass, and acceleration.",
+        ),
+        (
+            "photosynthesis::photosynthesis.md",
+            "Photosynthesis uses chlorophyll and sunlight to convert carbon dioxide and water \
+             into glucose and oxygen.",
+        ),
+        (
+            "tcp-handshake::tcp-handshake.md",
+            "A TCP connection begins with the three-way handshake: SYN, SYN-ACK, and ACK.",
+        ),
+        (
+            "calculus-derivative::calculus-derivative.md",
+            "A derivative in calculus describes an instantaneous rate of change and the slope \
+             of a tangent line.",
+        ),
+    ];
+
+    const REPRESENTATIVE_QUERIES: [(&str, &str); 5] = [
+        (
+            "refund receipt thirty days",
+            "refund-policy::refund-policy.md",
+        ),
+        ("force mass acceleration", "newton-laws::newton-laws.md"),
+        (
+            "chlorophyll sunlight glucose",
+            "photosynthesis::photosynthesis.md",
+        ),
+        ("SYN SYN-ACK ACK", "tcp-handshake::tcp-handshake.md"),
+        (
+            "derivative rate change tangent",
+            "calculus-derivative::calculus-derivative.md",
+        ),
+    ];
+
+    async fn representative_fixture() -> (
+        tempfile::TempDir,
+        LanceDbRag,
+        LanceDbKnowledgeSource,
+        KnowledgeAccessContext,
+        RunContext,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let rag = LanceDbRag::new(temp.path(), hash_config());
+        for (source, body) in REPRESENTATIVE_DOCUMENTS {
+            rag.ingest_text("kb-a", source, body).await.unwrap();
+        }
+        let allowed = access("kb-a");
+        let run = RunContext::new(
+            RunRequest::from_text("Knowledge A6 acceptance").with_extension(allowed.clone()),
+        );
+        let source = LanceDbKnowledgeSource::new(rag.clone(), "kb-a");
+        (temp, rag, source, allowed, run)
+    }
+
+    fn percentile_micros(samples: &[u128], percentile: f64) -> u128 {
+        let mut ordered = samples.to_vec();
+        ordered.sort_unstable();
+        let index = ((ordered.len() - 1) as f64 * percentile).ceil() as usize;
+        ordered[index]
     }
 
     #[tokio::test]
@@ -382,6 +455,142 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error.code(), KnowledgeErrorCode::NotFound);
+    }
+
+    #[tokio::test]
+    async fn runtime_boundary_preserves_representative_management_search_quality() {
+        let (_temp, rag, source, allowed, run) = representative_fixture().await;
+
+        for (query, expected_source) in REPRESENTATIVE_QUERIES {
+            let management_hits = rag.search_for_management("kb-a", query, 3).await.unwrap();
+            let runtime_hits = source
+                .search(
+                    KnowledgeRequestContext {
+                        run: &run,
+                        access: &allowed,
+                    },
+                    SourceSearchRequest {
+                        query: query.into(),
+                        filters: vec![],
+                        limit: 3,
+                        cursor: None,
+                    },
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap()
+                .hits;
+
+            assert_eq!(
+                management_hits
+                    .iter()
+                    .map(|hit| hit.id.as_str())
+                    .collect::<Vec<_>>(),
+                runtime_hits
+                    .iter()
+                    .map(|hit| hit.reference.item_id.as_str())
+                    .collect::<Vec<_>>(),
+                "runtime boundary changed ranking for query `{query}`"
+            );
+            assert_eq!(
+                management_hits.first().map(|hit| hit.raw_source.as_str()),
+                Some(expected_source),
+                "representative query `{query}` did not retrieve its expected document"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "acceptance benchmark; run in release mode with --ignored --nocapture"]
+    async fn knowledge_a6_search_and_read_latency_baseline() {
+        const WARMUPS: usize = 5;
+        const ITERATIONS: usize = 100;
+
+        let (_temp, rag, source, allowed, run) = representative_fixture().await;
+        let query = REPRESENTATIVE_QUERIES[0].0;
+        let context = KnowledgeRequestContext {
+            run: &run,
+            access: &allowed,
+        };
+        let search_request = SourceSearchRequest {
+            query: query.into(),
+            filters: vec![],
+            limit: 3,
+            cursor: None,
+        };
+
+        for _ in 0..WARMUPS {
+            rag.search_for_management("kb-a", query, 3).await.unwrap();
+            source
+                .search(context, search_request.clone(), CancellationToken::new())
+                .await
+                .unwrap();
+        }
+
+        let mut management_search_micros = Vec::with_capacity(ITERATIONS);
+        let mut runtime_search_micros = Vec::with_capacity(ITERATIONS);
+        for _ in 0..ITERATIONS {
+            let started = Instant::now();
+            rag.search_for_management("kb-a", query, 3).await.unwrap();
+            management_search_micros.push(started.elapsed().as_micros());
+
+            let started = Instant::now();
+            source
+                .search(context, search_request.clone(), CancellationToken::new())
+                .await
+                .unwrap();
+            runtime_search_micros.push(started.elapsed().as_micros());
+        }
+
+        let hit = source
+            .search(context, search_request, CancellationToken::new())
+            .await
+            .unwrap()
+            .hits
+            .remove(0);
+        let read_request = KnowledgeReadRequest {
+            reference: hit.reference,
+            selector: hit.suggested_selectors[0].clone(),
+            max_bytes: 4096,
+        };
+        for _ in 0..WARMUPS {
+            source
+                .read(context, read_request.clone(), CancellationToken::new())
+                .await
+                .unwrap();
+        }
+
+        let mut runtime_read_micros = Vec::with_capacity(ITERATIONS);
+        for _ in 0..ITERATIONS {
+            let started = Instant::now();
+            source
+                .read(context, read_request.clone(), CancellationToken::new())
+                .await
+                .unwrap();
+            runtime_read_micros.push(started.elapsed().as_micros());
+        }
+
+        println!(
+            "{}",
+            serde_json::json!({
+                "fixture_documents": REPRESENTATIVE_DOCUMENTS.len(),
+                "warmups": WARMUPS,
+                "iterations": ITERATIONS,
+                "unit": "microseconds",
+                "management_search": {
+                    "p50": percentile_micros(&management_search_micros, 0.50),
+                    "p95": percentile_micros(&management_search_micros, 0.95),
+                },
+                "runtime_search": {
+                    "p50": percentile_micros(&runtime_search_micros, 0.50),
+                    "p95": percentile_micros(&runtime_search_micros, 0.95),
+                },
+                "runtime_read": {
+                    "p50": percentile_micros(&runtime_read_micros, 0.50),
+                    "p95": percentile_micros(&runtime_read_micros, 0.95),
+                },
+            })
+        );
     }
 
     #[tokio::test]
