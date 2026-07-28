@@ -1,5 +1,8 @@
+use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
@@ -27,9 +30,13 @@ const DEFAULT_DIRS: &[&str] = &["L1", "L2", "L3"];
 const MAX_L2_MEMORY_ENTRY_TEXT_CHARS: usize = 500;
 const MAX_L3_MEMORY_ENTRY_TEXT_CHARS: usize = 1_200;
 
+type TargetLock = Arc<Mutex<()>>;
+type TargetLocks = Arc<Mutex<HashMap<PathBuf, TargetLock>>>;
+
 #[derive(Clone)]
-pub struct MemoryStore {
+pub struct FileMemoryBackend {
     root: PathBuf,
+    target_locks: TargetLocks,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,13 +200,16 @@ pub struct MemoryChangeSet {
     pub changes: Vec<MemoryChange>,
 }
 
-impl MemoryStore {
+impl FileMemoryBackend {
     pub fn new() -> Self {
         Self::new_with_root(default_root().join("memory"))
     }
 
     pub fn new_with_root(root: PathBuf) -> Self {
-        let store = Self { root };
+        let store = Self {
+            root,
+            target_locks: Arc::new(Mutex::new(HashMap::new())),
+        };
         store
             .ensure_skeleton()
             .expect("failed to create memory directory skeleton");
@@ -222,7 +232,11 @@ impl MemoryStore {
     pub fn read(&self, path: &str) -> Result<MemoryFile> {
         self.ensure_skeleton()?;
         let path = normalize_memory_path(path)?;
-        let full_path = self.root.join(&path);
+        self.read_normalized(&path)
+    }
+
+    fn read_normalized(&self, path: &Path) -> Result<MemoryFile> {
+        let full_path = self.root.join(path);
         let markdown = fs::read_to_string(&full_path)?;
         let level = path
             .parent()
@@ -236,7 +250,7 @@ impl MemoryStore {
             .unwrap_or_default()
             .to_string();
         Ok(MemoryFile {
-            path: path_to_slash(&path),
+            path: path_to_slash(path),
             level,
             name,
             revision: memory_revision(&markdown),
@@ -251,27 +265,26 @@ impl MemoryStore {
         if markdown.trim().is_empty() {
             return Err(anyhow!("memory markdown is empty"));
         }
-        let full_path = self.root.join(&path);
-        if full_path.exists() {
-            self.write_undo_snapshot(&path, &fs::read_to_string(&full_path)?)?;
-        }
-        fs::write(full_path, markdown)?;
-        self.read(&path_to_slash(&path))
+        let target_lock = self.target_lock(&path)?;
+        let _guard = lock(&target_lock)?;
+        self.write_normalized(&path, markdown)
     }
 
     pub fn undo_latest_write(&self, path: &str) -> Result<MemoryUndoResult> {
         self.ensure_skeleton()?;
         let path = normalize_memory_path(path)?;
+        let target_lock = self.target_lock(&path)?;
+        let _guard = lock(&target_lock)?;
         let undo_path = self.undo_path(&path);
         if !undo_path.exists() {
             return Err(anyhow!("no memory undo snapshot exists for this file"));
         }
         let markdown = fs::read_to_string(&undo_path)?;
-        fs::write(self.root.join(&path), markdown)?;
+        atomic_write(&self.root.join(&path), markdown.as_bytes())?;
         fs::remove_file(&undo_path)?;
         let restored_from = path_to_slash(&path);
         Ok(MemoryUndoResult {
-            file: self.read(&restored_from)?,
+            file: self.read_normalized(&path)?,
             restored_from,
         })
     }
@@ -297,15 +310,18 @@ impl MemoryStore {
         if event.summary.trim().is_empty() {
             return Err(anyhow!("memory event summary is empty"));
         }
-        let path = self.root.join(event_file(category));
+        let relative_path = PathBuf::from(event_file(category));
+        let target_lock = self.target_lock(&relative_path)?;
+        let _guard = lock(&target_lock)?;
+        let path = self.root.join(&relative_path);
         let mut line = serde_json::to_string(&event)?;
         line.push('\n');
-        use std::io::Write;
         let mut file = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)?;
         file.write_all(line.as_bytes())?;
+        file.sync_all()?;
         Ok(event)
     }
 
@@ -537,7 +553,11 @@ impl MemoryStore {
         changes: &[MemoryChange],
         accepted_change_ids: &[String],
     ) -> Result<MemoryFile> {
-        let current = self.read(target_path)?;
+        self.ensure_skeleton()?;
+        let normalized_target = normalize_memory_path(target_path)?;
+        let target_lock = self.target_lock(&normalized_target)?;
+        let _guard = lock(&target_lock)?;
+        let current = self.read_normalized(&normalized_target)?;
         if current.revision != base_revision {
             return Err(anyhow!(
                 "memory document changed since this run; rerun before applying"
@@ -618,7 +638,7 @@ impl MemoryStore {
         }
         let title = memory_title(&current.markdown).unwrap_or(target.title);
         let markdown = serialize_memory_entries(&title, &entries)?;
-        self.write(target_path, markdown)
+        self.write_normalized(&normalized_target, markdown)
     }
 
     pub fn agent_context(&self, target_path: &str, current: &str) -> Result<serde_json::Value> {
@@ -710,12 +730,45 @@ impl MemoryStore {
         Ok(())
     }
 
-    fn write_undo_snapshot(&self, path: &Path, markdown: &str) -> Result<()> {
+    fn target_lock(&self, path: &Path) -> Result<TargetLock> {
+        let mut locks = self
+            .target_locks
+            .lock()
+            .map_err(|_| anyhow!("memory target lock registry is poisoned"))?;
+        Ok(locks
+            .entry(path.to_path_buf())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone())
+    }
+
+    fn write_normalized(&self, path: &Path, markdown: String) -> Result<MemoryFile> {
+        let full_path = self.root.join(path);
+        let previous = full_path
+            .exists()
+            .then(|| fs::read(&full_path))
+            .transpose()?;
+        let undo_path = self.undo_path(path);
+        let previous_undo = undo_path
+            .exists()
+            .then(|| fs::read(&undo_path))
+            .transpose()?;
+
+        if let Some(previous) = previous.as_deref() {
+            self.write_undo_snapshot(path, previous)?;
+        }
+        if let Err(error) = atomic_write(&full_path, markdown.as_bytes()) {
+            restore_undo_after_failed_write(&undo_path, previous_undo.as_deref())?;
+            return Err(error);
+        }
+        self.read_normalized(path)
+    }
+
+    fn write_undo_snapshot(&self, path: &Path, markdown: &[u8]) -> Result<()> {
         let undo_path = self.undo_path(path);
         if let Some(parent) = undo_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(undo_path, markdown)?;
+        atomic_write(&undo_path, markdown)?;
         Ok(())
     }
 
@@ -724,10 +777,109 @@ impl MemoryStore {
     }
 }
 
-impl Default for MemoryStore {
+impl Default for FileMemoryBackend {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn lock(target: &Mutex<()>) -> Result<std::sync::MutexGuard<'_, ()>> {
+    target
+        .lock()
+        .map_err(|_| anyhow!("memory target lock is poisoned"))
+}
+
+fn restore_undo_after_failed_write(path: &Path, previous: Option<&[u8]>) -> Result<()> {
+    match previous {
+        Some(previous) => atomic_write(path, previous),
+        None => match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        },
+    }
+}
+
+fn atomic_write(path: &Path, content: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("memory target has no parent directory"))?;
+    fs::create_dir_all(parent)?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| anyhow!("memory target file name is invalid"))?;
+    let temporary = parent.join(format!(
+        ".{file_name}.llm-tutor-memory-{}.tmp",
+        uuid::Uuid::new_v4()
+    ));
+    let result = (|| -> Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(content)?;
+        file.sync_all()?;
+        drop(file);
+        replace_file(&temporary, path)?;
+        sync_parent_directory(parent)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, target: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let target = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    // Both UTF-16 buffers are NUL-terminated and remain alive for the call.
+    // The temporary file is created beside the target, so replacement stays
+    // on one volume and never falls back to a copy/delete sequence.
+    let result = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            target.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        Err(std::io::Error::last_os_error().into())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, target: &Path) -> Result<()> {
+    fs::rename(source, target)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(parent: &Path) -> Result<()> {
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_parent: &Path) -> Result<()> {
+    Ok(())
 }
 
 pub fn parse_source_refs(markdown: &str) -> Vec<MemorySourceRef> {
@@ -1380,7 +1532,7 @@ mod tests {
     #[test]
     fn memory_store_creates_skeleton_and_updates_file() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let files = store.list().unwrap();
         assert!(files.iter().any(|file| file.path == "L3/profile.md"));
         assert!(!files.iter().any(|file| file.path == "L2/research.md"));
@@ -1410,7 +1562,7 @@ mod tests {
         fs::write(root.join("L1/research_events.jsonl"), "legacy").unwrap();
         fs::write(root.join("L2/research.md"), "legacy").unwrap();
 
-        let store = MemoryStore::new_with_root(root.clone());
+        let store = FileMemoryBackend::new_with_root(root.clone());
 
         assert!(!root.join("L1/research_events.jsonl").exists());
         assert!(!root.join("L2/research.md").exists());
@@ -1445,7 +1597,7 @@ mod tests {
     #[test]
     fn l2_entry_references_round_trip_and_resolve_sources() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let event = store
             .record_event(
                 MemoryEventCategory::Chat,
@@ -1483,7 +1635,7 @@ mod tests {
     #[test]
     fn l3_context_uses_l2_catalog_except_for_recent_l1_exception() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
 
         let profile = store
             .agent_context("L3/profile.md", "# Student profile")
@@ -1579,7 +1731,7 @@ mod tests {
     #[test]
     fn memory_store_write_normalizes_source_refs() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let updated = store
             .write(
                 "L2/quiz.md",
@@ -1593,9 +1745,60 @@ mod tests {
     }
 
     #[test]
+    fn memory_store_atomic_write_leaves_no_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("memory");
+        let store = FileMemoryBackend::new_with_root(root.clone());
+
+        store
+            .write(
+                "L3/preferences.md",
+                "# Learning preferences\n\n- Prefer visual examples. <!--m_visual-->".into(),
+            )
+            .unwrap();
+
+        let temporary_files = fs::read_dir(root.join("L3"))
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(".llm-tutor-memory-")
+            })
+            .collect::<Vec<_>>();
+        assert!(temporary_files.is_empty());
+    }
+
+    #[test]
+    fn memory_store_ignores_an_interrupted_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("memory");
+        let store = FileMemoryBackend::new_with_root(root.clone());
+        let canonical = store
+            .write(
+                "L3/preferences.md",
+                "# Learning preferences\n\n- Canonical preference. <!--m_canonical-->".into(),
+            )
+            .unwrap();
+        fs::write(
+            root.join("L3/.preferences.md.llm-tutor-memory-interrupted.tmp"),
+            "# Learning preferences\n\n- Partial write",
+        )
+        .unwrap();
+
+        let reopened = FileMemoryBackend::new_with_root(root);
+        let recovered = reopened.read("L3/preferences.md").unwrap();
+
+        assert_eq!(recovered.revision, canonical.revision);
+        assert!(recovered.markdown.contains("Canonical preference"));
+        assert!(!recovered.markdown.contains("Partial write"));
+    }
+
+    #[test]
     fn memory_store_can_undo_latest_write_once() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         store
             .write("L2/chat.md", "# Chat memory\n\n- Original.".into())
             .unwrap();
@@ -1614,7 +1817,7 @@ mod tests {
     #[test]
     fn memory_store_records_and_lists_events() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let event = store
             .record_event(
                 MemoryEventCategory::Quiz,
@@ -1633,7 +1836,7 @@ mod tests {
     #[test]
     fn memory_store_lists_knowledge_surface_file() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let files = store.list().unwrap();
 
         assert!(files.iter().any(|file| file.path == "L2/knowledge.md"));
@@ -1643,7 +1846,7 @@ mod tests {
     #[test]
     fn memory_store_resolves_source_refs_to_l1_events() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         store
             .record_event(
                 MemoryEventCategory::Quiz,
@@ -1663,7 +1866,7 @@ mod tests {
     #[test]
     fn event_queries_paginate_with_event_scoped_references() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let first = store
             .record_event(
                 MemoryEventCategory::Chat,
@@ -1712,7 +1915,7 @@ mod tests {
     #[test]
     fn event_context_is_bounded_to_the_same_source_session() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let before = store
             .record_event(
                 MemoryEventCategory::Chat,
@@ -1757,7 +1960,7 @@ mod tests {
     #[test]
     fn memory_change_apply_supports_partial_acceptance_and_stale_revision_checks() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let event = store
             .record_event(
                 MemoryEventCategory::Chat,
@@ -1823,7 +2026,7 @@ mod tests {
     #[test]
     fn memory_change_apply_is_atomic_when_one_selected_change_is_invalid() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let original = store
             .write(
                 "L2/chat.md",
@@ -1872,9 +2075,83 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_change_sets_with_one_base_revision_cannot_both_commit() {
+        use std::sync::Barrier;
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
+        let event = store
+            .record_event(
+                MemoryEventCategory::Chat,
+                "answered",
+                "Concurrent change-set evidence",
+                Some("session-1".into()),
+                json!({}),
+            )
+            .unwrap();
+        let original = store
+            .write(
+                "L2/chat.md",
+                "# Chat memory\n\n## Topics\n\n- Original note. <!--m_original-->".into(),
+            )
+            .unwrap();
+        let barrier = Arc::new(Barrier::new(3));
+        let handles = ["first", "second"]
+            .into_iter()
+            .map(|name| {
+                let store = store.clone();
+                let barrier = barrier.clone();
+                let base_revision = original.revision.clone();
+                let evidence_ref = format!("chat:{}", event.id);
+                std::thread::spawn(move || {
+                    let change_id = format!("insert-{name}");
+                    let changes = vec![MemoryChange {
+                        id: change_id.clone(),
+                        op: MemoryChangeOp::Insert,
+                        section: Some("Topics".into()),
+                        entry_id: None,
+                        after_entry_id: None,
+                        text: Some(format!("{name} concurrent note.")),
+                        refs: vec![evidence_ref],
+                        reason: "Exercise compare-and-swap serialization.".into(),
+                        before_text: None,
+                    }];
+                    barrier.wait();
+                    store.apply_memory_changes("L2/chat.md", &base_revision, &changes, &[change_id])
+                })
+            })
+            .collect::<Vec<_>>();
+        barrier.wait();
+        let results = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(results.iter().filter(|result| result.is_err()).count(), 1);
+        assert!(
+            results
+                .iter()
+                .filter_map(|result| result.as_ref().err())
+                .all(|error| error.to_string().contains("changed since this run"))
+        );
+        let committed = store.read("L2/chat.md").unwrap();
+        assert_ne!(committed.revision, original.revision);
+        assert_eq!(
+            ["first concurrent note", "second concurrent note"]
+                .into_iter()
+                .filter(|text| committed.markdown.contains(text))
+                .count(),
+            1
+        );
+        let restored = store.undo_latest_write("L2/chat.md").unwrap();
+        assert_eq!(restored.file.revision, original.revision);
+    }
+
+    #[test]
     fn memory_change_apply_allows_review_to_finish_without_accepting_changes() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MemoryStore::new_with_root(dir.path().join("memory"));
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let original = store
             .write(
                 "L2/chat.md",

@@ -8125,6 +8125,7 @@ dependencies = [
  "tutor-rag",
  "tutor-tools",
  "uuid",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

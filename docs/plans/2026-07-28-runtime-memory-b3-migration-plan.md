@@ -1,6 +1,6 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: planned; upstream gates identified |
+> Status: in progress (Phase 1 file-backend isolation) |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
@@ -345,17 +345,19 @@ legacy deletion may not.
 
 ### Phase 1: Isolate the product file backend
 
-- [ ] Rename web `MemoryStore` to `FileMemoryBackend` and update product
+- [x] Rename web `MemoryStore` to `FileMemoryBackend` and update product
   callers without changing behavior.
 - [ ] Move entry identity, entry revision, metadata-envelope parsing, and
-  atomic mutation helpers behind this backend.
-- [ ] Preserve legacy marker parsing.
-- [ ] Make writes use same-directory temporary files plus atomic replacement;
+  related mutation helpers behind this backend.
+- [x] Preserve legacy marker parsing.
+- [x] Make writes use same-directory temporary files plus atomic replacement;
   keep an exact pre-write undo snapshot.
-- [ ] Serialize mutations per target and check the expected document or entry
+- [x] Serialize mutations per target and check the expected document or entry
   revision inside the critical section.
-- [ ] Add recovery tests for interrupted temp files and malformed metadata.
-- [ ] Keep L1 event ingestion and UI DTOs product-owned.
+- [x] Add recovery coverage proving interrupted temporary files cannot replace
+  canonical memory.
+- [ ] Add malformed metadata recovery tests with the metadata envelope.
+- [x] Keep L1 event ingestion and UI DTOs product-owned.
 
 ### Phase 2: Implement `LearnerMemoryKnowledgeSource`
 

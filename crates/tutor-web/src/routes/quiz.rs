@@ -17,7 +17,7 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::knowledge_store::KnowledgeStore;
-use crate::memory_store::{MemoryEventCategory, MemoryStore};
+use crate::memory_store::{FileMemoryBackend, MemoryEventCategory};
 use crate::notebook_store::NotebookStore;
 use crate::quiz_store::{
     QuizCitation, QuizConfig, QuizDifficulty, QuizOption, QuizQuestion, QuizQuestionType,
@@ -29,7 +29,7 @@ pub(crate) struct QuizState {
     pub(crate) store: Arc<QuizStore>,
     pub(crate) knowledge: Arc<KnowledgeStore>,
     pub(crate) notebook: Arc<NotebookStore>,
-    pub(crate) memory: Arc<MemoryStore>,
+    pub(crate) memory: Arc<FileMemoryBackend>,
     pub(crate) evidence_authority: Arc<EvidenceAuthority>,
     pub(crate) rag_root: PathBuf,
     pub(crate) workflow_root: PathBuf,
@@ -284,7 +284,7 @@ pub fn quiz_router(
     store: Arc<QuizStore>,
     knowledge: Arc<KnowledgeStore>,
     notebook: Arc<NotebookStore>,
-    memory: Arc<MemoryStore>,
+    memory: Arc<FileMemoryBackend>,
     rag_root: impl Into<PathBuf>,
     workflow_root: impl Into<PathBuf>,
 ) -> Router {
@@ -295,7 +295,7 @@ fn quiz_router_with_rag_root(
     store: Arc<QuizStore>,
     knowledge: Arc<KnowledgeStore>,
     notebook: Arc<NotebookStore>,
-    memory: Arc<MemoryStore>,
+    memory: Arc<FileMemoryBackend>,
     rag_root: impl Into<PathBuf>,
     workflow_root: impl Into<PathBuf>,
 ) -> Router {
@@ -542,7 +542,7 @@ fn should_use_memory_for_quiz(req: &CreateQuizRequest) -> bool {
     indicators.iter().any(|indicator| text.contains(indicator))
 }
 
-fn quiz_memory_markdown(memory: &MemoryStore) -> anyhow::Result<String> {
+fn quiz_memory_markdown(memory: &FileMemoryBackend) -> anyhow::Result<String> {
     let mut sections = Vec::new();
     for path in ["L3/profile.md", "L3/recent.md", "L3/teaching_strategy.md"] {
         let file = memory.read(path)?;
@@ -772,7 +772,7 @@ mod tests {
         let store = Arc::new(QuizStore::new_with_path(dir.path().join("quizzes.json")));
         let knowledge = KnowledgeStore::new_with_path(dir.path().join("knowledge-bases.json"));
         let notebook = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
-        let memory = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let memory = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let embedding = tutor_rag::EmbeddingConfig {
             provider: "local-test".into(),
             model: "hash".into(),
@@ -863,7 +863,7 @@ mod tests {
         let store = Arc::new(QuizStore::new_with_path(dir.path().join("quizzes.json")));
         let knowledge = KnowledgeStore::new_with_path(dir.path().join("knowledge-bases.json"));
         let notebook = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
-        let memory = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let memory = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let app = quiz_router_with_rag_root(
             store,
             knowledge,
@@ -931,7 +931,7 @@ mod tests {
         let store = Arc::new(QuizStore::new_with_path(dir.path().join("quizzes.json")));
         let knowledge = KnowledgeStore::new_with_path(dir.path().join("knowledge-bases.json"));
         let notebook = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
-        let memory = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let memory = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let entry = notebook
             .create(crate::notebook_store::NotebookEntryInput {
                 space_id: None,

@@ -16,13 +16,13 @@ use serde::{Deserialize, Serialize};
 use crate::knowledge_store::{
     KnowledgeBaseView, KnowledgeDocument, KnowledgeStore, normalize_embedding_config,
 };
-use crate::memory_store::{MemoryEventCategory, MemoryStore};
+use crate::memory_store::{FileMemoryBackend, MemoryEventCategory};
 
 #[derive(Clone)]
 struct KnowledgeState {
     store: Arc<KnowledgeStore>,
     jobs: Arc<IngestionJobs>,
-    memory: Arc<MemoryStore>,
+    memory: Arc<FileMemoryBackend>,
     rag_root: PathBuf,
 }
 
@@ -1023,7 +1023,7 @@ fn record_knowledge_event(
 
 pub fn knowledge_router(
     store: Arc<KnowledgeStore>,
-    memory: Arc<MemoryStore>,
+    memory: Arc<FileMemoryBackend>,
     rag_root: impl Into<PathBuf>,
 ) -> Router {
     let state = KnowledgeState {
@@ -1106,7 +1106,7 @@ mod tests {
     async fn parses_chat_attachment_upload() {
         let root = tempfile::tempdir().unwrap();
         let store = KnowledgeStore::new_with_path(root.path().join("knowledge-bases.json"));
-        let memory = Arc::new(MemoryStore::new_with_root(root.path().join("memory")));
+        let memory = Arc::new(FileMemoryBackend::new_with_root(root.path().join("memory")));
         let app = knowledge_router(store, memory.clone(), root.path().join("rag"));
 
         let boundary = "X-LLM-TUTOR-ATTACHMENT";
@@ -1141,7 +1141,7 @@ mod tests {
     async fn upload_search_and_chunks_work_without_real_llm() {
         let root = tempfile::tempdir().unwrap();
         let store = KnowledgeStore::new_with_path(root.path().join("knowledge-bases.json"));
-        let memory = Arc::new(MemoryStore::new_with_root(root.path().join("memory")));
+        let memory = Arc::new(FileMemoryBackend::new_with_root(root.path().join("memory")));
         let app = knowledge_router(store, memory.clone(), root.path().join("rag"));
 
         let create_body = serde_json::json!({

@@ -8,7 +8,7 @@ use llm_harness_types::{DataBlock, Tool, ToolContext, ToolFailure, ToolResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::memory_store::{MemoryEvent, MemoryL2Entry, MemoryStore};
+use crate::memory_store::{FileMemoryBackend, MemoryEvent, MemoryL2Entry};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryEvidenceActivity {
@@ -138,58 +138,58 @@ impl MemoryEvidenceTracker {
 
 #[derive(Clone)]
 pub struct ListMemoryEventsTool {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
 }
 
 #[derive(Clone)]
 pub struct SearchMemoryEventsTool {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
 }
 
 #[derive(Clone)]
 pub struct ReadMemoryEventTool {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
 }
 
 #[derive(Clone)]
 pub struct ReadMemoryContextTool {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
 }
 
 #[derive(Clone)]
 pub struct ReadMemorySourceTool {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
 }
 
 #[derive(Clone)]
 pub struct ListMemoryEntriesTool {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
     allowed_paths: Vec<String>,
 }
 
 #[derive(Clone)]
 pub struct SearchMemoryEntriesTool {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
     allowed_paths: Vec<String>,
 }
 
 #[derive(Clone)]
 pub struct ReadMemoryEntryTool {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
     allowed_paths: Vec<String>,
 }
 
 #[derive(Clone)]
 pub struct ReadMemoryEntrySourcesTool {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
     allowed_paths: Vec<String>,
 }
@@ -197,7 +197,7 @@ pub struct ReadMemoryEntrySourcesTool {
 macro_rules! tool_constructor {
     ($tool:ident) => {
         impl $tool {
-            pub fn new(store: Arc<MemoryStore>, tracker: MemoryEvidenceTracker) -> Self {
+            pub fn new(store: Arc<FileMemoryBackend>, tracker: MemoryEvidenceTracker) -> Self {
                 Self { store, tracker }
             }
         }
@@ -213,7 +213,7 @@ macro_rules! l2_tool_constructor {
     ($tool:ident) => {
         impl $tool {
             pub fn new(
-                store: Arc<MemoryStore>,
+                store: Arc<FileMemoryBackend>,
                 tracker: MemoryEvidenceTracker,
                 allowed_paths: Vec<String>,
             ) -> Self {
@@ -870,7 +870,7 @@ mod tests {
     #[tokio::test]
     async fn listing_does_not_make_unread_events_citeable() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         store
             .record_event(
                 crate::memory_store::MemoryEventCategory::Chat,
@@ -896,7 +896,7 @@ mod tests {
     #[tokio::test]
     async fn reading_tracks_the_canonical_event_reference() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let event = store
             .record_event(
                 crate::memory_store::MemoryEventCategory::Quiz,
@@ -925,7 +925,7 @@ mod tests {
     #[tokio::test]
     async fn source_reads_map_product_id_aliases_to_canonical_event_refs() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let entry_id = "4747cc47-597a-410b-a073-5881480bb4c6";
         let event = store
             .record_event(
@@ -954,7 +954,7 @@ mod tests {
     #[tokio::test]
     async fn l2_listing_is_not_citeable_until_the_entry_is_read() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         store
             .write(
                 "L2/chat.md",
@@ -986,7 +986,7 @@ mod tests {
     #[tokio::test]
     async fn l2_source_drill_down_tracks_l2_and_l1_reads_separately() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let event = store
             .record_event(
                 crate::memory_store::MemoryEventCategory::Notebook,

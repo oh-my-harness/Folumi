@@ -25,7 +25,7 @@ use tutor_agent::governance::GovernanceConfig;
 use tutor_agent::{Capability, CapabilityRouter, LlmConfig, LlmProviderKind};
 
 use crate::knowledge_store::KnowledgeStore;
-use crate::memory_store::{MemoryEventCategory, MemoryStore};
+use crate::memory_store::{FileMemoryBackend, MemoryEventCategory};
 use crate::notebook_store::NotebookStore;
 use crate::quiz_store::QuizStore;
 use crate::quiz_tool::{CreateQuizTool, ProposeQuizPlanTool};
@@ -47,7 +47,7 @@ use crate::tutor_store::{TutorProfile, TutorStore};
 struct WsState {
     pool: Arc<SessionPool>,
     knowledge: Arc<KnowledgeStore>,
-    memory: Arc<MemoryStore>,
+    memory: Arc<FileMemoryBackend>,
     notebook: Arc<NotebookStore>,
     quizzes: Arc<QuizStore>,
     tutors: Arc<TutorStore>,
@@ -468,7 +468,7 @@ fn course_knowledge_access_context(
 pub fn ws_router(
     pool: Arc<SessionPool>,
     knowledge: Arc<KnowledgeStore>,
-    memory: Arc<MemoryStore>,
+    memory: Arc<FileMemoryBackend>,
     notebook: Arc<NotebookStore>,
     quizzes: Arc<QuizStore>,
     tutor_runtime: TutorRuntimeStores,

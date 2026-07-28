@@ -16,8 +16,8 @@ use tutor_agent::llm_provider::{LlmConfig, LlmProviderKind};
 use tutor_agent::memory::MemoryOutputLanguage;
 
 use crate::memory_store::{
-    MemoryAssistAction, MemoryChange, MemoryChangeOp, MemoryChangeSet, MemoryFile, MemoryFinding,
-    MemoryStore, memory_entry_text_limit, parse_memory_entries,
+    FileMemoryBackend, MemoryAssistAction, MemoryChange, MemoryChangeOp, MemoryChangeSet,
+    MemoryFile, MemoryFinding, memory_entry_text_limit, parse_memory_entries,
 };
 use crate::memory_tool::{
     ListMemoryEntriesTool, ListMemoryEventsTool, MemoryEvidenceActivity, MemoryEvidenceTracker,
@@ -102,7 +102,7 @@ struct MemoryRunSnapshot {
 
 #[derive(Clone)]
 pub(crate) struct MemoryState {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     workflow_root: PathBuf,
     runs: Arc<tokio::sync::RwLock<HashMap<String, MemoryRunSnapshot>>>,
     tasks: Arc<tokio::sync::RwLock<HashMap<String, tokio::task::AbortHandle>>>,
@@ -388,7 +388,7 @@ async fn record_evidence_activity(
 }
 
 struct MemoryChangeRun<'a> {
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     workflow_root: &'a Path,
     file: MemoryFile,
     action: MemoryAssistAction,
@@ -478,7 +478,7 @@ fn oversized_workflow_changes(
 }
 
 fn memory_evidence_tools(
-    store: Arc<MemoryStore>,
+    store: Arc<FileMemoryBackend>,
     tracker: MemoryEvidenceTracker,
     target_path: &str,
 ) -> Vec<Arc<dyn llm_harness_types::Tool>> {
@@ -842,7 +842,7 @@ async fn run_memory_runtime_workflow_with_tools(
     tutor_agent::memory::run_memory_workflow_with_tools(input, engine_config, tools).await
 }
 
-pub fn memory_router(store: Arc<MemoryStore>, workflow_root: impl Into<PathBuf>) -> Router {
+pub fn memory_router(store: Arc<FileMemoryBackend>, workflow_root: impl Into<PathBuf>) -> Router {
     let state = MemoryState {
         store,
         workflow_root: workflow_root.into(),
@@ -931,7 +931,7 @@ mod tests {
     #[test]
     fn routes_memory_tools_by_target_layer() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let tracker = MemoryEvidenceTracker::default();
 
         let l2 = memory_evidence_tools(store.clone(), tracker.clone(), "L2/chat.md")
@@ -1097,7 +1097,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let run_id = "run-to-cancel".to_string();
         let state = MemoryState {
-            store: Arc::new(MemoryStore::new_with_root(dir.path().join("memory"))),
+            store: Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory"))),
             workflow_root: dir.path().join("workflow-sessions"),
             runs: Arc::new(tokio::sync::RwLock::new(HashMap::from([(
                 run_id.clone(),
@@ -1152,7 +1152,7 @@ mod tests {
             error: None,
         };
         let state = MemoryState {
-            store: Arc::new(MemoryStore::new_with_root(dir.path().join("memory"))),
+            store: Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory"))),
             workflow_root: dir.path().join("workflow-sessions"),
             runs: Arc::new(tokio::sync::RwLock::new(HashMap::from([
                 (
@@ -1194,7 +1194,7 @@ mod tests {
     #[tokio::test]
     async fn lists_and_updates_memory_file() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let app = memory_router(store, dir.path().join("workflow-sessions"));
 
         let response = app
@@ -1233,7 +1233,7 @@ mod tests {
     #[tokio::test]
     async fn undo_restores_latest_memory_write() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         store
             .write("L2/chat.md", "# Chat memory\n\n- Original.".into())
             .unwrap();
@@ -1272,7 +1272,7 @@ mod tests {
     #[tokio::test]
     async fn resolves_memory_source_refs() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         store
             .record_event(
                 crate::memory_store::MemoryEventCategory::Quiz,
@@ -1308,7 +1308,7 @@ mod tests {
     async fn retired_memory_generation_routes_are_not_mounted() {
         let dir = tempfile::tempdir().unwrap();
         let app = memory_router(
-            Arc::new(MemoryStore::new_with_root(dir.path().join("memory"))),
+            Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory"))),
             dir.path().join("workflow-sessions"),
         );
 

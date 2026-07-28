@@ -11,7 +11,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::memory_store::{MemoryEventCategory, MemoryStore};
+use crate::memory_store::{FileMemoryBackend, MemoryEventCategory};
 use crate::notebook_store::{
     NotebookEntryInput, NotebookEntryType, NotebookEntryUpdate, NotebookStore,
 };
@@ -19,7 +19,7 @@ use crate::notebook_store::{
 #[derive(Clone)]
 struct NotebookState {
     store: Arc<NotebookStore>,
-    memory: Arc<MemoryStore>,
+    memory: Arc<FileMemoryBackend>,
 }
 
 #[derive(Deserialize)]
@@ -496,7 +496,7 @@ async fn export_obsidian_vault_zip(
     }
 }
 
-pub fn notebook_router(store: Arc<NotebookStore>, memory: Arc<MemoryStore>) -> Router {
+pub fn notebook_router(store: Arc<NotebookStore>, memory: Arc<FileMemoryBackend>) -> Router {
     let state = NotebookState { store, memory };
     Router::new()
         .route("/api/notebook/entries", get(list_tree).post(create_entry))
@@ -1092,7 +1092,7 @@ mod tests {
     async fn creates_lists_and_deletes_notebook_entry() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
-        let memory = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let memory = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let app = notebook_router(store, memory.clone());
         let response = app
             .clone()
@@ -1180,7 +1180,7 @@ mod tests {
     async fn imports_markdown_entries_from_multipart() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
-        let memory = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let memory = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let app = notebook_router(store, memory.clone());
         let markdown = "---\ntitle: Imported OPC\ntags:\n  - optics\n  - opc\n---\n# Imported OPC\n\nSee [[Lithography]].\n";
         let body = multipart_body("BOUNDARY", "opc.md", "text/markdown", markdown.as_bytes());
@@ -1249,7 +1249,7 @@ mod tests {
     async fn previews_import_conflicts_and_exports_notebook() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
-        let memory = Arc::new(MemoryStore::new_with_root(dir.path().join("memory")));
+        let memory = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let existing = store
             .create(NotebookEntryInput {
                 space_id: Some("default".into()),
