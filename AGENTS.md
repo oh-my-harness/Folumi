@@ -17,4 +17,11 @@
   UTF-8 for files that may contain Chinese or other non-ASCII text, for example
   `Get-Content -Encoding UTF8`, to avoid introducing mojibake into UI copy or
   docs.
+- On Windows, treat Rust commands that link workspace binaries as heavyweight:
+  run only one Cargo build/test/Clippy command at a time with
+  `CARGO_BUILD_JOBS=1`, validate targeted crates before one full-workspace
+  gate, and never run tests and Clippy in parallel. If a command times out,
+  inspect `cargo`/`rustc`/`link` processes and wait for or terminate that exact
+  process tree before retrying; do not start a duplicate build while orphaned
+  compiler or linker processes are still running.
 - After completing a meaningful task, commit the changes promptly.
