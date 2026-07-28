@@ -8100,6 +8100,7 @@ version = "0.3.5"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "chrono",
  "futures",
  "llm-harness-agent",

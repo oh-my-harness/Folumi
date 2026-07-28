@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +30,9 @@ const DEFAULT_FILES: &[(&str, &str)] = &[
 const DEFAULT_DIRS: &[&str] = &["L1", "L2", "L3"];
 const MAX_L2_MEMORY_ENTRY_TEXT_CHARS: usize = 500;
 const MAX_L3_MEMORY_ENTRY_TEXT_CHARS: usize = 1_200;
+const MEMORY_ENTRY_METADATA_SCHEMA_VERSION: u32 = 1;
+const MEMORY_ENTRY_METADATA_COMMENT_PREFIX: &str = "<!--llm-tutor-memory:";
+const MEMORY_ENTRY_METADATA_V1_PREFIX: &str = "llm-tutor-memory:v1:";
 
 type TargetLock = Arc<Mutex<()>>;
 type TargetLocks = Arc<Mutex<HashMap<PathBuf, TargetLock>>>;
@@ -116,12 +120,26 @@ pub struct MemorySourceRef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MemoryEntryMetadata {
+    pub schema_version: u32,
+    pub item_id: String,
+    pub kind: String,
+    pub target: String,
+    pub provenance: serde_json::Value,
+    pub idempotency_key: String,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryEntry {
     pub line_number: usize,
     pub section: Option<String>,
     pub text: String,
     pub marker: String,
     pub source_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<MemoryEntryMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -486,7 +504,7 @@ impl FileMemoryBackend {
         let mut results = Vec::new();
         for path in selected_paths {
             let file = self.read(&path)?;
-            for entry in parse_memory_entries(&file.markdown) {
+            for entry in try_parse_memory_entries(&file.markdown)? {
                 let matches = query.as_ref().is_none_or(|query| {
                     entry.text.to_lowercase().contains(query)
                         || entry
@@ -528,7 +546,7 @@ impl FileMemoryBackend {
     pub fn read_l2_entry(&self, reference: &str) -> Result<MemoryL2Entry> {
         let (path, marker) = parse_l2_entry_reference(reference)?;
         let file = self.read(&path)?;
-        let entry = parse_memory_entries(&file.markdown)
+        let entry = try_parse_memory_entries(&file.markdown)?
             .into_iter()
             .find(|entry| entry.marker == marker)
             .ok_or_else(|| anyhow!("L2 memory entry `{reference}` was not found"))?;
@@ -586,7 +604,7 @@ impl FileMemoryBackend {
             .iter()
             .map(String::as_str)
             .collect::<std::collections::BTreeSet<_>>();
-        let mut entries = parse_memory_entries(&current.markdown);
+        let mut entries = try_parse_memory_entries(&current.markdown)?;
         for change in selected {
             validate_memory_change(target_path, change, &allowed_sections)?;
             for reference in &change.refs {
@@ -665,7 +683,7 @@ impl FileMemoryBackend {
                         Ok(serde_json::json!({
                             "path": file.path,
                             "revision": file.revision,
-                            "entryCount": parse_memory_entries(&file.markdown).len(),
+                            "entryCount": try_parse_memory_entries(&file.markdown)?.len(),
                         }))
                     })
                     .collect::<Result<Vec<_>>>()?,
@@ -886,7 +904,22 @@ pub fn parse_source_refs(markdown: &str) -> Vec<MemorySourceRef> {
     markdown.lines().filter_map(parse_source_ref_line).collect()
 }
 
+// Kept as a tolerant boundary for recovery-oriented UI callers. Runtime and
+// mutation paths must use `try_parse_memory_entries` and fail closed.
+#[allow(dead_code)]
 pub fn parse_memory_entries(markdown: &str) -> Vec<MemoryEntry> {
+    parse_memory_entries_with_mode(markdown, false)
+        .expect("compatible memory parsing is infallible")
+}
+
+pub fn try_parse_memory_entries(markdown: &str) -> Result<Vec<MemoryEntry>> {
+    parse_memory_entries_with_mode(markdown, true)
+}
+
+fn parse_memory_entries_with_mode(
+    markdown: &str,
+    strict_metadata: bool,
+) -> Result<Vec<MemoryEntry>> {
     let definitions = parse_source_refs(markdown)
         .into_iter()
         .map(|reference| (reference.index, reference.target))
@@ -898,12 +931,17 @@ pub fn parse_memory_entries(markdown: &str) -> Vec<MemoryEntry> {
             section = Some(heading);
             continue;
         }
-        if let Some(entry) = parse_memory_entry_line(index + 1, line, section.clone(), &definitions)
-        {
+        if let Some(entry) = parse_memory_entry_line(
+            index + 1,
+            line,
+            section.clone(),
+            &definitions,
+            strict_metadata,
+        )? {
             entries.push(entry);
         }
     }
-    entries
+    Ok(entries)
 }
 
 pub fn l2_entry_reference(path: &str, marker: &str) -> Result<String> {
@@ -954,6 +992,13 @@ pub fn serialize_memory_entries(title: &str, entries: &[MemoryEntry]) -> Result<
             last_section = section;
         }
         let marker = serialize_memory_marker(&entry.marker)?;
+        let metadata = entry
+            .metadata
+            .as_ref()
+            .map(|metadata| serialize_memory_entry_metadata(&entry.marker, metadata))
+            .transpose()?
+            .map(|metadata| format!(" {metadata}"))
+            .unwrap_or_default();
         let refs = entry
             .source_refs
             .iter()
@@ -979,7 +1024,13 @@ pub fn serialize_memory_entries(title: &str, entries: &[MemoryEntry]) -> Result<
         } else {
             format!(" {refs}")
         };
-        lines.push(format!("- {}{} {}", entry.text.trim(), refs, marker));
+        lines.push(format!(
+            "- {}{} {}{}",
+            entry.text.trim(),
+            refs,
+            marker,
+            metadata
+        ));
     }
     if !refs_by_target.is_empty() {
         lines.push(String::new());
@@ -1005,6 +1056,34 @@ pub fn serialize_memory_marker(id: &str) -> Result<String> {
         return Err(anyhow!("invalid memory marker id"));
     }
     Ok(format!("<!--{id}-->"))
+}
+
+pub fn memory_entry_revision(entry: &MemoryEntry) -> Result<String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RevisionInput<'a> {
+        marker: &'a str,
+        section: Option<&'a str>,
+        text: &'a str,
+        source_refs: &'a [String],
+        metadata: &'a Option<MemoryEntryMetadata>,
+    }
+
+    let input = RevisionInput {
+        marker: entry.marker.trim(),
+        section: entry.section.as_deref().map(str::trim),
+        text: entry.text.trim(),
+        source_refs: &entry.source_refs,
+        metadata: &entry.metadata,
+    };
+    let normalized = serde_json::to_string(&input)?;
+    Ok(memory_revision(&normalized))
+}
+
+fn serialize_memory_entry_metadata(marker: &str, metadata: &MemoryEntryMetadata) -> Result<String> {
+    validate_memory_entry_metadata(marker, metadata)?;
+    let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(metadata)?);
+    Ok(format!("<!--{MEMORY_ENTRY_METADATA_V1_PREFIX}{encoded}-->"))
 }
 
 pub fn serialize_source_ref(reference: &MemorySourceRef) -> Result<String> {
@@ -1093,25 +1172,99 @@ fn parse_memory_entry_line(
     line: &str,
     section: Option<String>,
     definitions: &std::collections::BTreeMap<usize, String>,
-) -> Option<MemoryEntry> {
+    strict_metadata: bool,
+) -> Result<Option<MemoryEntry>> {
     let trimmed = line.trim();
-    let bullet = trimmed.strip_prefix("- ")?;
-    let marker = marker_in_line(bullet)?;
+    let Some(bullet) = trimmed.strip_prefix("- ") else {
+        return Ok(None);
+    };
+    let Some(marker) = marker_in_line(bullet) else {
+        return Ok(None);
+    };
+    let metadata = match parse_memory_entry_metadata(bullet, &marker) {
+        Ok(metadata) => metadata,
+        Err(error) if strict_metadata => {
+            return Err(anyhow!(
+                "invalid memory metadata on line {line_number}: {error}"
+            ));
+        }
+        Err(_) => None,
+    };
     let source_refs = footnote_indices_in_line(bullet)
         .into_iter()
         .filter_map(|index| definitions.get(&index).cloned())
         .collect::<Vec<_>>();
     let text = strip_entry_markup(bullet).trim().to_string();
     if text.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(MemoryEntry {
+    Ok(Some(MemoryEntry {
         line_number,
         section,
         text,
         marker,
         source_refs,
-    })
+        metadata,
+    }))
+}
+
+fn parse_memory_entry_metadata(line: &str, marker: &str) -> Result<Option<MemoryEntryMetadata>> {
+    let mut rest = line;
+    let mut encoded = None::<&str>;
+    while let Some(start) = rest.find(MEMORY_ENTRY_METADATA_COMMENT_PREFIX) {
+        let envelope = &rest[start + "<!--".len()..];
+        let end = envelope
+            .find("-->")
+            .ok_or_else(|| anyhow!("metadata comment is not terminated"))?;
+        if encoded.is_some() {
+            return Err(anyhow!("entry has more than one metadata envelope"));
+        }
+        let body = &envelope[..end];
+        encoded = Some(
+            body.strip_prefix(MEMORY_ENTRY_METADATA_V1_PREFIX)
+                .ok_or_else(|| anyhow!("unsupported memory metadata schema"))?,
+        );
+        rest = &envelope[end + "-->".len()..];
+    }
+    let Some(encoded) = encoded else {
+        return Ok(None);
+    };
+    if encoded.is_empty() {
+        return Err(anyhow!("memory metadata payload is empty"));
+    }
+    let bytes = URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|error| anyhow!("memory metadata is not valid base64url: {error}"))?;
+    let metadata = serde_json::from_slice::<MemoryEntryMetadata>(&bytes)
+        .map_err(|error| anyhow!("memory metadata is not valid JSON: {error}"))?;
+    validate_memory_entry_metadata(marker, &metadata)?;
+    Ok(Some(metadata))
+}
+
+fn validate_memory_entry_metadata(marker: &str, metadata: &MemoryEntryMetadata) -> Result<()> {
+    if metadata.schema_version != MEMORY_ENTRY_METADATA_SCHEMA_VERSION {
+        return Err(anyhow!(
+            "unsupported memory metadata schema version {}",
+            metadata.schema_version
+        ));
+    }
+    if metadata.item_id.trim() != marker.trim() {
+        return Err(anyhow!("memory metadata item id does not match its marker"));
+    }
+    if metadata.kind.trim().is_empty() {
+        return Err(anyhow!("memory metadata kind is empty"));
+    }
+    let normalized_target = path_to_slash(&normalize_memory_path(&metadata.target)?);
+    if normalized_target != metadata.target.trim().replace('\\', "/") {
+        return Err(anyhow!("memory metadata target is not canonical"));
+    }
+    if !metadata.provenance.is_object() {
+        return Err(anyhow!("memory metadata provenance must be an object"));
+    }
+    if metadata.idempotency_key.trim().is_empty() {
+        return Err(anyhow!("memory metadata idempotency key is empty"));
+    }
+    Ok(())
 }
 
 fn memory_title(markdown: &str) -> Option<String> {
@@ -1134,11 +1287,17 @@ fn memory_section_heading(line: &str) -> Option<String> {
 }
 
 fn marker_in_line(line: &str) -> Option<String> {
-    let start = line.find("<!--")?;
-    let rest = &line[start + 4..];
-    let end = rest.find("-->")?;
-    let marker = rest[..end].trim();
-    marker.starts_with("m_").then(|| marker.to_string())
+    let mut rest = line;
+    while let Some(start) = rest.find("<!--") {
+        let comment = &rest[start + "<!--".len()..];
+        let end = comment.find("-->")?;
+        let marker = comment[..end].trim();
+        if marker.starts_with("m_") {
+            return Some(marker.to_string());
+        }
+        rest = &comment[end + "-->".len()..];
+    }
+    None
 }
 
 fn strip_entry_markup(line: &str) -> String {
@@ -1168,6 +1327,8 @@ fn strip_entry_markup(line: &str) -> String {
         } else if rest.starts_with("<!--") {
             if let Some(end) = rest.find("-->") {
                 rest = &rest[end + 3..];
+            } else if rest.starts_with(MEMORY_ENTRY_METADATA_COMMENT_PREFIX) {
+                break;
             } else {
                 output.push_str(rest);
                 break;
@@ -1372,6 +1533,7 @@ fn memory_entry_from_change(change: &MemoryChange) -> Result<MemoryEntry> {
             .to_string(),
         marker: format!("m_{}", uuid::Uuid::new_v4().simple()),
         source_refs: change.refs.clone(),
+        metadata: None,
     })
 }
 
@@ -1503,10 +1665,11 @@ fn validate_l2_path(path: &str) -> Result<String> {
 }
 
 fn memory_l2_entry(file: &MemoryFile, entry: MemoryEntry) -> Result<MemoryL2Entry> {
+    let revision = memory_entry_revision(&entry)?;
     Ok(MemoryL2Entry {
         reference: l2_entry_reference(&file.path, &entry.marker)?,
         path: file.path.clone(),
-        revision: file.revision.clone(),
+        revision,
         entry,
     })
 }
@@ -1591,6 +1754,187 @@ mod tests {
             })
             .unwrap(),
             "[^1]: quiz:session:q1"
+        );
+    }
+
+    #[test]
+    fn memory_entry_metadata_round_trips_with_legacy_entries() {
+        let metadata = MemoryEntryMetadata {
+            schema_version: MEMORY_ENTRY_METADATA_SCHEMA_VERSION,
+            item_id: "m_visual".into(),
+            kind: "preference".into(),
+            target: "L3/preferences.md".into(),
+            provenance: json!({
+                "principalId": "local-user",
+                "sessionId": "session-1",
+                "origin": "explicit"
+            }),
+            idempotency_key: "idem-visual".into(),
+            expires_at: Some("2026-08-01T00:00:00Z".parse().unwrap()),
+        };
+        let entries = vec![
+            MemoryEntry {
+                line_number: 3,
+                section: Some("Format".into()),
+                text: "Prefers visual examples.".into(),
+                marker: "m_visual".into(),
+                source_refs: vec!["chat:event-1".into()],
+                metadata: Some(metadata),
+            },
+            MemoryEntry {
+                line_number: 4,
+                section: Some("Format".into()),
+                text: "Legacy preference.".into(),
+                marker: "m_legacy".into(),
+                source_refs: Vec::new(),
+                metadata: None,
+            },
+        ];
+
+        let markdown = serialize_memory_entries("Learning preferences", &entries).unwrap();
+        let reparsed = try_parse_memory_entries(&markdown).unwrap();
+
+        assert!(markdown.contains("<!--llm-tutor-memory:v1:"));
+        assert_eq!(reparsed[0].metadata, entries[0].metadata);
+        assert!(reparsed[1].metadata.is_none());
+        assert_eq!(reparsed[0].text, "Prefers visual examples.");
+        assert_eq!(reparsed[1].text, "Legacy preference.");
+    }
+
+    #[test]
+    fn maintenance_replace_preserves_runtime_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
+        let metadata = MemoryEntryMetadata {
+            schema_version: MEMORY_ENTRY_METADATA_SCHEMA_VERSION,
+            item_id: "m_visual".into(),
+            kind: "preference".into(),
+            target: "L3/preferences.md".into(),
+            provenance: json!({ "principalId": "local-user" }),
+            idempotency_key: "idem-visual".into(),
+            expires_at: None,
+        };
+        let markdown = serialize_memory_entries(
+            "Learning preferences",
+            &[MemoryEntry {
+                line_number: 3,
+                section: Some("Preferences".into()),
+                text: "Prefers visual examples.".into(),
+                marker: "m_visual".into(),
+                source_refs: Vec::new(),
+                metadata: Some(metadata.clone()),
+            }],
+        )
+        .unwrap();
+        let original = store.write("L3/preferences.md", markdown).unwrap();
+        let change = MemoryChange {
+            id: "replace-visual".into(),
+            op: MemoryChangeOp::Replace,
+            section: Some("Preferences".into()),
+            entry_id: Some("m_visual".into()),
+            after_entry_id: None,
+            text: Some("Prefers diagrams and visual examples.".into()),
+            refs: Vec::new(),
+            reason: "Clarify the explicit preference.".into(),
+            before_text: Some("Prefers visual examples.".into()),
+        };
+
+        let updated = store
+            .apply_memory_changes(
+                "L3/preferences.md",
+                &original.revision,
+                &[change],
+                &["replace-visual".into()],
+            )
+            .unwrap();
+        let entries = try_parse_memory_entries(&updated.markdown).unwrap();
+
+        assert_eq!(entries[0].metadata.as_ref(), Some(&metadata));
+        assert_eq!(entries[0].text, "Prefers diagrams and visual examples.");
+    }
+
+    #[test]
+    fn entry_revision_is_scoped_to_one_normalized_entry() {
+        let first = "# Chat memory\n\n- Stable entry. [^1] <!--m_stable-->\n- Other entry. <!--m_other-->\n\n[^1]: chat:event-1";
+        let second = "# Chat memory\n\n- Stable entry. [^1] <!--m_stable-->\n- Changed other entry. <!--m_other-->\n\n[^1]: chat:event-1";
+        let changed =
+            "# Chat memory\n\n- Changed stable entry. [^1] <!--m_stable-->\n\n[^1]: chat:event-1";
+        let first_entries = try_parse_memory_entries(first).unwrap();
+        let second_entries = try_parse_memory_entries(second).unwrap();
+        let changed_entries = try_parse_memory_entries(changed).unwrap();
+
+        assert_eq!(
+            memory_entry_revision(&first_entries[0]).unwrap(),
+            memory_entry_revision(&second_entries[0]).unwrap()
+        );
+        assert_ne!(
+            memory_entry_revision(&first_entries[0]).unwrap(),
+            memory_entry_revision(&changed_entries[0]).unwrap()
+        );
+        assert_ne!(memory_revision(first), memory_revision(second));
+    }
+
+    #[test]
+    fn malformed_metadata_fails_closed_but_tolerant_parse_recovers_text() {
+        let markdown = "# Chat memory\n\n- Learns visually. <!--m_visual--> <!--llm-tutor-memory:v1:not-base64!!-->";
+
+        let error = try_parse_memory_entries(markdown).unwrap_err();
+        let recovered = parse_memory_entries(markdown);
+
+        assert!(error.to_string().contains("not valid base64url"));
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].text, "Learns visually.");
+        assert!(recovered[0].metadata.is_none());
+    }
+
+    #[test]
+    fn strict_backend_reads_reject_malformed_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
+        store
+            .write(
+                "L2/chat.md",
+                "# Chat memory\n\n- Learns visually. <!--m_visual--> <!--llm-tutor-memory:v1:not-base64!!-->"
+                    .into(),
+            )
+            .unwrap();
+
+        let error = store
+            .query_l2_entries(&["L2/chat.md".into()], None, None, 10)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("invalid memory metadata"));
+        assert!(
+            store
+                .read("L2/chat.md")
+                .unwrap()
+                .markdown
+                .contains("visually")
+        );
+    }
+
+    #[test]
+    fn unsupported_metadata_schema_is_rejected() {
+        let metadata = json!({
+            "schemaVersion": 2,
+            "itemId": "m_visual",
+            "kind": "preference",
+            "target": "L3/preferences.md",
+            "provenance": {},
+            "idempotencyKey": "idem-visual",
+            "expiresAt": null
+        });
+        let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&metadata).unwrap());
+        let markdown = format!(
+            "- Learns visually. <!--m_visual--> <!--{MEMORY_ENTRY_METADATA_V1_PREFIX}{encoded}-->"
+        );
+
+        let error = try_parse_memory_entries(&markdown).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported memory metadata schema version 2")
         );
     }
 

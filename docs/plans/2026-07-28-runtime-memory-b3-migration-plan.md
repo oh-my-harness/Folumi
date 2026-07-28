@@ -1,6 +1,6 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: in progress (Phase 1 file-backend isolation) |
+> Status: in progress (Phase 1 complete; Phase 0 runtime gates open) |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
@@ -347,7 +347,7 @@ legacy deletion may not.
 
 - [x] Rename web `MemoryStore` to `FileMemoryBackend` and update product
   callers without changing behavior.
-- [ ] Move entry identity, entry revision, metadata-envelope parsing, and
+- [x] Move entry identity, entry revision, metadata-envelope parsing, and
   related mutation helpers behind this backend.
 - [x] Preserve legacy marker parsing.
 - [x] Make writes use same-directory temporary files plus atomic replacement;
@@ -356,7 +356,7 @@ legacy deletion may not.
   revision inside the critical section.
 - [x] Add recovery coverage proving interrupted temporary files cannot replace
   canonical memory.
-- [ ] Add malformed metadata recovery tests with the metadata envelope.
+- [x] Add malformed metadata recovery tests with the metadata envelope.
 - [x] Keep L1 event ingestion and UI DTOs product-owned.
 
 ### Phase 2: Implement `LearnerMemoryKnowledgeSource`

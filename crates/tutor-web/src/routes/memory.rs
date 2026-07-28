@@ -17,7 +17,7 @@ use tutor_agent::memory::MemoryOutputLanguage;
 
 use crate::memory_store::{
     FileMemoryBackend, MemoryAssistAction, MemoryChange, MemoryChangeOp, MemoryChangeSet,
-    MemoryFile, MemoryFinding, memory_entry_text_limit, parse_memory_entries,
+    MemoryFile, MemoryFinding, memory_entry_text_limit, try_parse_memory_entries,
 };
 use crate::memory_tool::{
     ListMemoryEntriesTool, ListMemoryEventsTool, MemoryEvidenceActivity, MemoryEvidenceTracker,
@@ -599,7 +599,7 @@ fn workflow_output_to_change_set(
     output: tutor_agent::memory::MemoryWorkflowOutput,
     tracker: &MemoryEvidenceTracker,
 ) -> Result<MemoryChangeSet, String> {
-    let entries = parse_memory_entries(&file.markdown);
+    let entries = try_parse_memory_entries(&file.markdown).map_err(|error| error.to_string())?;
     let mut changes = Vec::new();
     for change in output.changes {
         let refs = canonicalize_run_refs(&change.refs, tracker, true)?;
