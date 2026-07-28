@@ -20,6 +20,57 @@
 
 ## Friction Points
 
+- **B3 gate: Knowledge citation policy cannot distinguish course evidence from
+  personalization memory**
+  - Checked against runtime PR #82 revision `c4c0ddf` on 2026-07-28.
+  - `KnowledgePlugin` registers the single generic `knowledge_search` /
+    `knowledge_read` Tool pair and one global `KnowledgeCitationPolicy`.
+    `RequireWhenEvidenceRead` tests only whether any `KnowledgeRunState`
+    citation was registered.
+  - `llm-tutor` must put course Knowledge and Learner Memory in one registry to
+    avoid duplicate Tool names. Course reads must continue to require trusted
+    citations, while Learner Memory is silent personalization context and must
+    not force a visible citation after a memory-only read.
+  - Weakening the whole registry to `ValidateIfPresent`, installing duplicate
+    plugins, or copying runtime citation tracking into a product validator are
+    not acceptable migration paths.
+  - Suggestion: allow citation requirements to be scoped by source ID/domain,
+    or allow a read source to mark issued evidence as citation-required versus
+    citation-optional while retaining the same run-local validation boundary.
+
+- **B3 gate: Memory has no formal batch/CAS application transaction**
+  - Checked against runtime PR #82 revision `c4c0ddf` on 2026-07-28.
+  - `MemoryStore` exposes only single-record `upsert` and `delete`.
+    `MemoryService` validates one intent/receipt at a time and has no expected
+    base revision, accepted change IDs, batch receipt, or atomicity contract.
+  - `llm-tutor` maintenance applies a user-selected subset of one reviewed
+    change set only when the complete target document still matches
+    `base_revision`; the selected changes succeed or fail together and produce
+    one undo snapshot.
+  - Looping over `MemoryService::write/delete` would lose those semantics.
+    The runtime design says strong-consistency writes may use an explicit
+    executor/business step, but it does not define whether a product batch
+    command sharing the concrete backend is the intended long-term boundary.
+  - Suggestion: explicitly bless and contract-test an application transaction
+    boundary, or add a batch/CAS Memory API with expected revision, atomic
+    outcome, receipts, cancellation, authorization, and idempotency semantics.
+
+- **B3 clarification: `memory_write` describes user approval but does not
+  enforce a trusted approval artifact**
+  - Checked against runtime PR #82 revision `c4c0ddf` on 2026-07-28.
+  - The Tool schema correctly omits `approved`, and `MemoryService` supplies
+    trusted provenance. However, `SecureMemoryWritePolicy` accepts any
+    authorized `MemoryWriteIntent`; the "user-approved" requirement currently
+    exists only in Tool prose.
+  - `llm-tutor` can compose fail-closed authorization with a mandatory
+    `BeforeToolCallHook` backed by a live browser confirmation. This is safer
+    than the current model-provided boolean, but applications need a clear
+    runtime contract so mounting `MemoryPlugin` is not mistaken for sufficient
+    consent handling.
+  - Suggestion: document the required authorization/hook composition, or add a
+    non-serializable, single-use mutation grant that policy and delete both
+    validate before touching the store.
+
 - **Resolved 2026-07-24: Workflow LLM steps can receive trusted request extensions**
   - Checked against `codex/session-projection` commit `8ab2a377` on 2026-07-23.
     Ordinary product Chat now calls `AgentHarness::run(RunRequest)` and an
@@ -259,6 +310,9 @@
 | No declarative bounded semantic repair policy | Quiz still needs a thin product judge to cap verifier-driven repair loops | Medium |
 | No safe app-level budget policy helper | Ordinary one-turn harnesses and multi-step workflows cannot share budget accounting without app-layer loop-risk or hook boilerplate | Medium |
 | No normalized model metadata API | Apps duplicate `/models` probing, auth headers, context-window parsing, and embedding dimension capability discovery | Medium |
+| No source-scoped Knowledge citation policy | One registry cannot require course citations while keeping Learner Memory citation-optional | High |
+| No formal Memory batch/CAS transaction contract | Reviewed partial acceptance cannot be applied atomically through the current single-record service | High |
+| Memory approval contract is implicit | Tool prose says user-approved, but safe policy does not validate a trusted consent artifact | High |
 
 ## Proposed v0.3 Changes
 
@@ -274,3 +328,6 @@
 10. Continue hardening `WorkflowEngine` examples for app-level workflows that mix executor steps, LLM steps, and subagent reviewers
 11. Add a safe app-level budget helper/policy API that separates cost accounting from loop continuation
 12. Add declarative bounded semantic repair policies for verifier-driven workflow loops
+13. Add source/domain-scoped Knowledge citation requirements for mixed registries
+14. Define an application transaction or batch/CAS Memory contract
+15. Document or provide a trusted, single-use Memory mutation approval contract

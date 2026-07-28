@@ -28,6 +28,10 @@ checklists.
 - `2026-07-23-runtime-knowledge-a6-migration-plan.md`: migration from the
   product-owned RAG Tool protocol to runtime Knowledge, trusted run-scoped
   access, evidence receipts, and safe Session Projection.
+- `2026-07-28-runtime-memory-b3-migration-plan.md`: migration from the
+  product-owned Learner Memory Tools to runtime Knowledge/Memory composition,
+  trusted interactive mutation approval, and the existing review/apply
+  transaction boundary.
 
 ## Feature Plans
 
