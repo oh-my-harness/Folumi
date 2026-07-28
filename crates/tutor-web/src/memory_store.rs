@@ -142,6 +142,22 @@ pub struct MemoryEntry {
     pub metadata: Option<MemoryEntryMetadata>,
 }
 
+#[derive(Debug, Clone)]
+pub struct DurableMemoryWrite {
+    pub content: String,
+    pub kind: String,
+    pub provenance: serde_json::Value,
+    pub idempotency_key: String,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExactMemoryDeleteOutcome {
+    Deleted,
+    NotFound,
+    Stale { latest_revision: String },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryL2Entry {
     pub reference: String,
@@ -286,6 +302,120 @@ impl FileMemoryBackend {
         let target_lock = self.target_lock(&path)?;
         let _guard = lock(&target_lock)?;
         self.write_normalized(&path, markdown)
+    }
+
+    pub fn upsert_durable_preference(&self, write: DurableMemoryWrite) -> Result<MemoryEntry> {
+        const TARGET: &str = "L3/preferences.md";
+        if write.kind != "preference" {
+            return Err(anyhow!("unsupported durable memory kind"));
+        }
+        let content = write.content.trim();
+        if content.is_empty() || content.chars().count() > MAX_L3_MEMORY_ENTRY_TEXT_CHARS {
+            return Err(anyhow!("durable memory content is invalid"));
+        }
+        if write.idempotency_key.trim().is_empty() || !write.provenance.is_object() {
+            return Err(anyhow!("durable memory metadata is invalid"));
+        }
+
+        self.ensure_skeleton()?;
+        let path = normalize_memory_path(TARGET)?;
+        let target_lock = self.target_lock(&path)?;
+        let _guard = lock(&target_lock)?;
+        let current = self.read_normalized(&path)?;
+        let mut entries = try_parse_memory_entries(&current.markdown)?;
+        if let Some(existing) = entries.iter().find(|entry| {
+            entry
+                .metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.idempotency_key == write.idempotency_key)
+        }) {
+            return Ok(existing.clone());
+        }
+
+        let marker = format!("m_{}", uuid::Uuid::new_v4().simple());
+        let entry = MemoryEntry {
+            line_number: 0,
+            section: Some("Preferences".into()),
+            text: content.to_string(),
+            marker: marker.clone(),
+            source_refs: Vec::new(),
+            metadata: Some(MemoryEntryMetadata {
+                schema_version: MEMORY_ENTRY_METADATA_SCHEMA_VERSION,
+                item_id: marker,
+                kind: write.kind,
+                target: TARGET.into(),
+                provenance: write.provenance,
+                idempotency_key: write.idempotency_key,
+                expires_at: write.expires_at,
+            }),
+        };
+        entries.push(entry.clone());
+        let title =
+            memory_title(&current.markdown).unwrap_or_else(|| "Learning preferences".into());
+        let markdown = serialize_memory_entries(&title, &entries)?;
+        self.write_normalized(&path, markdown)?;
+        Ok(entry)
+    }
+
+    pub fn delete_durable_preference(
+        &self,
+        marker: &str,
+        expected_revision: &str,
+    ) -> Result<ExactMemoryDeleteOutcome> {
+        const TARGET: &str = "L3/preferences.md";
+        serialize_memory_marker(marker)?;
+        if expected_revision.trim().is_empty() {
+            return Err(anyhow!("expected durable memory revision is empty"));
+        }
+
+        self.ensure_skeleton()?;
+        let path = normalize_memory_path(TARGET)?;
+        let target_lock = self.target_lock(&path)?;
+        let _guard = lock(&target_lock)?;
+        let current = self.read_normalized(&path)?;
+        let mut entries = try_parse_memory_entries(&current.markdown)?;
+        let Some(index) = entries.iter().position(|entry| entry.marker == marker) else {
+            return Ok(ExactMemoryDeleteOutcome::NotFound);
+        };
+        let latest_revision = memory_entry_revision(&entries[index])?;
+        if latest_revision != expected_revision {
+            return Ok(ExactMemoryDeleteOutcome::Stale { latest_revision });
+        }
+        entries.remove(index);
+        let title =
+            memory_title(&current.markdown).unwrap_or_else(|| "Learning preferences".into());
+        let markdown = serialize_memory_entries(&title, &entries)?;
+        self.write_normalized(&path, markdown)?;
+        Ok(ExactMemoryDeleteOutcome::Deleted)
+    }
+
+    // Phase 4 will schedule this through the composed runtime boundary.
+    #[allow(dead_code)]
+    pub fn cleanup_expired_durable_preferences(&self, now: DateTime<Utc>) -> Result<usize> {
+        const TARGET: &str = "L3/preferences.md";
+        self.ensure_skeleton()?;
+        let path = normalize_memory_path(TARGET)?;
+        let target_lock = self.target_lock(&path)?;
+        let _guard = lock(&target_lock)?;
+        let current = self.read_normalized(&path)?;
+        let mut entries = try_parse_memory_entries(&current.markdown)?;
+        let original_len = entries.len();
+        entries.retain(|entry| {
+            !entry
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.expires_at)
+                .is_some_and(|expires_at| expires_at <= now)
+        });
+        let removed = original_len - entries.len();
+        if removed == 0 {
+            return Ok(0);
+        }
+        let title =
+            memory_title(&current.markdown).unwrap_or_else(|| "Learning preferences".into());
+        let markdown = serialize_memory_entries(&title, &entries)?;
+        self.write_normalized(&path, markdown)?;
+        Ok(removed)
     }
 
     pub fn undo_latest_write(&self, path: &str) -> Result<MemoryUndoResult> {
@@ -1851,6 +1981,187 @@ mod tests {
 
         assert_eq!(entries[0].metadata.as_ref(), Some(&metadata));
         assert_eq!(entries[0].text, "Prefers diagrams and visual examples.");
+    }
+
+    #[test]
+    fn durable_preference_is_idempotent_and_exact_delete_is_undoable() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FileMemoryBackend::new_with_root(dir.path().join("memory"));
+        let write = DurableMemoryWrite {
+            content: "Prefers diagrams.".into(),
+            kind: "preference".into(),
+            provenance: json!({ "runId": "run-1" }),
+            idempotency_key: "idem-1".into(),
+            expires_at: None,
+        };
+
+        let first = backend.upsert_durable_preference(write.clone()).unwrap();
+        let replay = backend.upsert_durable_preference(write).unwrap();
+        let revision = memory_entry_revision(&first).unwrap();
+
+        assert_eq!(replay.marker, first.marker);
+        assert_eq!(
+            try_parse_memory_entries(&backend.read("L3/preferences.md").unwrap().markdown)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            backend
+                .delete_durable_preference(&first.marker, "stale")
+                .unwrap(),
+            ExactMemoryDeleteOutcome::Stale {
+                latest_revision: revision.clone()
+            }
+        );
+        assert_eq!(
+            backend
+                .delete_durable_preference(&first.marker, &revision)
+                .unwrap(),
+            ExactMemoryDeleteOutcome::Deleted
+        );
+        assert!(
+            try_parse_memory_entries(&backend.read("L3/preferences.md").unwrap().markdown)
+                .unwrap()
+                .is_empty()
+        );
+
+        backend
+            .undo_latest_write("L3/preferences.md")
+            .expect("delete should create one exact undo snapshot");
+        let restored =
+            try_parse_memory_entries(&backend.read("L3/preferences.md").unwrap().markdown).unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(memory_entry_revision(&restored[0]).unwrap(), revision);
+    }
+
+    #[test]
+    fn concurrent_durable_retries_create_one_entry() {
+        use std::sync::Barrier;
+
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FileMemoryBackend::new_with_root(dir.path().join("memory"));
+        let barrier = Arc::new(Barrier::new(3));
+        let handles = (0..2)
+            .map(|_| {
+                let backend = backend.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    backend
+                        .upsert_durable_preference(DurableMemoryWrite {
+                            content: "Prefers diagrams.".into(),
+                            kind: "preference".into(),
+                            provenance: json!({ "runId": "run-1" }),
+                            idempotency_key: "same-key".into(),
+                            expires_at: None,
+                        })
+                        .unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        barrier.wait();
+        let entries = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries[0].marker, entries[1].marker);
+        assert_eq!(
+            try_parse_memory_entries(&backend.read("L3/preferences.md").unwrap().markdown)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn concurrent_durable_write_and_exact_delete_serialize_without_lost_updates() {
+        use std::sync::Barrier;
+
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FileMemoryBackend::new_with_root(dir.path().join("memory"));
+        let original = backend
+            .upsert_durable_preference(DurableMemoryWrite {
+                content: "Original preference.".into(),
+                kind: "preference".into(),
+                provenance: json!({ "runId": "run-original" }),
+                idempotency_key: "original-key".into(),
+                expires_at: None,
+            })
+            .unwrap();
+        let revision = memory_entry_revision(&original).unwrap();
+        let barrier = Arc::new(Barrier::new(3));
+        let write_backend = backend.clone();
+        let write_barrier = barrier.clone();
+        let writer = std::thread::spawn(move || {
+            write_barrier.wait();
+            write_backend
+                .upsert_durable_preference(DurableMemoryWrite {
+                    content: "Concurrent preference.".into(),
+                    kind: "preference".into(),
+                    provenance: json!({ "runId": "run-concurrent" }),
+                    idempotency_key: "concurrent-key".into(),
+                    expires_at: None,
+                })
+                .unwrap();
+        });
+        let delete_backend = backend.clone();
+        let delete_barrier = barrier.clone();
+        let marker = original.marker;
+        let deleter = std::thread::spawn(move || {
+            delete_barrier.wait();
+            delete_backend
+                .delete_durable_preference(&marker, &revision)
+                .unwrap()
+        });
+        barrier.wait();
+        writer.join().unwrap();
+        assert_eq!(deleter.join().unwrap(), ExactMemoryDeleteOutcome::Deleted);
+
+        let entries =
+            try_parse_memory_entries(&backend.read("L3/preferences.md").unwrap().markdown).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].text, "Concurrent preference.");
+    }
+
+    #[test]
+    fn expired_durable_preferences_are_cleaned_without_touching_legacy_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FileMemoryBackend::new_with_root(dir.path().join("memory"));
+        backend
+            .write(
+                "L3/preferences.md",
+                "# Learning preferences\n\n## Preferences\n\n- Legacy preference. <!--m_legacy-->"
+                    .into(),
+            )
+            .unwrap();
+        backend
+            .upsert_durable_preference(DurableMemoryWrite {
+                content: "Expired preference.".into(),
+                kind: "preference".into(),
+                provenance: json!({ "runId": "run-1" }),
+                idempotency_key: "expired-key".into(),
+                expires_at: Some(Utc::now() - chrono::Duration::seconds(1)),
+            })
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .cleanup_expired_durable_preferences(Utc::now())
+                .unwrap(),
+            1
+        );
+        let entries =
+            try_parse_memory_entries(&backend.read("L3/preferences.md").unwrap().markdown).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].marker, "m_legacy");
+        assert_eq!(
+            backend
+                .cleanup_expired_durable_preferences(Utc::now())
+                .unwrap(),
+            0
+        );
     }
 
     #[test]

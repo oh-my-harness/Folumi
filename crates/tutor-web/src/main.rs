@@ -8,6 +8,10 @@ use tower_http::cors::{Any, CorsLayer};
 
 mod knowledge_runtime;
 mod knowledge_store;
+#[allow(dead_code)]
+mod learner_memory_source;
+#[allow(dead_code)]
+mod learner_memory_write;
 mod memory_store;
 mod memory_tool;
 mod notebook_store;

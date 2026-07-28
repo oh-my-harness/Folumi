@@ -22,6 +22,8 @@
 
 - **B3 gate: Knowledge citation policy cannot distinguish course evidence from
   personalization memory**
+  - Tracked upstream in
+    [`llm-harness-runtime#91`](https://github.com/oh-my-harness/llm-harness-runtime/issues/91).
   - Checked against runtime PR #82 revision `c4c0ddf` on 2026-07-28.
   - `KnowledgePlugin` registers the single generic `knowledge_search` /
     `knowledge_read` Tool pair and one global `KnowledgeCitationPolicy`.
@@ -39,6 +41,11 @@
     citation-optional while retaining the same run-local validation boundary.
 
 - **B3 gate: Memory has no formal batch/CAS application transaction**
+  - Tracked upstream in
+    [`llm-harness-runtime#92`](https://github.com/oh-my-harness/llm-harness-runtime/issues/92).
+    The current B3 integration decision keeps all-or-nothing maintenance apply
+    in the product Workflow/domain transaction while sharing the backend
+    revision, locking, atomic-write, and undo primitives with runtime adapters.
   - Checked against runtime PR #82 revision `c4c0ddf` on 2026-07-28.
   - `MemoryStore` exposes only single-record `upsert` and `delete`.
     `MemoryService` validates one intent/receipt at a time and has no expected
@@ -55,21 +62,17 @@
     boundary, or add a batch/CAS Memory API with expected revision, atomic
     outcome, receipts, cancellation, authorization, and idempotency semantics.
 
-- **B3 clarification: `memory_write` describes user approval but does not
-  enforce a trusted approval artifact**
-  - Checked against runtime PR #82 revision `c4c0ddf` on 2026-07-28.
-  - The Tool schema correctly omits `approved`, and `MemoryService` supplies
-    trusted provenance. However, `SecureMemoryWritePolicy` accepts any
-    authorized `MemoryWriteIntent`; the "user-approved" requirement currently
-    exists only in Tool prose.
-  - `llm-tutor` can compose fail-closed authorization with a mandatory
-    `BeforeToolCallHook` backed by a live browser confirmation. This is safer
-    than the current model-provided boolean, but applications need a clear
-    runtime contract so mounting `MemoryPlugin` is not mistaken for sufficient
-    consent handling.
-  - Suggestion: document the required authorization/hook composition, or add a
-    non-serializable, single-use mutation grant that policy and delete both
-    validate before touching the store.
+- **Resolved 2026-07-28: Memory write and delete require a trusted mutation gate**
+  - Tracked upstream in
+    [`llm-harness-runtime#93`](https://github.com/oh-my-harness/llm-harness-runtime/issues/93).
+    Runtime revision `5f8266c` makes `MemoryMutationGate` a mandatory
+    `MemoryService` dependency and invokes it with the final normalized write
+    or exact delete ref plus a trusted `MemoryMutationOrigin`.
+  - `llm-tutor` now provides a thin `LearnerMemoryMutationGate` adapter around
+    a product `LearnerMemoryApprover`; it has no permissive default. The live
+    Web/CLI coordinator remains a later cutover phase and must implement
+    request/run/session/mutation binding, single use, timeout, cancellation,
+    disconnect handling, and replay rejection.
 
 - **Resolved 2026-07-24: Workflow LLM steps can receive trusted request extensions**
   - Checked against `codex/session-projection` commit `8ab2a377` on 2026-07-23.

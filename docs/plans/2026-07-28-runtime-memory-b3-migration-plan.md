@@ -1,12 +1,12 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: in progress (Phase 2 complete; Phase 0 runtime gates open) |
+> Status: in progress (Phase 3 adapter checkpoint complete; product secret and live cutover remain) |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
 > [llm-harness-runtime PR #82](https://github.com/oh-my-harness/llm-harness-runtime/pull/82) |
 > Reviewed development revision:
-> [`c4c0ddf`](https://github.com/oh-my-harness/llm-harness-runtime/commit/c4c0ddf029c1cb949290dc16ccc22f4ae14a3fc5)
+> [`5f8266c`](https://github.com/oh-my-harness/llm-harness-runtime/commit/5f8266c72c73605a83634b2442e3d0d78955c15e)
 
 ## 1. Goal
 
@@ -47,7 +47,8 @@ and lifecycle model and is not part of B3.
 
 ### Product baseline
 
-The product currently pins every runtime crate to `83bef164`.
+Phase 3 development pins every runtime crate to `5f8266c`; the final production
+pin still waits for the Memory foundation to merge.
 
 The active Learner Memory paths are:
 
@@ -68,12 +69,13 @@ The active Learner Memory paths are:
 - course Knowledge already uses `knowledge_search` / `knowledge_read` with
   strict runtime citation validation.
 
-### Runtime baseline at `c4c0ddf`
+### Runtime baseline at `5f8266c`
 
 Runtime PR #82 provides:
 
 - `llm-harness-runtime-memory`;
 - `MemoryService`, `MemoryStore`, `MemoryWritePolicy`, and `MemoryPlugin`;
+- mandatory `MemoryMutationGate` authorization for both write and delete;
 - `memory_write` and `memory_forget`;
 - trusted `MemoryProvenance` and optional `MemorySessionId`;
 - `SecureMemoryWritePolicy` with normalization, size/kind limits, secret
@@ -83,29 +85,33 @@ Runtime PR #82 provides:
 - reusable Knowledge source and Memory store contract tests;
 - `WorkflowRunRequest` propagation to every workflow LLM step.
 
-The reviewed upstream PR is still draft. At planning time both Ubuntu and
-Windows CI checks report failure and expose no job steps or downloadable
-failure log. `c4c0ddf` is therefore a development API baseline, not the final
+The reviewed upstream PR is still draft. The runtime repository reports that
+its local workspace tests and strict Clippy pass; remote Actions are currently
+not starting runners because of the GitHub account billing/spending limit.
+`5f8266c` is therefore the unified Phase 3 development baseline, not the final
 production pin.
 
 ### Confirmed protocol gaps
 
 Three integration decisions must be closed before the destructive cutover:
 
-1. `MemoryStore` exposes one `upsert` or `delete`; it has no batch,
+1. [`runtime #92`](https://github.com/oh-my-harness/llm-harness-runtime/issues/92):
+   `MemoryStore` exposes one `upsert` or `delete`; it has no batch,
    compare-and-swap, or transaction contract for an accepted maintenance
    change set.
-2. `memory_write` describes content as user-approved, but
-   `SecureMemoryWritePolicy` does not itself require a trusted approval
-   extension. Authorization and/or a Tool approval hook must provide that
-   boundary.
-3. `KnowledgeCitationPolicy::RequireWhenEvidenceRead` is global to one
+2. Runtime `5f8266c` resolves the approval ambiguity with a mandatory
+   `MemoryMutationGate` that receives the final normalized write or exact
+   delete reference plus trusted mutation origin.
+3. [`runtime #91`](https://github.com/oh-my-harness/llm-harness-runtime/issues/91):
+   `KnowledgeCitationPolicy::RequireWhenEvidenceRead` is global to one
    `KnowledgePlugin`. A single registry containing course Knowledge and
    Learner Memory would require visible citations after a memory-only read,
    while two plugins would register duplicate `knowledge_search` /
    `knowledge_read` Tool names. Course evidence must remain strictly cited,
    while personalization memory must remain citation-optional.
 
+The approval contract is tracked in
+[`runtime #93`](https://github.com/oh-my-harness/llm-harness-runtime/issues/93).
 These gaps are recorded in `docs/framework-feedback.md`. Phase 0 resolves them
 through upstream issues, PR changes, or an explicit documented runtime contract
 before the affected cutover phase.
@@ -327,11 +333,11 @@ and call the result atomic.
 
 ### Phase 0: Close upstream and dependency gates
 
-- [ ] Open or link one upstream issue for source-aware Knowledge citation
+- [x] Open or link one upstream issue for source-aware Knowledge citation
   policy.
-- [ ] Open or link one upstream issue/decision for strong-consistency
+- [x] Open or link one upstream issue/decision for strong-consistency
   application batch/CAS semantics.
-- [ ] Ask upstream to clarify the trusted approval expectation for
+- [x] Ask upstream to clarify the trusted approval expectation for
   `memory_write`; consume a runtime grant if one is added, otherwise document
   the required AccessControl + Tool-hook composition.
 - [ ] Wait for runtime PR #82 to be non-draft, green, and merged.
@@ -340,7 +346,7 @@ and call the result atomic.
 - [ ] Align `llm_adapter` to the revision required by that runtime.
 - [ ] Run Cargo metadata/tree checks and reject mixed runtime revisions.
 
-Adapter and contract-test development may use `c4c0ddf`; Chat cutover and
+Adapter and contract-test development use `5f8266c`; Chat cutover and
 legacy deletion may not.
 
 ### Phase 1: Isolate the product file backend
@@ -374,17 +380,17 @@ legacy deletion may not.
 
 ### Phase 3: Implement runtime mutation adapters
 
-- [ ] Implement `LearnerMemoryWriteStore` over `FileMemoryBackend`.
-- [ ] Declare immediate consistency and the exact read source ID.
-- [ ] Implement idempotent preference insertion and exact-revision delete.
-- [ ] Persist runtime provenance, idempotency, and expiry metadata.
-- [ ] Wrap `SecureMemoryWritePolicy` with the trusted product mutation gate and
+- [x] Implement `LearnerMemoryWriteStore` over `FileMemoryBackend`.
+- [x] Declare immediate consistency and the exact read source ID.
+- [x] Implement idempotent preference insertion and exact-revision delete.
+- [x] Persist runtime provenance, idempotency, and expiry metadata.
+- [x] Wrap `SecureMemoryWritePolicy` with the trusted product mutation gate and
   an allowlist containing only `preference`.
 - [ ] Use a process secret of at least 32 bytes from product secret management;
   never put it in settings responses, logs, prompts, or Session entries.
-- [ ] Assemble `MemoryService` with the same read source and access control.
-- [ ] Run runtime `verify_memory_store_contract`.
-- [ ] Add retry, concurrent write/delete, secret guard, TTL, receipt-readback,
+- [x] Assemble `MemoryService` with the same read source and access control.
+- [x] Run runtime `verify_memory_store_contract`.
+- [x] Add retry, concurrent write/delete, secret guard, TTL, receipt-readback,
   cancellation, and undo tests.
 
 ### Phase 4: Compose Knowledge and Memory runtime boundaries
