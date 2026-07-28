@@ -1,6 +1,6 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: in progress (Phase 4 composition foundation complete; source-aware citation and live cutover remain) |
+> Status: in progress (Phase 5 approval foundation complete; source-aware citation and live cutover remain) |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
@@ -63,9 +63,9 @@ The active Learner Memory paths are:
 - the maintenance workflow already runs through runtime `WorkflowEngine`, but
   still mounts product-specific L1/L2 evidence Tools and calls `run()` without
   a trusted `WorkflowRunRequest`.
-- the browser renders an approval dialog and sends `approval_response`, but
-  the server currently only emits a trace for that message; no live approval
-  waiter or `BeforeToolCallHook` consumes it.
+- the browser approval dialog and `approval_response` now connect to a
+  run-bound, single-use waiter; the runtime Memory Plugin remains unmounted
+  until the remaining composition gates close.
 - course Knowledge already uses `knowledge_search` / `knowledge_read` with
   strict runtime citation validation.
 
@@ -208,10 +208,11 @@ so a resumed run cannot retain broader memory access after permissions change.
 
 ### 4.3 Approval is a server event, not a Tool argument
 
-`memory_write` and `memory_forget` always pass through a memory-specific
-`BeforeToolCallHook` backed by the web approval coordinator:
+`memory_write` and `memory_forget` always pass through runtime's mandatory
+`MemoryMutationGate`, backed by the web approval coordinator:
 
-1. the runtime emits the exact Tool name and bounded arguments to the hook;
+1. runtime policy normalizes the mutation, then passes the exact final
+   `MemoryWrite` or delete ref and trusted origin to the gate;
 2. the coordinator creates a random, run-bound request ID and sends an
    `approval_request` to the browser;
 3. `approval_response` resolves only the matching active run/request;
@@ -221,12 +222,14 @@ so a resumed run cannot retain broader memory access after permissions change.
 
 This gate is mandatory for Learner Memory mutation and is independent of the
 optional global/code-execution approval setting. A model statement or Tool
-argument cannot satisfy it. The legacy `approved` field is deleted.
+argument cannot satisfy it. The legacy `approved` field is deleted during the
+Chat cutover.
 
 The write policy still checks a trusted mutation marker in the run access
 profile before delegating to `SecureMemoryWritePolicy`. This gives defense in
-depth if a Tool is ever mounted without the hook. Delete is protected by the
-same source-aware authorizer plus the mandatory hook.
+depth if a Tool is ever mounted with the wrong access profile. Delete is
+protected by the same source-aware authorizer plus the mandatory mutation
+gate.
 
 ### 4.4 Source, domain, and item mapping
 
@@ -422,11 +425,11 @@ so with the current global citation policy would violate section 4.1.
 
 ### Phase 5: Cut over ordinary conversations
 
-- [ ] Implement the run-bound web approval coordinator and memory-specific
-  `BeforeToolCallHook`.
-- [ ] Wire `approval_response` to the pending request rather than trace-only
+- [x] Implement the run-bound web approval coordinator used by
+  `LearnerMemoryMutationGate`.
+- [x] Wire `approval_response` to the pending request rather than trace-only
   handling.
-- [ ] Propagate stop, disconnect, timeout, and terminal-run cancellation.
+- [x] Propagate stop, disconnect, timeout, and terminal-run cancellation.
 - [ ] Replace memory-root/tool fields on `CapabilityRouter` with the assembled
   runtime boundaries and access profile.
 - [ ] Replace prompt references to `read_memory/write_memory` with natural

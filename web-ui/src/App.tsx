@@ -520,6 +520,7 @@ export default function App() {
               : typeof payload.capability === 'string' ? capabilityLabel(payload.capability) : undefined,
           })
         } else if (kind === 'done') {
+          setPendingApproval(null)
           setRunning(false)
           updateRecentSessionRun(setRecentSessions, sourceSessionId, null)
           setLatestUsage((prev) => isTokenUsagePayload(payload.usage) ? payload.usage : prev)
@@ -531,6 +532,7 @@ export default function App() {
             })
           }
         } else if (kind === 'history_sync') {
+          setPendingApproval(null)
           streamingRef.current = ''
           progressStreamingRef.current = ''
           setStreamingText('')
@@ -539,6 +541,7 @@ export default function App() {
           updateRecentSessionRun(setRecentSessions, sourceSessionId, null)
           void hydrateSession(sourceSessionId, true)
         } else if (kind === 'stopped') {
+          setPendingApproval(null)
           progressStreamingRef.current = ''
           pushStatus({
             kind: 'done',
@@ -572,6 +575,7 @@ export default function App() {
             requestId: payload.request_id as string,
           })
         } else if (kind === 'error') {
+          setPendingApproval(null)
           progressStreamingRef.current = ''
           const message = typeof payload.message === 'string' ? payload.message : 'WebSocket error'
           pushStatus({ kind: 'error', label: 'Error', detail: message })
@@ -582,11 +586,13 @@ export default function App() {
     },
     onClose: (sourceSessionId) => {
       if (!isCurrentSessionEvent(sourceSessionId, activeSessionIdRef.current)) return
+      setPendingApproval(null)
       setRunning(false)
       pushStatus({ kind: 'idle', label: 'Disconnected', detail: 'WebSocket closed' })
     },
     onError: (sourceSessionId) => {
       if (!isCurrentSessionEvent(sourceSessionId, activeSessionIdRef.current)) return
+      setPendingApproval(null)
       pushStatus({ kind: 'error', label: 'Connection failed', detail: 'Check tutor-web server' })
       setMessages((prev) => [
         ...prev,
@@ -799,6 +805,7 @@ export default function App() {
 
   const handleStopGeneration = useCallback(() => {
     if (!running) return
+    setPendingApproval(null)
     send({ type: 'stop' })
     pushStatus({ kind: 'tool', label: 'Stopping', detail: capabilityLabel(capability) })
   }, [capability, pushStatus, running, send])

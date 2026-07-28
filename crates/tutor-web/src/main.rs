@@ -12,6 +12,7 @@ mod knowledge_store;
 mod learner_memory_source;
 #[allow(dead_code)]
 mod learner_memory_write;
+mod memory_approval;
 mod memory_store;
 mod memory_tool;
 mod notebook_store;

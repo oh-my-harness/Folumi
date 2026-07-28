@@ -31,6 +31,7 @@ use crate::learner_memory_source::{
     LEARNER_MEMORY_LAYERS_ATTRIBUTE, LEARNER_MEMORY_PRINCIPAL_ATTRIBUTE,
     LEARNER_MEMORY_PROFILE_ATTRIBUTE, LEARNER_MEMORY_SURFACES_ATTRIBUTE,
 };
+use crate::memory_approval::{ApprovalResponseOutcome, WebMemoryApprovalCoordinator};
 use crate::memory_store::{FileMemoryBackend, MemoryEventCategory};
 use crate::notebook_store::NotebookStore;
 use crate::quiz_store::QuizStore;
@@ -258,6 +259,7 @@ struct TutorMessageInput {
     mentions: Vec<SpaceMention>,
     run_id: String,
     cancel: CancellationToken,
+    memory_approver: Arc<WebMemoryApprovalCoordinator>,
 }
 
 async fn ws_handler(
@@ -340,6 +342,8 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
         }
     });
 
+    let connection_closed = CancellationToken::new();
+    let mut memory_approver: Option<Arc<WebMemoryApprovalCoordinator>> = None;
     while let Some(Ok(msg)) = ws_stream.next().await {
         match msg {
             Message::Text(text) => {
@@ -368,6 +372,13 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
                             .ensure_entry(&session_id)
                             .await
                             .unwrap_or_else(|| entry.clone());
+                        let run_memory_approver = Arc::new(WebMemoryApprovalCoordinator::new(
+                            active_entry.stream.clone(),
+                            session_id.clone(),
+                            run_id.clone(),
+                            connection_closed.child_token(),
+                        ));
+                        memory_approver = Some(run_memory_approver.clone());
                         let run_pool = pool.clone();
                         let run_session_id = session_id.clone();
                         let run_state = state.clone();
@@ -380,9 +391,11 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
                                     mentions: mentions.unwrap_or_default(),
                                     run_id: run_id.clone(),
                                     cancel,
+                                    memory_approver: run_memory_approver.clone(),
                                 },
                             )
                             .await;
+                            run_memory_approver.close();
                             if let Some(run) = run_pool.terminal_active_run(
                                 &run_session_id,
                                 &run_id,
@@ -411,13 +424,29 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
                         request_id,
                         approved,
                     }) => {
+                        let outcome = memory_approver
+                            .as_ref()
+                            .map(|coordinator| coordinator.resolve(&request_id, approved))
+                            .unwrap_or(ApprovalResponseOutcome::Unknown);
+                        let (kind, reason) = match outcome {
+                            ApprovalResponseOutcome::Resolved => {
+                                ("approval_response_received", None)
+                            }
+                            ApprovalResponseOutcome::Replayed => {
+                                ("approval_response_rejected", Some("replayed"))
+                            }
+                            ApprovalResponseOutcome::Unknown => {
+                                ("approval_response_rejected", Some("unknown"))
+                            }
+                        };
                         let _ = entry
                             .stream
                             .status(
-                                "approval_response_received",
+                                kind,
                                 serde_json::json!({
                                     "request_id": request_id,
                                     "approved": approved,
+                                    "reason": reason,
                                 }),
                             )
                             .await;
@@ -440,6 +469,10 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
         }
     }
 
+    connection_closed.cancel();
+    if let Some(coordinator) = memory_approver {
+        coordinator.close();
+    }
     send_task.abort();
 }
 
@@ -563,6 +596,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         mentions,
         run_id,
         cancel,
+        memory_approver: _memory_approver,
     } = input;
     let history_len = pool.history_len(&entry.id).await + 1;
     let bound_tutor = match entry.tutor_id.as_deref() {
