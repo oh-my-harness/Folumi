@@ -1,6 +1,6 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: in progress (Phase 1 complete; Phase 0 runtime gates open) |
+> Status: in progress (Phase 2 complete; Phase 0 runtime gates open) |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
@@ -361,15 +361,15 @@ legacy deletion may not.
 
 ### Phase 2: Implement `LearnerMemoryKnowledgeSource`
 
-- [ ] Advertise Search, Read, and Revisioned capabilities.
-- [ ] Implement the fixed L1/L2/L3 item mapping and target-specific visibility
+- [x] Advertise Search, Read, and Revisioned capabilities.
+- [x] Implement the fixed L1/L2/L3 item mapping and target-specific visibility
   matrix.
-- [ ] Implement bounded snippets, exact reads, filters, cursors, cancellation,
+- [x] Implement bounded snippets, exact reads, filters, cursors, cancellation,
   and sanitized backend failures.
-- [ ] Filter expired records before search/read.
-- [ ] Return stale rather than silently reading latest.
-- [ ] Run runtime `verify_source_contract`.
-- [ ] Add cross-profile, cross-principal, path traversal, forged-ref, and
+- [x] Filter expired records before search/read.
+- [x] Return stale rather than silently reading latest.
+- [x] Run runtime `verify_source_contract`.
+- [x] Add cross-profile, cross-principal, path traversal, forged-ref, and
   expired-entry tests.
 
 ### Phase 3: Implement runtime mutation adapters

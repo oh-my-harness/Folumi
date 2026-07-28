@@ -41,5 +41,6 @@ notify = "8"
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
+llm-harness-runtime-knowledge = { workspace = true, features = ["test-utils"] }
 tower = { version = "0.5", features = ["util"] }
 tempfile = "3"

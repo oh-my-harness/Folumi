@@ -709,7 +709,7 @@ impl FileMemoryBackend {
         Ok(context)
     }
 
-    fn all_events(&self) -> Result<Vec<MemoryEvent>> {
+    pub(crate) fn all_events(&self) -> Result<Vec<MemoryEvent>> {
         self.ensure_skeleton()?;
         let mut events = Vec::new();
         for category in all_event_categories() {

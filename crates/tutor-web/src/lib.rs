@@ -1,5 +1,6 @@
 mod knowledge_runtime;
 pub mod knowledge_store;
+pub mod learner_memory_source;
 pub mod memory_store;
 pub mod memory_tool;
 pub mod notebook_store;
