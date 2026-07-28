@@ -21,7 +21,7 @@ use crate::memory_store::{
 };
 
 pub const LEARNER_MEMORY_SOURCE_ID: &str = "llm-tutor.learner-memory";
-pub const LEARNER_MEMORY_NAMESPACE: &str = "llm-tutor.learner-memory";
+pub const LEARNER_MEMORY_NAMESPACE: &str = tutor_rag::AGENT_KNOWLEDGE_NAMESPACE;
 pub const LEARNER_MEMORY_PROFILE_ATTRIBUTE: &str = "learner_memory_profile";
 pub const LEARNER_MEMORY_PRINCIPAL_ATTRIBUTE: &str = "learner_memory_principal";
 pub const LEARNER_MEMORY_LAYERS_ATTRIBUTE: &str = "learner_memory_layers";

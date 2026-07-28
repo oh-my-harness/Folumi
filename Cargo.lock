@@ -8058,6 +8058,7 @@ dependencies = [
  "llm-harness-runtime",
  "llm-harness-runtime-audit-jsonl",
  "llm-harness-runtime-knowledge",
+ "llm-harness-runtime-memory",
  "llm-harness-runtime-sandbox-os",
  "llm-harness-types",
  "llm_adapter",

@@ -14,7 +14,8 @@ use tokio_util::sync::CancellationToken;
 use crate::{KnowledgeRow, LanceDbRag};
 
 pub const COURSE_KNOWLEDGE_SOURCE_ID: &str = "course_knowledge";
-pub const COURSE_KNOWLEDGE_NAMESPACE: &str = "llm-tutor.course-knowledge";
+pub const AGENT_KNOWLEDGE_NAMESPACE: &str = "llm-tutor.agent-knowledge";
+pub const COURSE_KNOWLEDGE_NAMESPACE: &str = AGENT_KNOWLEDGE_NAMESPACE;
 pub const KNOWLEDGE_BASE_SCOPE_ATTRIBUTE: &str = "knowledge_base_id";
 
 const MAX_SEARCH_LIMIT: usize = 50;

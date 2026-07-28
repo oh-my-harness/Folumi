@@ -19,8 +19,8 @@ use sha2::{Digest, Sha256};
 mod knowledge_source;
 
 pub use knowledge_source::{
-    COURSE_KNOWLEDGE_NAMESPACE, COURSE_KNOWLEDGE_SOURCE_ID, KNOWLEDGE_BASE_SCOPE_ATTRIBUTE,
-    LanceDbKnowledgeSource,
+    AGENT_KNOWLEDGE_NAMESPACE, COURSE_KNOWLEDGE_NAMESPACE, COURSE_KNOWLEDGE_SOURCE_ID,
+    KNOWLEDGE_BASE_SCOPE_ATTRIBUTE, LanceDbKnowledgeSource,
 };
 
 const TABLE_NAME: &str = "knowledge_chunks_v1";

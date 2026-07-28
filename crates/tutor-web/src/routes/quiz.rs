@@ -9,7 +9,7 @@ use axum::{
     routing::{get, post},
 };
 use llm_harness_runtime_knowledge::{
-    EvidenceAuthority, KnowledgeAccessContext, KnowledgeScope, PrincipalRef,
+    EvidenceAuthority, KnowledgeAccessContext, KnowledgeScope, KnowledgeSource, PrincipalRef,
 };
 use llm_harness_runtime_sandbox_os::OsEnv;
 use llm_harness_types::ExecutionEnv;
@@ -351,9 +351,14 @@ async fn generate_questions(
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(&kb.name);
     let rag = tutor_rag::LanceDbRag::new(state.rag_root.clone(), kb.embedding);
-    let runtime = tutor_agent::assemble_course_knowledge(
-        tutor_rag::LanceDbKnowledgeSource::new(rag, &quiz.kb_id),
+    let runtime = tutor_agent::assemble_knowledge_runtime(
+        [
+            Arc::new(tutor_rag::LanceDbKnowledgeSource::new(rag, &quiz.kb_id))
+                as Arc<dyn KnowledgeSource>,
+        ],
+        crate::knowledge_runtime::agent_knowledge_access_control(),
         state.evidence_authority.clone(),
+        tutor_agent::course_evidence_provider_id(),
     )?;
     let access =
         knowledge_access.unwrap_or_else(|| quiz_knowledge_access_context(&quiz.id, &quiz.kb_id));

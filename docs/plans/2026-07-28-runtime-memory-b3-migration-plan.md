@@ -1,6 +1,6 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: in progress (Phase 3 adapter checkpoint complete; product secret and live cutover remain) |
+> Status: in progress (Phase 4 composition foundation complete; source-aware citation and live cutover remain) |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
@@ -395,13 +395,22 @@ legacy deletion may not.
 
 ### Phase 4: Compose Knowledge and Memory runtime boundaries
 
-- [ ] Generalize course `KnowledgeRuntime` into one source-composable Agent
+The composition-foundation checkpoint uses one
+`llm-tutor.agent-knowledge` scope for server-derived course and Learner Memory
+claims. Active Web course and Quiz assembly now use the source-aware product
+authorizer, ordinary requests carry `MemorySessionId`, and Research propagates
+it through `WorkflowRunRequest`. The generic/CLI router no longer enables the
+legacy writable Memory Tools by default. Learner Memory is not yet added to the
+user-visible Knowledge registry because runtime issue #91 remains open; doing
+so with the current global citation policy would violate section 4.1.
+
+- [x] Generalize course `KnowledgeRuntime` into one source-composable Agent
   runtime.
-- [ ] Replace `CourseKnowledgeAuthorizer` with a source-aware product
+- [x] Replace `CourseKnowledgeAuthorizer` with a source-aware product
   authorizer.
-- [ ] Build one trusted access context from session, selected KB, Tutor
+- [x] Build one trusted access context from session, selected KB, Tutor
   permissions, Learner Memory profile, and authorization version.
-- [ ] Attach `MemorySessionId` to ordinary and workflow requests.
+- [x] Attach `MemorySessionId` to ordinary and workflow requests.
 - [ ] Install exactly one `KnowledgePlugin`.
 - [ ] Install `MemoryPlugin` only for `InteractiveMutation`.
 - [ ] Fail assembly when mutation is requested without the approval

@@ -11,6 +11,7 @@ use llm_harness_runtime::workflow::executor::{ExecutorCtx, StepExecutor};
 use llm_harness_runtime::workflow::judge::{StepCtx, StepTransitionJudge};
 use llm_harness_runtime::workflow::model::{StepResult, StructuredStatus, Transition};
 use llm_harness_runtime_knowledge::{KnowledgeAccessContext, KnowledgeCitationPolicy};
+use llm_harness_runtime_memory::MemorySessionId;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use tutor_tools::{WebFetchTool, WebSearchTool};
@@ -59,6 +60,7 @@ pub async fn run_research_workflow_with_runtime(
     session: Option<Session>,
     _abort_token: Option<CancellationToken>,
     knowledge_access: Option<KnowledgeAccessContext>,
+    memory_session_id: Option<MemorySessionId>,
 ) -> Result<ResearchWorkflowRun> {
     validate_research_workflow()?;
 
@@ -103,6 +105,9 @@ pub async fn run_research_workflow_with_runtime(
     let mut request = WorkflowRunRequest::new();
     if let Some(knowledge_access) = knowledge_access {
         request = request.with_extension(knowledge_access);
+    }
+    if let Some(memory_session_id) = memory_session_id {
+        request = request.with_extension(memory_session_id);
     }
     let result = engine
         .run_with_request(request)

@@ -75,7 +75,7 @@ impl CapabilityRouter {
             product_tools: vec![],
             workflow_root: None,
             memory_root: None,
-            learner_memory_access: true,
+            learner_memory_access: false,
             product_instruction: None,
             client: None,
         }
@@ -424,16 +424,16 @@ mod tests {
 
     #[test]
     fn learner_memory_tools_follow_explicit_access_policy() {
-        let allowed = test_router().learner_memory_tools();
+        assert!(
+            test_router().learner_memory_tools().is_empty(),
+            "CLI and generic routers must fail closed until memory is explicitly enabled"
+        );
+        let allowed = test_router()
+            .with_learner_memory_access(true)
+            .learner_memory_tools();
         assert_eq!(
             allowed.iter().map(|tool| tool.name()).collect::<Vec<_>>(),
             vec!["read_memory", "write_memory"]
-        );
-        assert!(
-            test_router()
-                .with_learner_memory_access(false)
-                .learner_memory_tools()
-                .is_empty()
         );
     }
 

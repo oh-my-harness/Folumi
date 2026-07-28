@@ -6,7 +6,7 @@ use llm_harness_runtime_knowledge::{
     AuthorizationDecision, ContentSelector, EvidenceAuthority, EvidenceProviderId,
     KnowledgeAccessContext, KnowledgeAccessControl, KnowledgeAction, KnowledgeAuthorizer,
     KnowledgeCitationPolicy, KnowledgePlugin, KnowledgePluginConfig, KnowledgeReadRequest,
-    KnowledgeRef, KnowledgeRegistry, KnowledgeResourceRef, KnowledgeSearchRequest,
+    KnowledgeRef, KnowledgeRegistry, KnowledgeResourceRef, KnowledgeSearchRequest, KnowledgeSource,
     KnowledgeToolConfig, PersistedKnowledgeEvidence,
 };
 use llm_harness_types::{DataBlock, RunContext, RunRequest};
@@ -56,7 +56,7 @@ impl KnowledgeRuntime {
                 citation_policy,
             },
         )
-        .expect("course knowledge plugin configuration was validated during assembly")
+        .expect("knowledge plugin configuration was validated during assembly")
     }
 
     pub async fn collect_verified_chunks(
@@ -162,14 +162,30 @@ pub fn assemble_course_knowledge(
     authority: Arc<EvidenceAuthority>,
 ) -> Result<KnowledgeRuntime> {
     let access_control = Arc::new(KnowledgeAccessControl::new(Arc::new(
-        CourseKnowledgeAuthorizer,
+        CourseOnlyKnowledgeAuthorizer,
     )));
-    let registry = KnowledgeRegistry::builder(access_control)
-        .source(Arc::new(source))
+    assemble_knowledge_runtime(
+        [Arc::new(source) as Arc<dyn KnowledgeSource>],
+        access_control,
+        authority,
+        course_evidence_provider_id(),
+    )
+}
+
+pub fn assemble_knowledge_runtime(
+    sources: impl IntoIterator<Item = Arc<dyn KnowledgeSource>>,
+    access_control: Arc<KnowledgeAccessControl>,
+    authority: Arc<EvidenceAuthority>,
+    provider_id: EvidenceProviderId,
+) -> Result<KnowledgeRuntime> {
+    let mut builder = KnowledgeRegistry::builder(access_control);
+    for source in sources {
+        builder = builder.source(source);
+    }
+    let registry = builder
         .build()
         .map_err(|error| TutorError::Internal(error.to_string()))?;
     let registry = Arc::new(registry);
-    let provider_id = course_evidence_provider_id();
     let tool_config = KnowledgeToolConfig::default();
     KnowledgePlugin::new(
         registry.clone(),
@@ -189,9 +205,9 @@ pub fn assemble_course_knowledge(
     })
 }
 
-struct CourseKnowledgeAuthorizer;
+struct CourseOnlyKnowledgeAuthorizer;
 
-impl KnowledgeAuthorizer for CourseKnowledgeAuthorizer {
+impl KnowledgeAuthorizer for CourseOnlyKnowledgeAuthorizer {
     fn authorize<'a>(
         &'a self,
         access: &'a KnowledgeAccessContext,
@@ -301,7 +317,7 @@ mod tests {
 
     #[tokio::test]
     async fn authorizer_only_allows_course_reads_in_a_trusted_scope() {
-        let authorizer = CourseKnowledgeAuthorizer;
+        let authorizer = CourseOnlyKnowledgeAuthorizer;
         let resource = KnowledgeResourceRef::Source {
             source_id: tutor_rag::COURSE_KNOWLEDGE_SOURCE_ID,
             domains: &[],

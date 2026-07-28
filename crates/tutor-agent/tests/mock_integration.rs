@@ -706,6 +706,7 @@ async fn chat_can_call_read_memory_then_text() {
     ];
     let router = make_router(responses, make_governance(None))
         .with_memory_root(memory_root)
+        .with_learner_memory_access(true)
         .with_event_sink(sink.clone());
     let answer = router
         .run(Capability::Chat, "review this based on my profile")
@@ -970,6 +971,7 @@ async fn research_explicit_start_enters_search_path() {
         None,
         None,
         None,
+        None,
     )
     .await
     .unwrap()
@@ -1058,6 +1060,7 @@ async fn research_workflow_uses_runtime_knowledge_and_refreshes_final_citations(
         None,
         None,
         Some(access),
+        None,
     )
     .await
     .unwrap();
@@ -1111,6 +1114,7 @@ async fn research_workflow_accepts_confirmed_chinese_context() {
         Some(session),
         None,
         None,
+        None,
     )
         .await
         .unwrap()
@@ -1160,6 +1164,7 @@ async fn research_workflow_persists_final_report_to_session() {
         Some(session),
         None,
         None,
+        None,
     )
     .await
     .unwrap()
@@ -1206,6 +1211,7 @@ async fn research_workflow_fails_clearly_after_citation_repair_attempt() {
         ResearchWorkflowInput {
             request: "Start the detailed research workflow for agent research workflow.".into(),
         },
+        None,
         None,
         None,
         None,

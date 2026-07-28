@@ -1,5 +1,6 @@
 use futures::future::BoxFuture;
 use llm_harness_runtime_knowledge::KnowledgeAccessContext;
+use llm_harness_runtime_memory::MemorySessionId;
 use llm_harness_types::{DataBlock, Tool, ToolContext, ToolFailure, ToolResult};
 use serde_json::json;
 use tutor_agent::CapabilityRouter;
@@ -142,6 +143,7 @@ impl Tool for CreateResearchReportTool {
                 None,
                 Some(ctx.abort.clone()),
                 ctx.run.extension::<KnowledgeAccessContext>().cloned(),
+                ctx.run.extension::<MemorySessionId>().cloned(),
             )
             .await
             .map_err(|err| tool_execution_failure(err.to_string()))?;

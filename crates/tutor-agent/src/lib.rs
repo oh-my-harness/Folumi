@@ -16,5 +16,8 @@ pub mod terminal_approver;
 
 pub use capability::{Capability, CapabilityRouter};
 pub use error::{Result, TutorError};
-pub use knowledge::{KnowledgeRuntime, assemble_course_knowledge, course_evidence_provider_id};
+pub use knowledge::{
+    KnowledgeRuntime, assemble_course_knowledge, assemble_knowledge_runtime,
+    course_evidence_provider_id,
+};
 pub use llm_provider::{LlmConfig, LlmProviderKind};
