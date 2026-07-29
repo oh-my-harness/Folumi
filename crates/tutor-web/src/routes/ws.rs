@@ -813,6 +813,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                     crate::knowledge_runtime::agent_knowledge_access_control(),
                     evidence_authority.clone(),
                     tutor_agent::course_evidence_provider_id(),
+                    tutor_agent::required_course_citation_policy()?,
                 )?;
                 router = router.with_knowledge_runtime(knowledge_runtime);
             }

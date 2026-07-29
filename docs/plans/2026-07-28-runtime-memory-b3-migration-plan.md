@@ -1,12 +1,12 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: in progress (Phase 5 approval foundation complete; source-aware citation and live cutover remain) |
+> Status: in progress (Phase 5 approval foundation complete; source-aware citation available; live cutover next) |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
 > [llm-harness-runtime PR #82](https://github.com/oh-my-harness/llm-harness-runtime/pull/82) |
 > Reviewed development revision:
-> [`5f8266c`](https://github.com/oh-my-harness/llm-harness-runtime/commit/5f8266c72c73605a83634b2442e3d0d78955c15e)
+> [`ddd9e8f`](https://github.com/oh-my-harness/llm-harness-runtime/commit/ddd9e8f96644a80a59e546457b76f04c38688dbd)
 
 ## 1. Goal
 
@@ -47,8 +47,8 @@ and lifecycle model and is not part of B3.
 
 ### Product baseline
 
-Phase 3 development pins every runtime crate to `5f8266c`; the final production
-pin still waits for the Memory foundation to merge.
+Development pins every runtime crate to the reviewed Memory PR head `ddd9e8f`;
+the final production pin still waits for the Memory foundation to merge.
 
 The active Learner Memory paths are:
 
@@ -69,7 +69,7 @@ The active Learner Memory paths are:
 - course Knowledge already uses `knowledge_search` / `knowledge_read` with
   strict runtime citation validation.
 
-### Runtime baseline at `5f8266c`
+### Runtime baseline at `ddd9e8f`
 
 Runtime PR #82 provides:
 
@@ -88,7 +88,7 @@ Runtime PR #82 provides:
 The reviewed upstream PR is still draft. The runtime repository reports that
 its local workspace tests and strict Clippy pass; remote Actions are currently
 not starting runners because of the GitHub account billing/spending limit.
-`5f8266c` is therefore the unified Phase 3 development baseline, not the final
+`ddd9e8f` is therefore the unified product-validation baseline, not the final
 production pin.
 
 ### Confirmed protocol gaps
@@ -99,16 +99,12 @@ Three integration decisions must be closed before the destructive cutover:
    `MemoryStore` exposes one `upsert` or `delete`; it has no batch,
    compare-and-swap, or transaction contract for an accepted maintenance
    change set.
-2. Runtime `5f8266c` resolves the approval ambiguity with a mandatory
+2. Runtime `ddd9e8f` resolves the approval ambiguity with a mandatory
    `MemoryMutationGate` that receives the final normalized write or exact
    delete reference plus trusted mutation origin.
-3. [`runtime #91`](https://github.com/oh-my-harness/llm-harness-runtime/issues/91):
-   `KnowledgeCitationPolicy::RequireWhenEvidenceRead` is global to one
-   `KnowledgePlugin`. A single registry containing course Knowledge and
-   Learner Memory would require visible citations after a memory-only read,
-   while two plugins would register duplicate `knowledge_search` /
-   `knowledge_read` Tool names. Course evidence must remain strictly cited,
-   while personalization memory must remain citation-optional.
+3. [`runtime #91`](https://github.com/oh-my-harness/llm-harness-runtime/issues/91)
+   is implemented by merged PR #94. One `KnowledgePlugin` can now mark course
+   Knowledge `Required` and Learner Memory `Optional` by trusted source ID.
 
 The approval contract is tracked in
 [`runtime #93`](https://github.com/oh-my-harness/llm-harness-runtime/issues/93).
@@ -171,10 +167,9 @@ Do not install two `KnowledgePlugin` instances with duplicate Tool names.
 The product authorizer becomes source-aware and evaluates the same trusted
 access context for course and memory resources.
 
-The final implementation waits for a source-aware citation policy or another
-upstream-endorsed solution. It shall not weaken the existing course Knowledge
-gate from `RequireWhenEvidenceRead` to `ValidateIfPresent`, and it shall not
-copy runtime citation state into a product validator.
+The final implementation consumes runtime's source-aware citation policy. It
+shall mark course Knowledge `Required` and Learner Memory `Optional`, and it
+shall not copy runtime citation state into a product validator.
 
 ### 4.2 Trusted access profiles
 
@@ -349,8 +344,9 @@ and call the result atomic.
 - [ ] Align `llm_adapter` to the revision required by that runtime.
 - [ ] Run Cargo metadata/tree checks and reject mixed runtime revisions.
 
-Adapter and contract-test development use `5f8266c`; Chat cutover and
-legacy deletion may not.
+Adapter and real Chat product-validation development use `ddd9e8f`. Production
+pinning and legacy protocol deletion still require an immutable merged
+revision.
 
 ### Phase 1: Isolate the product file backend
 
@@ -404,8 +400,9 @@ claims. Active Web course and Quiz assembly now use the source-aware product
 authorizer, ordinary requests carry `MemorySessionId`, and Research propagates
 it through `WorkflowRunRequest`. The generic/CLI router no longer enables the
 legacy writable Memory Tools by default. Learner Memory is not yet added to the
-user-visible Knowledge registry because runtime issue #91 remains open; doing
-so with the current global citation policy would violate section 4.1.
+user-visible Knowledge registry. Runtime PR #94 has now removed the citation
+blocker, and the next checkpoint installs both sources with course
+`Required` and Learner Memory `Optional`.
 
 - [x] Generalize course `KnowledgeRuntime` into one source-composable Agent
   runtime.

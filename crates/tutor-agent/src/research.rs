@@ -10,7 +10,7 @@ use llm_harness_runtime::workflow::engine::{
 use llm_harness_runtime::workflow::executor::{ExecutorCtx, StepExecutor};
 use llm_harness_runtime::workflow::judge::{StepCtx, StepTransitionJudge};
 use llm_harness_runtime::workflow::model::{StepResult, StructuredStatus, Transition};
-use llm_harness_runtime_knowledge::{KnowledgeAccessContext, KnowledgeCitationPolicy};
+use llm_harness_runtime_knowledge::KnowledgeAccessContext;
 use llm_harness_runtime_memory::MemorySessionId;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -197,16 +197,10 @@ fn build_research_engine(
 
     if let Some(runtime) = router.knowledge_runtime.clone() {
         let search_runtime = runtime.clone();
-        engine = engine.with_step_plugin("search_sources", move || {
-            search_runtime.boxed_plugin(KnowledgeCitationPolicy::RequireWhenEvidenceRead)
-        });
+        engine = engine.with_step_plugin("search_sources", move || search_runtime.boxed_plugin());
         let read_runtime = runtime.clone();
-        engine = engine.with_step_plugin("read_sources", move || {
-            read_runtime.boxed_plugin(KnowledgeCitationPolicy::RequireWhenEvidenceRead)
-        });
-        engine = engine.with_step_plugin("write_report", move || {
-            runtime.boxed_plugin(KnowledgeCitationPolicy::RequireWhenEvidenceRead)
-        });
+        engine = engine.with_step_plugin("read_sources", move || read_runtime.boxed_plugin());
+        engine = engine.with_step_plugin("write_report", move || runtime.boxed_plugin());
     }
 
     Ok(engine)

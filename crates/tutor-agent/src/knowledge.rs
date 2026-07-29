@@ -5,9 +5,9 @@ use llm_harness_agent::Plugin;
 use llm_harness_runtime_knowledge::{
     AuthorizationDecision, ContentSelector, EvidenceAuthority, EvidenceProviderId,
     KnowledgeAccessContext, KnowledgeAccessControl, KnowledgeAction, KnowledgeAuthorizer,
-    KnowledgeCitationPolicy, KnowledgePlugin, KnowledgePluginConfig, KnowledgeReadRequest,
-    KnowledgeRef, KnowledgeRegistry, KnowledgeResourceRef, KnowledgeSearchRequest, KnowledgeSource,
-    KnowledgeToolConfig, PersistedKnowledgeEvidence,
+    KnowledgeCitationPolicy, KnowledgeCitationRequirement, KnowledgePlugin, KnowledgePluginConfig,
+    KnowledgeReadRequest, KnowledgeRef, KnowledgeRegistry, KnowledgeResourceRef,
+    KnowledgeSearchRequest, KnowledgeSource, KnowledgeToolConfig, PersistedKnowledgeEvidence,
 };
 use llm_harness_types::{DataBlock, RunContext, RunRequest};
 use serde_json::Value;
@@ -24,6 +24,7 @@ pub struct KnowledgeRuntime {
     authority: Arc<EvidenceAuthority>,
     provider_id: EvidenceProviderId,
     tool_config: KnowledgeToolConfig,
+    citation_policy: KnowledgeCitationPolicy,
 }
 
 #[derive(Debug, Clone)]
@@ -39,21 +40,21 @@ pub struct VerifiedKnowledgeChunk {
 
 impl KnowledgeRuntime {
     pub fn plugin(&self) -> Arc<dyn Plugin> {
-        Arc::new(self.build_plugin(KnowledgeCitationPolicy::RequireWhenEvidenceRead))
+        Arc::new(self.build_plugin())
     }
 
-    pub fn boxed_plugin(&self, citation_policy: KnowledgeCitationPolicy) -> Box<dyn Plugin> {
-        Box::new(self.build_plugin(citation_policy))
+    pub fn boxed_plugin(&self) -> Box<dyn Plugin> {
+        Box::new(self.build_plugin())
     }
 
-    fn build_plugin(&self, citation_policy: KnowledgeCitationPolicy) -> KnowledgePlugin {
+    fn build_plugin(&self) -> KnowledgePlugin {
         KnowledgePlugin::new(
             self.registry.clone(),
             self.authority.clone(),
             self.provider_id.clone(),
             KnowledgePluginConfig {
                 tools: self.tool_config.clone(),
-                citation_policy,
+                citation_policy: self.citation_policy.clone(),
             },
         )
         .expect("knowledge plugin configuration was validated during assembly")
@@ -157,6 +158,16 @@ pub fn course_evidence_provider_id() -> EvidenceProviderId {
     EvidenceProviderId(COURSE_EVIDENCE_PROVIDER_ID.into())
 }
 
+pub fn required_course_citation_policy() -> Result<KnowledgeCitationPolicy> {
+    KnowledgeCitationPolicy::builder()
+        .source(
+            tutor_rag::COURSE_KNOWLEDGE_SOURCE_ID,
+            KnowledgeCitationRequirement::Required,
+        )
+        .build()
+        .map_err(|error| TutorError::Internal(error.to_string()))
+}
+
 pub fn assemble_course_knowledge(
     source: LanceDbKnowledgeSource,
     authority: Arc<EvidenceAuthority>,
@@ -169,6 +180,7 @@ pub fn assemble_course_knowledge(
         access_control,
         authority,
         course_evidence_provider_id(),
+        required_course_citation_policy()?,
     )
 }
 
@@ -177,6 +189,7 @@ pub fn assemble_knowledge_runtime(
     access_control: Arc<KnowledgeAccessControl>,
     authority: Arc<EvidenceAuthority>,
     provider_id: EvidenceProviderId,
+    citation_policy: KnowledgeCitationPolicy,
 ) -> Result<KnowledgeRuntime> {
     let mut builder = KnowledgeRegistry::builder(access_control);
     for source in sources {
@@ -193,7 +206,7 @@ pub fn assemble_knowledge_runtime(
         provider_id.clone(),
         KnowledgePluginConfig {
             tools: tool_config.clone(),
-            citation_policy: KnowledgeCitationPolicy::RequireWhenEvidenceRead,
+            citation_policy: citation_policy.clone(),
         },
     )
     .map_err(|error| TutorError::Internal(error.to_string()))?;
@@ -202,6 +215,7 @@ pub fn assemble_knowledge_runtime(
         authority,
         provider_id,
         tool_config,
+        citation_policy,
     })
 }
 

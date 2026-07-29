@@ -359,6 +359,7 @@ async fn generate_questions(
         crate::knowledge_runtime::agent_knowledge_access_control(),
         state.evidence_authority.clone(),
         tutor_agent::course_evidence_provider_id(),
+        tutor_agent::required_course_citation_policy()?,
     )?;
     let access =
         knowledge_access.unwrap_or_else(|| quiz_knowledge_access_context(&quiz.id, &quiz.kb_id));
