@@ -2,15 +2,17 @@ use std::sync::Arc;
 
 use futures::future::BoxFuture;
 use llm_harness_runtime::control::cost::CostAggregate;
-use llm_harness_runtime::workflow::engine::{WorkflowEngine, WorkflowEngineConfig};
+use llm_harness_runtime::workflow::engine::{
+    WorkflowEngine, WorkflowEngineConfig, WorkflowRunRequest,
+};
 use llm_harness_runtime::workflow::executor::{ExecutorCtx, StepExecutor};
 use llm_harness_runtime::workflow::model::{StepResult, StructuredStatus};
-use llm_harness_types::Tool;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, TutorError};
+use crate::knowledge::KnowledgeRuntime;
 use crate::runtime_engine::RuntimeDeclarativeJudge;
-use crate::runtime_workflow::{memory_workflow_with_allowed_tools, validate_memory_workflow};
+use crate::runtime_workflow::{memory_workflow, validate_memory_workflow};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -98,20 +100,26 @@ pub async fn run_memory_workflow_with_runtime(
     input: &MemoryWorkflowInput,
     engine_config: WorkflowEngineConfig,
 ) -> Result<MemoryWorkflowRun> {
-    run_memory_workflow_with_tools(input, engine_config, Vec::new()).await
+    run_memory_workflow(input, engine_config, None, WorkflowRunRequest::new()).await
 }
 
-pub async fn run_memory_workflow_with_tools(
+pub async fn run_memory_workflow_with_knowledge(
     input: &MemoryWorkflowInput,
     engine_config: WorkflowEngineConfig,
-    tools: Vec<Arc<dyn Tool>>,
+    knowledge: KnowledgeRuntime,
+    request: WorkflowRunRequest,
+) -> Result<MemoryWorkflowRun> {
+    run_memory_workflow(input, engine_config, Some(knowledge), request).await
+}
+
+async fn run_memory_workflow(
+    input: &MemoryWorkflowInput,
+    engine_config: WorkflowEngineConfig,
+    knowledge: Option<KnowledgeRuntime>,
+    request: WorkflowRunRequest,
 ) -> Result<MemoryWorkflowRun> {
     validate_memory_workflow()?;
-    let allowed_tools = tools
-        .iter()
-        .map(|tool| tool.name().to_string())
-        .collect::<Vec<_>>();
-    let workflow = memory_workflow_with_allowed_tools(allowed_tools);
+    let workflow = memory_workflow();
     let mut engine = WorkflowEngine::new(
         workflow.clone(),
         engine_config,
@@ -124,12 +132,12 @@ pub async fn run_memory_workflow_with_tools(
             input: input.clone(),
         }),
     );
-    for tool in tools {
-        engine = engine.with_tool(tool);
+    if let Some(knowledge) = knowledge {
+        engine = engine.with_step_plugin("run_memory", move || knowledge.boxed_plugin());
     }
 
     let result = engine
-        .run()
+        .run_with_request(request)
         .await
         .map_err(|err| TutorError::Internal(format!("memory workflow failed: {err}")))?;
     let structured = engine
@@ -308,18 +316,18 @@ fn memory_prompt(input: &MemoryWorkflowInput) -> String {
     let is_recent = input.target_path == "L3/recent.md";
     let entry_text_limit = if is_l3 { 1_200 } else { 500 };
     let evidence_rules = if is_recent {
-        "- Use list_memory_entries or search_memory_entries to discover L2 candidates within the allowed source matrix.\n- Use read_memory_entry before citing an L2 entry.\n- Prefer L2 evidence; use the L1 event tools only for bounded recent chronology or to verify an L2 source.\n- Cite canonical memory:L2/path.md#m_id refs for L2 evidence and canonical event refs only for the recent chronology exception."
+        "- Use knowledge_search with layer filters to discover candidates from the target-limited Learner Memory source.\n- Preserve each result's exact reference object and call knowledge_read before citing it.\n- Prefer layer=l2 evidence; use layer=l1 only for bounded recent chronology.\n- Put the canonical_reference metadata value from each successful read in finding/change refs."
     } else if is_l3 {
-        "- Use list_memory_entries or search_memory_entries to discover candidates within target.instructions.allowedL2Paths.\n- Use read_memory_entry before citing an L2 entry.\n- Use read_memory_entry_sources only when an L2 summary needs verification or more detail.\n- Every finding and change must cite canonical memory:L2/path.md#m_id refs returned by a read tool.\n- Do not cite or scan L1 events directly."
+        "- Use knowledge_search with layer=l2 to discover candidates within the server-limited source matrix.\n- Preserve each result's exact reference object and call knowledge_read before citing it.\n- Put the canonical_reference metadata value from each successful read in finding/change refs.\n- Do not search, read, or cite layer=l1 events directly."
     } else {
-        "- Use list_memory_events or search_memory_events to discover candidates, starting with the target surface.\n- Use read_memory_event, read_memory_context, or read_memory_source before citing evidence.\n- Every finding and change must cite canonical event-level refs returned by a read tool."
+        "- Use knowledge_search with layer=l1 to discover candidates; the server limits access to the target surface.\n- Preserve each result's exact reference object and call knowledge_read before citing it.\n- Put the canonical_reference metadata value from each successful read in every finding/change ref."
     };
     let action_rules = match input.action {
         MemoryWorkflowAction::Update => {
             "- Return insert or evidence-backed replace changes.\n- Prefer durable learning-relevant observations over one-off chatter.\n- Use only sections listed in target.allowedSections."
         }
         MemoryWorkflowAction::Check => {
-            "- Resolve existing evidence with the appropriate read tool before judging supported claims.\n- Return compact findings for contradictions, stale facts, missing evidence, duplicates, unclear wording, and risky overgeneralizations.\n- If useful, include stable-entry-id changes.\n- Every change must include a short reason."
+            "- Resolve existing evidence with knowledge_read before judging supported claims.\n- Return compact findings for contradictions, stale facts, missing evidence, duplicates, unclear wording, and risky overgeneralizations.\n- If useful, include stable-entry-id changes.\n- Every change must include a short reason."
         }
         MemoryWorkflowAction::Dedupe => {
             "- Return replace/delete changes against stable entry ids from the Markdown markers.\n- Merge duplicate or overlapping bullets.\n- Do not insert new facts or delete unique useful memory.\n- Include a short reason for each change."
@@ -508,6 +516,55 @@ mod tests {
         assert_eq!(output.changes[0].refs, vec!["quiz:event-1"]);
     }
 
+    #[tokio::test]
+    #[ignore = "local release-mode latency measurement"]
+    async fn b3_maintenance_workflow_latency_baseline() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let input = MemoryWorkflowInput {
+            target_path: "L2/quiz.md".into(),
+            action: MemoryWorkflowAction::Check,
+            output_language: MemoryOutputLanguage::EnUs,
+            current_markdown: "# Quiz memory\n\n".into(),
+            consolidation_input_json: "{}".into(),
+        };
+        let mut samples = Vec::new();
+        for index in 0..35 {
+            let client = Arc::new(MockLlmClient::new(vec![MockResponse::text(
+                r#"{"summary":"No change.","findings":[],"changes":[]}"#,
+            )]));
+            let engine_config = build_workflow_engine_config(
+                client,
+                "mock-model",
+                Arc::new(NoOpEnv) as Arc<dyn ExecutionEnv>,
+                dir.path().join(format!("maintenance-{index}")),
+            );
+            let started = std::time::Instant::now();
+            run_memory_workflow_with_runtime(&input, engine_config)
+                .await
+                .unwrap();
+            if index >= 5 {
+                samples.push(started.elapsed().as_secs_f64() * 1_000.0);
+            }
+        }
+        samples.sort_by(f64::total_cmp);
+        let percentile = |value: f64| {
+            let index = ((samples.len() - 1) as f64 * value).ceil() as usize;
+            (samples[index] * 1_000.0).round() / 1_000.0
+        };
+        println!(
+            "{}",
+            serde_json::json!({
+                "maintenance_run": {
+                    "p50": percentile(0.50),
+                    "p95": percentile(0.95),
+                },
+                "unit": "ms",
+                "samples": samples.len(),
+                "provider": "deterministic_mock",
+            })
+        );
+    }
+
     #[test]
     fn memory_prompt_pins_generated_fields_to_simplified_chinese() {
         let prompt = memory_prompt(&MemoryWorkflowInput {
@@ -526,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn l3_memory_prompt_requires_read_l2_entry_evidence() {
+    fn l3_memory_prompt_requires_runtime_knowledge_read_of_l2_evidence() {
         let prompt = memory_prompt(&MemoryWorkflowInput {
             target_path: "L3/profile.md".into(),
             action: MemoryWorkflowAction::Update,
@@ -535,9 +592,9 @@ mod tests {
             consolidation_input_json: r#"{"instructions":{"evidenceLayer":"L2"}}"#.into(),
         });
 
-        assert!(prompt.contains("Use read_memory_entry before citing an L2 entry"));
+        assert!(prompt.contains("call knowledge_read before citing it"));
         assert!(prompt.contains("memory:L2/chat.md#m_example"));
-        assert!(prompt.contains("Do not cite or scan L1 events directly"));
+        assert!(prompt.contains("Do not search, read, or cite layer=l1 events directly"));
         assert!(prompt.contains("at or below 1200 characters"));
     }
 
@@ -552,6 +609,6 @@ mod tests {
         });
 
         assert!(prompt.contains("bounded recent chronology"));
-        assert!(prompt.contains("Prefer L2 evidence"));
+        assert!(prompt.contains("Prefer layer=l2 evidence"));
     }
 }

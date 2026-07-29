@@ -5,11 +5,6 @@
     "reason": "Persist the bounded execution result and metadata used by the explanation turn."
   },
   {
-    "tool": "read_memory",
-    "projection": "ephemeral",
-    "reason": "Learner memory bodies are private context and must not be copied into Tool session entries."
-  },
-  {
     "tool": "web_fetch",
     "projection": "ephemeral",
     "reason": "Fetched page bodies may be large or sensitive; only a receipt is durable."
@@ -18,56 +13,6 @@
     "tool": "web_search",
     "projection": "projected",
     "reason": "Bounded public search results are useful durable evidence candidates."
-  },
-  {
-    "tool": "write_memory",
-    "projection": "projected",
-    "reason": "Persist the bounded mutation receipt, not additional hidden source context."
-  },
-  {
-    "tool": "list_memory_events",
-    "projection": "projected",
-    "reason": "Bounded L1 summaries are durable discovery results."
-  },
-  {
-    "tool": "search_memory_events",
-    "projection": "projected",
-    "reason": "Bounded L1 summaries are durable discovery results."
-  },
-  {
-    "tool": "read_memory_event",
-    "projection": "ephemeral",
-    "reason": "Complete L1 evidence is private workflow context."
-  },
-  {
-    "tool": "read_memory_context",
-    "projection": "ephemeral",
-    "reason": "Complete surrounding L1 evidence is private workflow context."
-  },
-  {
-    "tool": "read_memory_source",
-    "projection": "ephemeral",
-    "reason": "Resolved source bodies are private workflow context."
-  },
-  {
-    "tool": "list_memory_entries",
-    "projection": "projected",
-    "reason": "Bounded L2 summaries are durable discovery results."
-  },
-  {
-    "tool": "search_memory_entries",
-    "projection": "projected",
-    "reason": "Bounded L2 summaries are durable discovery results."
-  },
-  {
-    "tool": "read_memory_entry",
-    "projection": "ephemeral",
-    "reason": "Complete L2 memory is private workflow context."
-  },
-  {
-    "tool": "read_memory_entry_sources",
-    "projection": "ephemeral",
-    "reason": "Complete supporting L1 evidence is private workflow context."
   },
   {
     "tool": "propose_quiz_plan",

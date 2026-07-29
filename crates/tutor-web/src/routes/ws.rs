@@ -76,6 +76,30 @@ impl TutorRuntimeStores {
 }
 
 #[derive(Clone)]
+pub struct WsDataStores {
+    knowledge: Arc<KnowledgeStore>,
+    memory: Arc<FileMemoryBackend>,
+    notebook: Arc<NotebookStore>,
+    quizzes: Arc<QuizStore>,
+}
+
+impl WsDataStores {
+    pub fn new(
+        knowledge: Arc<KnowledgeStore>,
+        memory: Arc<FileMemoryBackend>,
+        notebook: Arc<NotebookStore>,
+        quizzes: Arc<QuizStore>,
+    ) -> Self {
+        Self {
+            knowledge,
+            memory,
+            notebook,
+            quizzes,
+        }
+    }
+}
+
+#[derive(Clone)]
 struct PersistedEventSink {
     pool: Arc<SessionPool>,
     session_id: String,
@@ -558,20 +582,17 @@ fn agent_run_request(
 
 pub fn ws_router(
     pool: Arc<SessionPool>,
-    knowledge: Arc<KnowledgeStore>,
-    memory: Arc<FileMemoryBackend>,
-    notebook: Arc<NotebookStore>,
-    quizzes: Arc<QuizStore>,
+    data_stores: WsDataStores,
     tutor_runtime: TutorRuntimeStores,
     runtime_security: crate::knowledge_runtime::AgentRuntimeSecurity,
     rag_root: impl Into<PathBuf>,
 ) -> Router {
     let state = WsState {
         pool,
-        knowledge,
-        memory,
-        notebook,
-        quizzes,
+        knowledge: data_stores.knowledge,
+        memory: data_stores.memory,
+        notebook: data_stores.notebook,
+        quizzes: data_stores.quizzes,
         tutors: tutor_runtime.profiles,
         tutor_memory: tutor_runtime.memory,
         runtime_security,

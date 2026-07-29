@@ -282,7 +282,7 @@ mod tests {
     use llm_harness_runtime_knowledge::{
         AuthorizationDecision, ContentSelector, KnowledgeAccessContext, KnowledgeAccessControl,
         KnowledgeAction, KnowledgeAuthorizer, KnowledgeReadRequest, KnowledgeResourceRef,
-        KnowledgeScope, KnowledgeSource, PrincipalRef,
+        KnowledgeScope, KnowledgeSource, PrincipalRef, SourceSearchRequest,
     };
     use llm_harness_runtime_memory::contract::{
         MemoryStoreContractCase, verify_memory_store_contract,
@@ -374,6 +374,119 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "local release-mode latency measurement"]
+    async fn b3_search_read_write_forget_latency_baseline() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
+        let store = LearnerMemoryWriteStore::new(backend.clone());
+        let source = LearnerMemoryKnowledgeSource::new(backend);
+        let run = RunContext::new(RunRequest::from_text("benchmark"));
+        let allowed = access("interactive_mutation", "local-user");
+        store
+            .upsert(
+                context(&run, &allowed),
+                write(&run, "seed", "Prefers visual diagrams."),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        let mut search_ms = Vec::new();
+        let mut read_ms = Vec::new();
+        let mut write_ms = Vec::new();
+        let mut forget_ms = Vec::new();
+        for index in 0..105 {
+            let started = std::time::Instant::now();
+            let page = source
+                .search(
+                    context(&run, &allowed),
+                    SourceSearchRequest {
+                        query: "visual".into(),
+                        filters: vec![],
+                        limit: 10,
+                        cursor: None,
+                    },
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            let search_elapsed = started.elapsed().as_secs_f64() * 1_000.0;
+            let reference = page.hits[0].reference.clone();
+
+            let started = std::time::Instant::now();
+            source
+                .read(
+                    context(&run, &allowed),
+                    KnowledgeReadRequest {
+                        reference,
+                        selector: ContentSelector::Document,
+                        max_bytes: 16 * 1024,
+                    },
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            let read_elapsed = started.elapsed().as_secs_f64() * 1_000.0;
+
+            let started = std::time::Instant::now();
+            let receipt = store
+                .upsert(
+                    context(&run, &allowed),
+                    write(
+                        &run,
+                        &format!("benchmark-{index}"),
+                        &format!("Temporary benchmark preference {index}."),
+                    ),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            let write_elapsed = started.elapsed().as_secs_f64() * 1_000.0;
+
+            let started = std::time::Instant::now();
+            store
+                .delete(
+                    context(&run, &allowed),
+                    receipt.reference,
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            let forget_elapsed = started.elapsed().as_secs_f64() * 1_000.0;
+
+            if index >= 5 {
+                search_ms.push(search_elapsed);
+                read_ms.push(read_elapsed);
+                write_ms.push(write_elapsed);
+                forget_ms.push(forget_elapsed);
+            }
+        }
+        println!(
+            "{}",
+            serde_json::json!({
+                "search": latency_percentiles(&mut search_ms),
+                "read": latency_percentiles(&mut read_ms),
+                "write": latency_percentiles(&mut write_ms),
+                "forget": latency_percentiles(&mut forget_ms),
+                "unit": "ms",
+                "samples": search_ms.len(),
+            })
+        );
+    }
+
+    fn latency_percentiles(samples: &mut [f64]) -> serde_json::Value {
+        samples.sort_by(f64::total_cmp);
+        let percentile = |value: f64| {
+            let index = ((samples.len() - 1) as f64 * value).ceil() as usize;
+            (samples[index] * 1_000.0).round() / 1_000.0
+        };
+        serde_json::json!({
+            "p50": percentile(0.50),
+            "p95": percentile(0.95),
+        })
     }
 
     #[tokio::test]

@@ -13,8 +13,8 @@ mod learner_memory_source;
 #[allow(dead_code)]
 mod learner_memory_write;
 mod memory_approval;
+mod memory_evidence;
 mod memory_store;
-mod memory_tool;
 mod notebook_store;
 mod quiz_store;
 mod quiz_tool;
@@ -93,6 +93,7 @@ async fn main() -> anyhow::Result<()> {
         ))
         .merge(routes::memory::memory_router(
             memory.clone(),
+            runtime_security.clone(),
             config.data_dir.join("workflow-sessions").join("memory"),
         ))
         .merge(routes::settings::settings_router(settings.clone()))
@@ -109,10 +110,12 @@ async fn main() -> anyhow::Result<()> {
         ))
         .merge(routes::ws::ws_router(
             pool.clone(),
-            knowledge.clone(),
-            memory.clone(),
-            notebook.clone(),
-            quizzes.clone(),
+            routes::ws::WsDataStores::new(
+                knowledge.clone(),
+                memory.clone(),
+                notebook.clone(),
+                quizzes.clone(),
+            ),
             routes::ws::TutorRuntimeStores::new(tutors.clone(), tutor_memory),
             runtime_security,
             rag_root,

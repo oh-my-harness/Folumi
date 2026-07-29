@@ -75,6 +75,7 @@ pub struct ResolvedMemorySource {
     pub event: MemoryEvent,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MemoryEventPage {
     pub events: Vec<MemoryEvent>,
@@ -82,6 +83,7 @@ pub struct MemoryEventPage {
     pub total: usize,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MemoryEventContext {
     pub event: MemoryEvent,
@@ -166,6 +168,7 @@ pub struct MemoryL2Entry {
     pub entry: MemoryEntry,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryL2EntryPage {
     pub entries: Vec<MemoryL2Entry>,
@@ -173,6 +176,7 @@ pub struct MemoryL2EntryPage {
     pub total: usize,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryL2EntrySources {
     pub memory: MemoryL2Entry,
@@ -493,6 +497,7 @@ impl FileMemoryBackend {
         Ok(catalog)
     }
 
+    #[cfg(test)]
     pub fn query_events(
         &self,
         surface: Option<&str>,
@@ -537,6 +542,7 @@ impl FileMemoryBackend {
         })
     }
 
+    #[cfg(test)]
     pub fn read_event(&self, event_id: &str) -> Result<MemoryEvent> {
         let event_id = event_id.trim();
         self.all_events()?
@@ -545,6 +551,7 @@ impl FileMemoryBackend {
             .ok_or_else(|| anyhow!("memory event `{event_id}` was not found"))
     }
 
+    #[cfg(test)]
     pub fn event_context(
         &self,
         event_id: &str,
@@ -603,6 +610,7 @@ impl FileMemoryBackend {
         Err(anyhow!("memory source ref `{reference}` was not found"))
     }
 
+    #[cfg(test)]
     pub fn query_l2_entries(
         &self,
         paths: &[String],
@@ -679,6 +687,7 @@ impl FileMemoryBackend {
         memory_l2_entry(&file, entry)
     }
 
+    #[cfg(test)]
     pub fn read_l2_entry_sources(&self, reference: &str) -> Result<MemoryL2EntrySources> {
         let memory = self.read_l2_entry(reference)?;
         let sources = memory
@@ -1550,6 +1559,7 @@ fn category_for_surface(surface: &str) -> Option<MemoryEventCategory> {
     }
 }
 
+#[cfg(test)]
 fn event_matches_query(event: &MemoryEvent, query: &str) -> bool {
     let query = query.to_lowercase();
     event.summary.to_lowercase().contains(&query)

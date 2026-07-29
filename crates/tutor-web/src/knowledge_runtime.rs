@@ -261,6 +261,9 @@ fn csv_is_subset(value: Option<&String>, allowed: &[&str], allow_empty: bool) ->
 mod tests {
     use std::time::Duration;
 
+    use llm_harness_agent::{
+        JsonlSessionRepo, Session, SessionRepo, session::CreateSessionOptions,
+    };
     use llm_harness_loop::test_utils::{MockLlmClient, MockResponse, NoOpEnv};
     use llm_harness_runtime_knowledge::{KnowledgeRef, KnowledgeScope, PrincipalRef};
     use llm_harness_runtime_memory::MemorySessionId;
@@ -498,6 +501,101 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn interactive_chat_forget_uses_exact_ref_and_waits_for_web_approval() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let entry = backend
+            .upsert_durable_preference(DurableMemoryWrite {
+                content: "Prefers diagrams.".into(),
+                kind: "preference".into(),
+                provenance: serde_json::json!({"source": "test"}),
+                idempotency_key: "forget-test".into(),
+                expires_at: None,
+            })
+            .unwrap();
+        let reference = KnowledgeRef {
+            source_id: LEARNER_MEMORY_SOURCE_ID.into(),
+            item_id: format!("l3/preferences/{}", entry.marker),
+            revision: Some(memory_entry_revision(&entry).unwrap()),
+        };
+        let stream = TutorStream::new(8);
+        let mut events = stream.subscribe();
+        let coordinator = Arc::new(WebMemoryApprovalCoordinator::new(
+            stream,
+            "session-a",
+            "run-forget",
+            CancellationToken::new(),
+        ));
+        let router = install_agent_knowledge_and_memory(
+            router(vec![
+                MockResponse::tool_use(
+                    "memory-forget-1",
+                    "memory_forget",
+                    &serde_json::json!({"reference": reference}).to_string(),
+                ),
+                MockResponse::text("I forgot that preference."),
+            ]),
+            None,
+            Some(LearnerMemoryRuntimeInput {
+                backend: backend.clone(),
+                mode: LearnerMemoryMode::InteractiveMutation,
+                approver: Some(coordinator.clone()),
+            }),
+            &AgentRuntimeSecurity::generate(),
+        )
+        .unwrap();
+
+        let task = tokio::spawn(async move {
+            router
+                .run_request(
+                    Capability::Chat,
+                    run_request(
+                        "interactive_mutation",
+                        "session-a",
+                        "Forget my diagram preference.",
+                    ),
+                )
+                .await
+        });
+        let StreamEvent::Status { kind, data } =
+            tokio::time::timeout(Duration::from_secs(5), events.recv())
+                .await
+                .expect("memory forget must request approval")
+                .unwrap()
+        else {
+            panic!("expected approval status");
+        };
+        assert_eq!(kind, "approval_request");
+        assert_eq!(data["tool"], "memory_forget");
+        assert!(
+            backend
+                .read("L3/preferences.md")
+                .unwrap()
+                .markdown
+                .contains("Prefers diagrams.")
+        );
+        assert_eq!(
+            coordinator.resolve(data["request_id"].as_str().unwrap(), true),
+            ApprovalResponseOutcome::Resolved
+        );
+
+        let answer = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("approved forget must finish")
+            .unwrap()
+            .unwrap();
+        assert!(answer.contains("forgot"));
+        assert!(
+            !backend
+                .read("L3/preferences.md")
+                .unwrap()
+                .markdown
+                .contains("Prefers diagrams.")
+        );
+        coordinator.close();
+    }
+
+    #[tokio::test]
     async fn read_only_chat_uses_memory_without_forcing_a_visible_citation() {
         let temp = tempfile::tempdir().unwrap();
         let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
@@ -554,5 +652,98 @@ mod tests {
 
         assert_eq!(answer, "I will explain this with diagrams.");
         assert!(!answer.contains("[^"));
+    }
+
+    #[tokio::test]
+    async fn memory_read_persists_a_receipt_but_not_body_or_trusted_context() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let private_tail = "MEMORY_PRIVATE_READ_TAIL_MUST_NOT_PERSIST";
+        let private_body =
+            format!("visual map preference {}", "context ".repeat(80)) + private_tail;
+        let private_idempotency = "PRIVATE_IDEMPOTENCY_SENTINEL";
+        let entry = backend
+            .upsert_durable_preference(DurableMemoryWrite {
+                content: private_body,
+                kind: "preference".into(),
+                provenance: serde_json::json!({"source": "test"}),
+                idempotency_key: private_idempotency.into(),
+                expires_at: None,
+            })
+            .unwrap();
+        let reference = KnowledgeRef {
+            source_id: LEARNER_MEMORY_SOURCE_ID.into(),
+            item_id: format!("l3/preferences/{}", entry.marker),
+            revision: Some(memory_entry_revision(&entry).unwrap()),
+        };
+        let read_args = serde_json::json!({
+            "reference": reference,
+            "selector": {"kind": "document"}
+        })
+        .to_string();
+        let router = install_agent_knowledge_and_memory(
+            router(vec![
+                MockResponse::tool_use(
+                    "memory-search",
+                    "knowledge_search",
+                    r#"{"query":"visual maps","source_id":"llm-tutor.learner-memory"}"#,
+                ),
+                MockResponse::tool_use("memory-read", "knowledge_read", &read_args),
+                MockResponse::text("I will use a visual map."),
+            ]),
+            None,
+            Some(LearnerMemoryRuntimeInput {
+                backend,
+                mode: LearnerMemoryMode::ReadOnly,
+                approver: None,
+            }),
+            &AgentRuntimeSecurity::generate(),
+        )
+        .unwrap();
+        let sessions_root = temp.path().join("sessions");
+        let repo = JsonlSessionRepo::new(&sessions_root);
+        let storage = repo.create(CreateSessionOptions::default()).await.unwrap();
+        let session = Session::new(storage);
+
+        let answer = router
+            .run_request_with_session_cancel(
+                Capability::Chat,
+                session,
+                run_request("read_only", "session-private", "Use my preference."),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(answer, "I will use a visual map.");
+
+        let persisted = std::fs::read_dir(&sessions_root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().is_dir())
+            .flat_map(|entry| {
+                std::fs::read_dir(entry.path())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Result::ok)
+            })
+            .filter_map(|entry| std::fs::read_to_string(entry.path()).ok())
+            .collect::<String>();
+        assert!(
+            persisted.contains("knowledge_read"),
+            "the bounded read receipt should remain durable"
+        );
+        assert!(!persisted.contains(private_tail));
+        assert!(!persisted.contains(private_idempotency));
+        assert!(!persisted.contains(LEARNER_MEMORY_PROFILE_ATTRIBUTE));
+        assert!(!persisted.contains(LEARNER_MEMORY_PRINCIPAL_ATTRIBUTE));
+        println!(
+            "{}",
+            serde_json::json!({
+                "durable_session_bytes": persisted.len(),
+                "memory_read_receipt_persisted": true,
+                "memory_body_persisted": false,
+                "trusted_context_persisted": false,
+            })
+        );
     }
 }

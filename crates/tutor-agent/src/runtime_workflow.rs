@@ -81,15 +81,8 @@ pub fn validate_quiz_generation_workflow() -> Result<()> {
 
 pub fn memory_workflow() -> Workflow {
     memory_workflow_with_allowed_tools(vec![
-        "list_memory_events".into(),
-        "search_memory_events".into(),
-        "read_memory_event".into(),
-        "read_memory_context".into(),
-        "read_memory_source".into(),
-        "list_memory_entries".into(),
-        "search_memory_entries".into(),
-        "read_memory_entry".into(),
-        "read_memory_entry_sources".into(),
+        KNOWLEDGE_SEARCH_TOOL_NAME.into(),
+        KNOWLEDGE_READ_TOOL_NAME.into(),
     ])
 }
 
@@ -380,8 +373,8 @@ mod tests {
     #[test]
     fn memory_workflow_declares_only_the_tools_mounted_for_the_run() {
         let expected = vec![
-            "list_memory_events".to_string(),
-            "read_memory_event".to_string(),
+            KNOWLEDGE_SEARCH_TOOL_NAME.to_string(),
+            KNOWLEDGE_READ_TOOL_NAME.to_string(),
         ];
         let workflow = memory_workflow_with_allowed_tools(expected.clone());
         let tools = workflow
@@ -392,6 +385,5 @@ mod tests {
             .allowed_tools();
 
         assert_eq!(tools, expected);
-        assert!(!tools.contains(&"read_memory_entry".to_string()));
     }
 }

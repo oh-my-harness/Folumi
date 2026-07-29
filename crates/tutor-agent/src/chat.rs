@@ -626,8 +626,6 @@ mod tests {
     #[test]
     fn chat_prompt_requires_web_search_for_fact_collection() {
         let prompt = chat_system_prompt();
-        assert!(!prompt.contains("read_memory"));
-        assert!(!prompt.contains("write_memory"));
         assert!(!prompt.contains("rag_search"));
         assert!(prompt.contains("knowledge_search"));
         assert!(prompt.contains("knowledge_read"));
@@ -666,7 +664,6 @@ mod tests {
     #[test]
     fn research_prompt_requires_search_fetch_and_report() {
         let prompt = research_system_prompt();
-        assert!(!prompt.contains("read_memory"));
         assert!(!prompt.contains("rag_search"));
         assert!(prompt.contains("knowledge_search"));
         assert!(prompt.contains("knowledge_read"));

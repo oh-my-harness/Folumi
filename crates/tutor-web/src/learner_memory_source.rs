@@ -378,6 +378,10 @@ fn event_item(event: MemoryEvent, scope: &ReadScope) -> Option<MemoryItem> {
     let mut metadata = BTreeMap::new();
     metadata.insert("layer".into(), json!("l1"));
     metadata.insert("surface".into(), json!(surface));
+    metadata.insert(
+        "canonical_reference".into(),
+        json!(format!("{surface}:{}", event.id)),
+    );
     Some(MemoryItem {
         layer: "l1",
         surface: Some(surface.into()),
@@ -405,9 +409,17 @@ fn entry_item(
     metadata.insert("layer".into(), json!(layer));
     let (surface, kind) = if layer == "l2" {
         metadata.insert("surface".into(), json!(category));
+        metadata.insert(
+            "canonical_reference".into(),
+            json!(format!("memory:L2/{category}.md#{}", entry.marker)),
+        );
         (Some(category.into()), None)
     } else {
         metadata.insert("kind".into(), json!(category));
+        metadata.insert(
+            "canonical_reference".into(),
+            json!(format!("memory:L3/{category}.md#{}", entry.marker)),
+        );
         (None, Some(category.into()))
     };
     let title = entry
