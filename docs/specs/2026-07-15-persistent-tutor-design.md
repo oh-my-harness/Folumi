@@ -58,7 +58,7 @@ current turn. A prompt must not name or recommend a memory tool that the
 current tutor is not allowed to use.
 
 - Learner facts, preferences, strengths, weaknesses, scope, and recent state
-  belong to shared Learner Memory. Direct `write_memory` remains limited to an
+  belong to shared Learner Memory. Direct runtime `memory_write` remains limited to an
   explicit user request or clear approval; ordinary conversation and inferred
   traits remain L1 evidence for the normal consolidation workflow.
 - Tutor promises, open loops, lesson plans, teaching reflections, strategies,

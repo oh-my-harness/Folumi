@@ -220,8 +220,8 @@
     and validation after the runtime returns `serde_json::Value`.
   - Suggestion: add a runtime or agent helper such as `generate_structured<T>(prompt, schema/options)` that uses provider capabilities, validates typed output, and returns structured errors suitable for UI display.
 
-- **Structured product flows cannot yet combine typed output with normal tool orchestration**
-  - Expected: a product flow such as Quiz can ask the model to call tools like `read_memory`, then return validated typed JSON questions in one runtime-managed flow.
+- **Resolved: structured product flows combine typed output with normal tool orchestration**
+  - Expected: a product flow such as Memory maintenance can call runtime Knowledge tools, then return validated typed JSON changes in one runtime-managed flow.
   - Actual: Research, Quiz, and Memory workflow steps can mount tools and end
     with runtime-extracted structured JSON. The remaining gap is typed schema
     ownership and domain validation, not a synthetic submit Tool.
@@ -301,14 +301,10 @@
 | AuditEntry hash fields leak implementation detail | Callers must provide hash-chain fields that the sink overwrites | Low |
 | WorkflowEngine migration bridge still needs thin product adapters | Product flows still need executor state mapping, product trace bridges, and typed domain validation around runtime structured output | Low |
 | No typed structured-output helper | Product flows must duplicate JSON extraction, schema hints, validation, and retry policy | Medium |
-| No tool-using structured-generation helper | Product flows such as Quiz cannot combine `read_memory` tool orchestration with typed JSON output without a parallel loop | Medium |
 | No public declarative/no-op workflow judge helper | Product workflows need a tiny marker judge to opt into runtime's built-in declarative edge router | Low |
 | No declarative bounded semantic repair policy | Quiz still needs a thin product judge to cap verifier-driven repair loops | Medium |
 | No safe app-level budget policy helper | Ordinary one-turn harnesses and multi-step workflows cannot share budget accounting without app-layer loop-risk or hook boilerplate | Medium |
 | No normalized model metadata API | Apps duplicate `/models` probing, auth headers, context-window parsing, and embedding dimension capability discovery | Medium |
-| No source-scoped Knowledge citation policy | One registry cannot require course citations while keeping Learner Memory citation-optional | High |
-| No formal Memory batch/CAS transaction contract | Reviewed partial acceptance cannot be applied atomically through the current single-record service | High |
-| Memory approval contract is implicit | Tool prose says user-approved, but safe policy does not validate a trusted consent artifact | High |
 
 ## Proposed v0.3 Changes
 

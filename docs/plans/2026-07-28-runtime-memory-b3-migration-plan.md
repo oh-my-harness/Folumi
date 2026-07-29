@@ -1,6 +1,6 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: in progress (ordinary Chat cut over to runtime Knowledge/Memory; full release validation and maintenance cutover next) |
+> Status: implementation and release gates complete; issue closure pending |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
@@ -52,20 +52,17 @@ revision `ee97890`.
 
 The active Learner Memory paths are:
 
-- `tutor-tools::ReadMemoryTool` accepts a model-selected scope and reads an
-  entire L3 Markdown document.
-- `tutor-tools::WriteMemoryTool` trusts a model-provided `approved: true` and
-  appends directly to `L3/preferences.md`.
-- `CapabilityRouter` manually installs both tools whenever
-  `learner_memory_access` is true.
-- the web `MemoryStore` owns L1 events, L2/L3 entries, document revisions,
+- ordinary Chat uses runtime Knowledge and Memory plugins with one
+  source-aware registry and a server-created access context;
+- the product-specific read/write Agent tools and their model-provided
+  approval schema have been deleted;
+- the web `FileMemoryBackend` owns L1 events, L2/L3 entries, document revisions,
   evidence references, review/apply, stale checks, and undo.
-- the maintenance workflow already runs through runtime `WorkflowEngine`, but
-  still mounts product-specific L1/L2 evidence Tools and calls `run()` without
-  a trusted `WorkflowRunRequest`.
-- the browser approval dialog and `approval_response` now connect to a
-  run-bound, single-use waiter; the runtime Memory Plugin remains unmounted
-  until the remaining composition gates close.
+- maintenance uses the same runtime Learner Memory Knowledge source through a
+  target-scoped `WorkflowRunRequest`; only exact items read in the current step
+  may support a change set;
+- the browser approval dialog and `approval_response` connect to the mandatory
+  runtime mutation gate through a run-bound, single-use waiter;
 - course Knowledge already uses `knowledge_search` / `knowledge_read` with
   strict runtime citation validation.
 
@@ -88,26 +85,20 @@ Runtime PR #82 provides:
 The upstream PR is merged. Runtime reports that its workspace tests and strict
 Clippy pass; `ee97890` is the immutable downstream production pin.
 
-### Confirmed protocol gaps
+### Resolved integration decisions
 
-Three integration decisions must be closed before the destructive cutover:
+- [`runtime #91`](https://github.com/oh-my-harness/llm-harness-runtime/issues/91)
+  is implemented by merged PR #94. One `KnowledgePlugin` can mark course
+  Knowledge `Required` and Learner Memory `Optional` by trusted source ID.
+- [`runtime #92`](https://github.com/oh-my-harness/llm-harness-runtime/issues/92)
+  confirms that reviewed batch/CAS/atomic apply and undo remain a product
+  domain transaction over the same backend primitives as the runtime adapter.
+- [`runtime #93`](https://github.com/oh-my-harness/llm-harness-runtime/issues/93)
+  is resolved by the mandatory `MemoryMutationGate`, which receives the final
+  normalized write or exact delete reference plus trusted mutation origin.
 
-1. [`runtime #92`](https://github.com/oh-my-harness/llm-harness-runtime/issues/92):
-   `MemoryStore` exposes one `upsert` or `delete`; it has no batch,
-   compare-and-swap, or transaction contract for an accepted maintenance
-   change set.
-2. Runtime `ee97890` resolves the approval ambiguity with a mandatory
-   `MemoryMutationGate` that receives the final normalized write or exact
-   delete reference plus trusted mutation origin.
-3. [`runtime #91`](https://github.com/oh-my-harness/llm-harness-runtime/issues/91)
-   is implemented by merged PR #94. One `KnowledgePlugin` can now mark course
-   Knowledge `Required` and Learner Memory `Optional` by trusted source ID.
-
-The approval contract is tracked in
-[`runtime #93`](https://github.com/oh-my-harness/llm-harness-runtime/issues/93).
-These gaps are recorded in `docs/framework-feedback.md`. Phase 0 resolves them
-through upstream issues, PR changes, or an explicit documented runtime contract
-before the affected cutover phase.
+All three upstream issues are closed and their merged or documented contracts
+are consumed by this migration.
 
 ## 3. Ownership Boundaries
 
@@ -389,15 +380,14 @@ All development and production validation now use merged revision `ee97890`.
 
 ### Phase 4: Compose Knowledge and Memory runtime boundaries
 
-The composition-foundation checkpoint uses one
+The final composition uses one
 `llm-tutor.agent-knowledge` scope for server-derived course and Learner Memory
 claims. Active Web course and Quiz assembly now use the source-aware product
 authorizer, ordinary requests carry `MemorySessionId`, and Research propagates
-it through `WorkflowRunRequest`. The generic/CLI router no longer enables the
-legacy writable Memory Tools by default. Learner Memory is not yet added to the
-user-visible Knowledge registry. Runtime PR #94 has now removed the citation
-blocker, and the next checkpoint installs both sources with course
-`Required` and Learner Memory `Optional`.
+it through `WorkflowRunRequest`. The generic CLI router remains `Disabled`
+because it has no product file backend or interactive product approval
+surface; a terminal approval hook alone must not create storage authority.
+Product hosts may explicitly compose read-only or interactive access.
 
 - [x] Generalize course `KnowledgeRuntime` into one source-composable Agent
   runtime.
@@ -410,8 +400,8 @@ blocker, and the next checkpoint installs both sources with course
 - [x] Install `MemoryPlugin` only for `InteractiveMutation`.
 - [x] Fail assembly when mutation is requested without the approval
   coordinator.
-- [ ] Make CLI memory access read-only by default and require an explicit
-  `TerminalApprover` for mutation.
+- [x] Keep generic CLI memory disabled by default; require an explicit product
+  backend, trusted access context, and approver composition for any access.
 - [x] Consume the upstream source-aware citation solution while keeping strict
   course citations and citation-optional memory personalization.
 
@@ -428,46 +418,49 @@ blocker, and the next checkpoint installs both sources with course
   generic Knowledge/Memory behavior.
 - [x] Update mocks to call `knowledge_search/read`,
   `memory_write`, and `memory_forget`.
-- [ ] Verify projected receipts persist but memory read bodies do not.
+- [x] Verify projected receipts persist but memory read bodies and trusted
+  access attributes do not.
 - [x] Verify disabled and read-only runs have no mutation Tools.
 
 ### Phase 6: Cut over maintenance evidence and apply
 
-- [ ] Pass target-specific trusted access through `WorkflowRunRequest`.
-- [ ] Replace L1/L2 product evidence Tools with the generic runtime Knowledge
+- [x] Pass target-specific trusted access through `WorkflowRunRequest`.
+- [x] Replace L1/L2 product evidence Tools with the generic runtime Knowledge
   source in Update, Check, and Dedupe.
-- [ ] Preserve read-before-cite validation using exact refs read in the current
+- [x] Preserve read-before-cite validation using exact refs read in the current
   workflow step.
-- [ ] Keep structured findings/change sets and one repair pass product-owned.
-- [ ] Route accepted changes through the upstream-endorsed shared backend
+- [x] Keep structured findings/change sets and one repair pass product-owned.
+- [x] Route accepted changes through the upstream-endorsed shared backend
   transaction boundary.
-- [ ] Prove partial selection, stale rejection, all-or-nothing apply, and undo.
-- [ ] Remove the superseded product maintenance evidence Tools only after all
+- [x] Prove partial selection, stale rejection, all-or-nothing apply, and undo.
+- [x] Remove the superseded product maintenance evidence Tools only after all
   target matrices have equivalent tests.
 
 ### Phase 7: Remove the legacy Agent protocol
 
-- [ ] Delete `tutor-tools::ReadMemoryTool`.
-- [ ] Delete `tutor-tools::WriteMemoryTool`.
-- [ ] Delete model-provided `approved`, scope, raw section, and path schemas.
+- [x] Delete `tutor-tools::ReadMemoryTool`.
+- [x] Delete `tutor-tools::WriteMemoryTool`.
+- [x] Delete model-provided `approved`, scope, raw section, and path schemas.
 - [x] Remove `CapabilityRouter.memory_root`,
   `learner_memory_tools`, and manual Tool mounting.
-- [ ] Remove legacy Tool names from prompts, mocks, README, specifications, and
+- [x] Remove legacy Tool names from active prompts, mocks, README,
+  specifications, and
   `docs/runtime-tool-projections.json`.
-- [ ] Confirm active source contains no `read_memory` or `write_memory`.
-- [ ] Keep product UI/store methods only where they represent product commands,
+- [x] Confirm active production source contains no legacy Learner Memory tool
+  protocol.
+- [x] Keep product UI/store methods only where they represent product commands,
   not Agent compatibility.
 
 ### Phase 8: Quality and release gate
 
-- [ ] Record representative Chat personalization quality before/after.
-- [ ] Measure P50/P95 memory search, read, write, forget, and maintenance-run
+- [x] Record representative Chat personalization quality before/after.
+- [x] Measure P50/P95 memory search, read, write, forget, and maintenance-run
   latency.
-- [ ] Measure prompt tokens and durable Session size.
-- [ ] Inspect raw runtime Session JSONL and compaction for leaked memory bodies,
+- [x] Measure prompt tokens and durable Session size.
+- [x] Inspect raw runtime Session JSONL and compaction for leaked memory bodies,
   approval grants, access attributes, or policy secrets.
-- [ ] Run concurrent-user isolation and cross-run ref/grant replay tests.
-- [ ] Run the full Rust, projection, frontend test, and production build gates.
+- [x] Run concurrent-user isolation and cross-run ref/grant replay tests.
+- [x] Run the full Rust, projection, frontend test, and production build gates.
 - [ ] Update the runtime audit, framework feedback resolutions, QA evidence,
   README, specs, and issue #3.
 

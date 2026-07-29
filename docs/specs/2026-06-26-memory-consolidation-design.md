@@ -16,13 +16,13 @@ Product event / workspace record
   -> append-only L1 event plus durable source pointer
   -> user starts a Memory maintenance run
   -> agent receives target schema and compact evidence catalog
-  -> agent explores L1 through bounded read-only tools
+  -> agent explores target-scoped L1/L2 through runtime Knowledge search/read
   -> agent returns an evidence-bound MemoryChangeSet
   -> product validates refs, anchors, and base revision
   -> user reviews and selects changes in the central diff
   -> product applies accepted operations atomically
   -> Markdown memory documents are serialized with history and undo
-  -> agents read L3 memory through read_memory when useful
+  -> agents read L3 memory through runtime Knowledge when useful
 ```
 
 The key lesson from DeepTutor is that consolidation prompts should not ask the
@@ -641,65 +641,40 @@ No persistent memory document changes before explicit user confirmation.
 - L1 remains out of the primary file rail; it is reached through evidence
   exploration and source navigation.
 
-### 12.5 Existing Behavior to Replace
+### 12.5 Current Review Boundary
 
-The current full-draft preview and report-oriented result are transitional.
-They should be replaced by flow progress plus central structured diff review.
-Existing chunk execution may remain internally while the user-facing contract
-moves to `MemoryChangeSet`.
+The active UI uses flow progress plus central structured diff review. The
+workflow returns a `MemoryChangeSet`; it never returns final Markdown for
+direct persistence.
 
 ## 13. Agent Tool Boundaries
 
-### 13.1 Memory Workbench Evidence Tools
+### 13.1 Runtime Knowledge Evidence
 
 The Memory workbench agent has read-only, on-demand access to all L1 evidence.
 This means all evidence is addressable; it does not mean all evidence is
 inserted into the initial prompt.
 
-Required tool capabilities:
+The workflow LLM step mounts the generic runtime tools:
 
 ```ts
-list_memory_events({
-  surface?: 'chat' | 'quiz' | 'notebook' | 'knowledge'
-  from?: string
-  to?: string
-  cursor?: string
-  limit?: number
-})
-
-search_memory_events({
-  query: string
-  surface?: string
-  sessionId?: string
-  from?: string
-  to?: string
-  cursor?: string
-  limit?: number
-})
-
-read_memory_event({ eventId: string })
-
-read_memory_context({
-  eventId: string
-  before?: number
-  after?: number
-})
-
-read_memory_source({ reference: string })
+knowledge_search({ query, source_id, filters, cursor, limit })
+knowledge_read({ reference, selector })
 ```
 
 The initial workflow context contains the target document, schema, base
 revision, task rules, and a compact L1 catalog. The agent starts with the target
-surface by default and may explicitly expand to other surfaces when useful.
-Cross-surface expansion must appear in the run flow.
+surface selected by the server. A target-scoped `WorkflowRunRequest` fixes the
+allowed layers, surfaces, kinds, principal, and authorization version; model
+filters can only narrow that scope.
 
-Evidence tools must:
+The runtime Knowledge boundary must:
 
 - paginate and enforce bounded result sizes,
 - return stable event-level ids rather than session-only ids,
 - preserve source surface, timestamp, session/turn identity, and artifact refs,
-- provide complete source resolution through a snapshot or durable pointer,
-- emit trace/progress events for every list, search, and read,
+- return exact revisioned refs and bounded read bodies,
+- emit trace/progress events for every search and read,
 - remain read-only and expose no arbitrary filesystem access,
 - support cancellation and workflow budgets.
 
@@ -707,28 +682,17 @@ Every proposed fact or edit must cite evidence actually read during that run.
 The product rejects unknown, unread, or stale refs. L1 itself remains append-only
 from the Memory workflow's perspective.
 
-### 13.2 L2 Evidence Tools for L3 Runs
+### 13.2 Target-specific L2/L1 Access
 
-L3 runs use a separate read-only tool set:
-
-```ts
-list_memory_entries({ path?: string, cursor?: string, limit?: number })
-search_memory_entries({ query: string, paths?: string[], cursor?: string, limit?: number })
-read_memory_entry({ reference: string })
-read_memory_entry_sources({ reference: string })
-```
-
-Each Memory workflow run must declare exactly the tools mounted for that
-target. L2 runs declare only L1 event tools, ordinary L3 runs declare only L2
-entry tools, and `recent.md` declares both sets for its bounded chronology
-exception. A static union of all Memory tools is invalid because runtime tool
-gating may settle a step before the model turn when allowed tools are not
-actually registered.
+Each Memory workflow run mounts the same single runtime Knowledge plugin while
+its trusted request changes the accessible source slice. L2 targets receive
+only their L1 surface; ordinary L3 targets receive only their allowed L2
+surfaces; `recent.md` receives L2 plus the bounded L1 chronology exception.
 
 Listing and searching return candidates but do not make them citeable. Reading
-one stable L2 entry adds its canonical `memory:<path>#<entry_id>` reference to
-the run's read set. Source drill-down resolves the entry's L1 footnotes and
-records those reads in flow without replacing the L2 citation contract.
+one exact item adds the `canonical_reference` metadata value to the run's read
+set. The product rejects output refs that were not observed through a
+successful runtime read in that workflow run.
 
 The L3 workflow stages are:
 
@@ -764,20 +728,25 @@ the unread references. The agent must read and re-evaluate each retained source
 or remove the unsupported claim. A second invalid result fails validation; list
 results never become citeable merely because they appeared in model context.
 
-### 13.3 Product Agent Memory Tools
+### 13.3 Runtime Agent Memory Protocol
 
-`read_memory`:
+`knowledge_search` / `knowledge_read`:
 
 - Available to Chat, Research, and Quiz planning.
 - Should be called when personalized teaching, review, quiz targeting, or
   long-running context matters.
 - Should not be called for pure factual questions that do not need learner
   personalization.
+- Search returns bounded candidates; only an exact read makes a reference
+  eligible for a maintenance change set.
 
-`write_memory`:
+`memory_write` / `memory_forget`:
 
-- Should only write explicit preferences or user-approved facts.
-- Should default to `L3/preferences.md`.
+- Write only explicit preferences and require a live product approval.
+- The product policy maps the runtime kind to `L3/preferences.md`; the model
+  cannot choose a path.
+- Forget requires an exact current runtime reference and the same live
+  approval boundary.
 - Should not update `profile.md`, `scope.md`, `recent.md`, or
   `teaching_strategy.md` during ordinary chat.
 
@@ -787,14 +756,13 @@ presented as factual proof about external domains.
 ## 14. Implementation Notes for `llm-tutor`
 
 Current `llm-tutor` has Markdown memory files, event-level L1 references,
-bounded runtime evidence tools, a structured `MemoryChangeSet`, central diff
+target-scoped runtime Knowledge evidence, a structured `MemoryChangeSet`, central diff
 review, atomic selected-change apply, history, undo, and in-process run rejoin
 after workspace navigation. As of 2026-07-14, L3 runs also use canonical L2
-entry references, cursor-paginated L2 discovery/read tools, target-specific L2
-source matrices, separate L2/L1 read tracking, and the explicit `recent.md` L1
-exception. Ordinary L3 runs are not mounted with direct L1 tools and their
-changes must cite an L2 entry read in the current run. The remaining hardening
-work should:
+entry references, runtime Knowledge search/read, target-specific L2 source
+matrices, read tracking, and the explicit `recent.md` L1 exception. Ordinary
+L3 runs receive no L1 access and their changes must cite an L2 entry read in
+the current workflow step. The remaining hardening work should:
 
 - Preserve durable pointers to complete source artifacts instead of relying on
   truncated event summaries alone.
@@ -817,8 +785,8 @@ work should:
 ### Natural Agent Interaction
 
 Learner memory is part of the Agent's continuous product context, not a
-database operation that should normally be narrated to the user. Calls to
-`read_memory` remain visible in trace but are silent in assistant answer text.
+database operation that should normally be narrated to the user. Runtime
+Knowledge calls remain visible in trace but are silent in assistant answer text.
 When memory is supported, the Agent should apply it directly or refer to it
 naturally as something remembered from prior learning interactions. Weak,
 stale, ambiguous, or conflicting memory must be hedged and confirmed. An empty

@@ -1,6 +1,6 @@
 # Runtime Migration Audit
 
-Date: 2026-07-08
+Date: 2026-07-29
 
 > Historical note (2026-07-16): the standalone Deep Solve capability has been
 > retired. Its references in this audit record the migration state on the audit
@@ -19,20 +19,29 @@ Date: 2026-07-08
 > final-answer citation validation and trusted workflow request propagation are
 > now available and consumed. Detailed Research and Quiz are migrated, and the
 > legacy Agent RAG boundary has been removed.
+>
+> Update (2026-07-29): Learner Memory B3 is pinned to merged runtime revision
+> `ee97890`. Ordinary Chat and Memory maintenance now share the runtime
+> Knowledge source, trusted access control, exact revisioned refs, and runtime
+> Memory mutation gate. The product-specific Learner Memory Agent tools have
+> been deleted; product review/apply remains a domain transaction over the same
+> file backend, lock, CAS revision, atomic replace, and undo primitive.
 
 ## Current Evidence
 
 - The project pins all `llm-harness-*` crates to
-  `83bef164b36bd46ffa6f41cd6d3288a6b93cac4e`.
+  `ee97890b00b6a549dfb3b94519997af613adf456`.
 - Knowledge A6 quality, latency, token accounting, raw Session persistence, and
   cross-run citation evidence is recorded in
   `docs/qa/knowledge-a6-acceptance.md`.
+- Learner Memory B3 approval, isolation, maintenance, latency, and raw Session
+  evidence is recorded in `docs/qa/runtime-memory-b3-acceptance.md`.
 - The aligned `llm-api-adapter` revision is
   `16a22ad284b8deb8c3a77664a0876f565f4a6eb9`.
 - `Cargo.toml` and `Cargo.lock` pin all `llm-harness-*` crates to the same
   runtime revision.
-- The active migration branch contains the runtime A6 Research/Quiz cutover and
-  legacy Agent RAG cleanup.
+- The active migration branch contains the runtime Learner Memory Chat and
+  maintenance cutover plus legacy Agent Memory cleanup.
 
 ## Runtime-Owned Capabilities In Use
 
@@ -53,6 +62,18 @@ Date: 2026-07-08
     covers the same contract for the Code Exec harness path.
 - Automatic compaction calls runtime `AgentHarness::compact()` and reads compact
   summaries from runtime `SessionEntryPayload::Compaction`.
+- Learner Memory reads use the same runtime `knowledge_search` /
+  `knowledge_read` tools as course Knowledge. Course evidence is citation
+  required; Learner Memory is citation optional and remains personalization
+  context.
+- Learner Memory writes and forgets use runtime `MemoryPlugin`,
+  `MemoryService`, `SecureMemoryWritePolicy`, and mandatory
+  `MemoryMutationGate`; the Web coordinator binds the final mutation to a
+  single-use run/session approval request.
+- Memory maintenance mounts one runtime Knowledge plugin on the workflow LLM
+  step and injects target-specific access with `WorkflowRunRequest`. Product
+  change-set validation accepts only canonical refs observed through an exact
+  runtime read in that workflow run.
 - Quiz generation, Memory maintenance, and detailed Research run through
   runtime `WorkflowEngine`.
 - Memory and Research use runtime declarative edge routing through a thin no-op

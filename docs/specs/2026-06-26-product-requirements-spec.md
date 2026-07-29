@@ -578,13 +578,13 @@ other generated learning records.
 - REQ-709: Memory entries shall support source references. Status: implemented.
 - REQ-710: Memory entries shall be editable by the user. Status: implemented.
 - REQ-711: Memory consolidation shall initially be manually triggered from the Memory module. Status: implemented as explicit update/check/dedupe actions.
-- REQ-712: Memory consolidation shall show which source layers or surfaces will be used. Status: implemented through target-specific workflow tools and visible flow state.
+- REQ-712: Memory consolidation shall show which source layers or surfaces will be used. Status: implemented through target-specific trusted runtime Knowledge access and visible flow state.
 - REQ-713: Memory consolidation shall write back to Markdown files. Status: implemented after change review.
 - REQ-714: The system may later suggest consolidation after N turns, quiz completion, or research-report saves. Status: planned.
-- REQ-715: The product shall provide a `read_memory` tool for agents. Status: implemented.
-- REQ-716: Agents shall call `read_memory` when personalized teaching, quiz generation, review planning, or long-running learning context requires it. Status: implemented through tool-aware runtime instructions.
+- REQ-715: The product shall expose Learner Memory through runtime `knowledge_search` / `knowledge_read`, not a product-specific Agent tool. Status: implemented.
+- REQ-716: Agents shall search and read Learner Memory when personalized teaching, quiz generation, review planning, or long-running learning context requires it. Status: implemented through runtime Knowledge instructions and trusted source scoping.
 - REQ-717: Memory shall not be injected wholesale into every prompt by default. Status: implemented.
-- REQ-718: `write_memory` shall be limited to explicit user preferences or user-approved facts. Status: implemented in runtime policy and tool contract.
+- REQ-718: Runtime `memory_write` shall be limited to explicit user preferences and shall require a live server-mediated approval. Status: implemented through `MemoryWritePolicy`, `MemoryMutationGate`, and the Web approval coordinator.
 - REQ-719: Memory content shall guide teaching behavior and personalization, not act as factual source material for external facts. Status: implemented.
 - REQ-720: Memory Markdown footnote refs shall render as clickable inline source chips. Status: implemented.
 - REQ-721: Clicking an inline memory source chip shall scroll to the corresponding bottom reference item. Status: implemented.
@@ -734,7 +734,7 @@ other generated learning records.
 - REQ-764: The retired draft-oriented Memory assist and consolidation APIs,
   prompt-injected L3 chunk implementation, and bare-surface citation path shall
   be removed before the layered L3 runtime is introduced. Status: implemented.
-- REQ-765: Agents shall treat `read_memory` as silent internal context loading
+- REQ-765: Agents shall treat Learner Memory Knowledge reads as silent internal context loading
   and shall not narrate implementation details such as "checking memory" or
   "reading the memory file" in assistant answer text. Status: implemented.
 - REQ-766: When learner memory is relevant and sufficiently supported, agents
@@ -743,7 +743,7 @@ other generated learning records.
   storage layer. Status: implemented.
 - REQ-767: Agents shall hedge or ask for confirmation when memory is weak,
   stale, ambiguous, or conflicting, and shall not claim to remember content
-  when `read_memory` returned no supporting memory. Status: implemented.
+  when no runtime Knowledge read returned supporting memory. Status: implemented.
 - REQ-768: Silent memory use shall not remove observability. Memory tool calls
   remain available in trace, and an agent shall truthfully explain the relevant
   prior conversation, quiz, Notebook-derived summary, or learner memory when

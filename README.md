@@ -127,10 +127,11 @@ Tutor Agent desktop
               -> chat / code execution
               -> quiz / research / memory workflows
               -> runtime Knowledge search / read / evidence validation
+              -> runtime Memory write / forget / approval
               -> llm-harness-runtime / llm-harness-agent
           -> tutor-tools
               -> web_search / web_fetch
-              -> code_exec / read_memory / write_memory
+              -> code_exec
           -> tutor-rag
               -> LanceDB + embedding retrieval
           -> local product stores
@@ -141,7 +142,7 @@ Tutor Agent desktop
 
 ```text
 crates/tutor-agent   Agent 能力路由、提示词及 Quiz/Research/Memory workflow。
-crates/tutor-tools   Web 搜索、抓取、代码执行和记忆工具。
+crates/tutor-tools   Web 搜索、抓取和代码执行工具。
 crates/tutor-rag     LanceDB 入库、runtime Knowledge source 和 embedding 集成。
 crates/tutor-web     Axum API、WebSocket、session 映射和产品数据存储。
 src-tauri            Tauri 桌面壳和 sidecar 生命周期管理。
