@@ -20,25 +20,17 @@
 
 ## Friction Points
 
-- **B3 gate: Knowledge citation policy cannot distinguish course evidence from
+- **Resolved 2026-07-29: Knowledge citation policy distinguishes course evidence from
   personalization memory**
   - Tracked upstream in
     [`llm-harness-runtime#91`](https://github.com/oh-my-harness/llm-harness-runtime/issues/91).
-  - Checked against runtime PR #82 revision `c4c0ddf` on 2026-07-28.
-  - `KnowledgePlugin` registers the single generic `knowledge_search` /
-    `knowledge_read` Tool pair and one global `KnowledgeCitationPolicy`.
-    `RequireWhenEvidenceRead` tests only whether any `KnowledgeRunState`
-    citation was registered.
-  - `llm-tutor` must put course Knowledge and Learner Memory in one registry to
-    avoid duplicate Tool names. Course reads must continue to require trusted
-    citations, while Learner Memory is silent personalization context and must
-    not force a visible citation after a memory-only read.
-  - Weakening the whole registry to `ValidateIfPresent`, installing duplicate
-    plugins, or copying runtime citation tracking into a product validator are
-    not acceptable migration paths.
-  - Suggestion: allow citation requirements to be scoped by source ID/domain,
-    or allow a read source to mark issued evidence as citation-required versus
-    citation-optional while retaining the same run-local validation boundary.
+  - Runtime PR #94 is merged and revision `ddd9e8f` consumed by product
+    validation provides source-scoped `KnowledgeCitationPolicy`.
+  - `llm-tutor` now installs one `KnowledgePlugin` for course Knowledge and
+    Learner Memory, marks course evidence `Required`, and marks Learner Memory
+    `Optional`.
+  - A real Chat integration test searches and reads Learner Memory through the
+    generic Tools and completes a natural answer without a visible citation.
 
 - **B3 gate: Memory has no formal batch/CAS application transaction**
   - Tracked upstream in
@@ -68,11 +60,12 @@
     Runtime revision `5f8266c` makes `MemoryMutationGate` a mandatory
     `MemoryService` dependency and invokes it with the final normalized write
     or exact delete ref plus a trusted `MemoryMutationOrigin`.
-  - `llm-tutor` now provides a thin `LearnerMemoryMutationGate` adapter around
-    a product `LearnerMemoryApprover`; it has no permissive default. The live
-    Web/CLI coordinator remains a later cutover phase and must implement
-    request/run/session/mutation binding, single use, timeout, cancellation,
-    disconnect handling, and replay rejection.
+  - `llm-tutor` provides a thin `LearnerMemoryMutationGate` adapter around a
+    product `LearnerMemoryApprover`; it has no permissive default.
+  - The live Web coordinator is now mounted in ordinary Chat and remains bound
+    to the run, request, session, and exact mutation. A real Chat integration
+    test proves `memory_write` reaches the browser approval event and cannot
+    persist before that request is approved.
 
 - **Resolved 2026-07-24: Workflow LLM steps can receive trusted request extensions**
   - Checked against `codex/session-projection` commit `8ab2a377` on 2026-07-23.

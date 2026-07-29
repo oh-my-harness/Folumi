@@ -14,10 +14,10 @@ pub mod runtime_harness;
 pub mod runtime_workflow;
 pub mod terminal_approver;
 
-pub use capability::{Capability, CapabilityRouter};
+pub use capability::{Capability, CapabilityRouter, LearnerMemoryMode};
 pub use error::{Result, TutorError};
 pub use knowledge::{
-    KnowledgeRuntime, assemble_course_knowledge, assemble_knowledge_runtime,
-    course_evidence_provider_id, required_course_citation_policy,
+    KnowledgeRuntime, agent_knowledge_evidence_provider_id, assemble_course_knowledge,
+    assemble_knowledge_runtime, required_course_citation_policy,
 };
 pub use llm_provider::{LlmConfig, LlmProviderKind};

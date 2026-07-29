@@ -201,12 +201,12 @@ pub enum LearnerMemoryServiceBuildError {
 }
 
 pub fn assemble_learner_memory_service(
+    source: Arc<LearnerMemoryKnowledgeSource>,
     backend: Arc<FileMemoryBackend>,
     access_control: Arc<llm_harness_runtime_knowledge::KnowledgeAccessControl>,
     policy_secret: Vec<u8>,
     approver: Arc<dyn LearnerMemoryApprover>,
 ) -> Result<MemoryService, LearnerMemoryServiceBuildError> {
-    let source = Arc::new(LearnerMemoryKnowledgeSource::new(backend.clone()));
     let store = Arc::new(LearnerMemoryWriteStore::new(backend));
     let policy = Arc::new(LearnerMemoryWritePolicy::new(policy_secret)?);
     let gate = Arc::new(LearnerMemoryMutationGate::new(approver));
@@ -612,6 +612,7 @@ mod tests {
         let source = Arc::new(LearnerMemoryKnowledgeSource::new(backend.clone()));
         let approver = Arc::new(RecordingApprover::default());
         let service = assemble_learner_memory_service(
+            source.clone(),
             backend.clone(),
             Arc::new(KnowledgeAccessControl::new(Arc::new(InteractiveAuthorizer))),
             vec![9; 32],

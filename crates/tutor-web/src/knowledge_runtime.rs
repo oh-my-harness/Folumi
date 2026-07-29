@@ -1,25 +1,158 @@
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
+use llm_harness_agent::Plugin;
 use llm_harness_runtime_knowledge::{
     AuthorizationDecision, EvidenceAuthority, KnowledgeAccessContext, KnowledgeAccessControl,
-    KnowledgeAction, KnowledgeAuthorizer, KnowledgeError, KnowledgeResourceRef,
+    KnowledgeAction, KnowledgeAuthorizer, KnowledgeCitationPolicy, KnowledgeCitationRequirement,
+    KnowledgeError, KnowledgeResourceRef, KnowledgeSource,
 };
+use llm_harness_runtime_memory::MemoryPlugin;
 
 use crate::learner_memory_source::{
     LEARNER_MEMORY_KINDS_ATTRIBUTE, LEARNER_MEMORY_LAYERS_ATTRIBUTE, LEARNER_MEMORY_NAMESPACE,
     LEARNER_MEMORY_PRINCIPAL_ATTRIBUTE, LEARNER_MEMORY_PROFILE_ATTRIBUTE, LEARNER_MEMORY_SOURCE_ID,
-    LEARNER_MEMORY_SURFACES_ATTRIBUTE,
+    LEARNER_MEMORY_SURFACES_ATTRIBUTE, LearnerMemoryKnowledgeSource,
 };
+use crate::learner_memory_write::{LearnerMemoryApprover, assemble_learner_memory_service};
+use crate::memory_store::FileMemoryBackend;
 
-pub(crate) fn course_evidence_authority() -> Arc<EvidenceAuthority> {
+#[derive(Clone)]
+pub struct AgentRuntimeSecurity {
+    evidence_authority: Arc<EvidenceAuthority>,
+    memory_policy_secret: Arc<[u8]>,
+}
+
+impl AgentRuntimeSecurity {
+    pub fn generate() -> Self {
+        let evidence_secret = random_process_secret();
+        let memory_policy_secret = Arc::<[u8]>::from(random_process_secret());
+        let evidence_authority = Arc::new(
+            EvidenceAuthority::new(
+                evidence_secret,
+                [tutor_agent::agent_knowledge_evidence_provider_id()],
+            )
+            .expect("generated evidence secret and registered provider are valid"),
+        );
+        Self {
+            evidence_authority,
+            memory_policy_secret,
+        }
+    }
+
+    pub fn evidence_authority(&self) -> Arc<EvidenceAuthority> {
+        self.evidence_authority.clone()
+    }
+
+    pub(crate) fn memory_policy_secret(&self) -> Vec<u8> {
+        self.memory_policy_secret.as_ref().to_vec()
+    }
+}
+
+fn random_process_secret() -> Vec<u8> {
     let mut secret = Vec::with_capacity(32);
     secret.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
     secret.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
-    Arc::new(
-        EvidenceAuthority::new(secret, [tutor_agent::course_evidence_provider_id()])
-            .expect("generated evidence secret and registered provider are valid"),
-    )
+    secret
+}
+
+pub(crate) fn agent_knowledge_citation_policy(
+    course_source: bool,
+    learner_memory_source: bool,
+) -> tutor_agent::Result<KnowledgeCitationPolicy> {
+    let mut builder = KnowledgeCitationPolicy::builder();
+    if course_source {
+        builder = builder.source(
+            tutor_rag::COURSE_KNOWLEDGE_SOURCE_ID,
+            KnowledgeCitationRequirement::Required,
+        );
+    }
+    if learner_memory_source {
+        builder = builder.source(
+            LEARNER_MEMORY_SOURCE_ID,
+            KnowledgeCitationRequirement::Optional,
+        );
+    }
+    builder
+        .build()
+        .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))
+}
+
+pub(crate) struct LearnerMemoryRuntimeInput {
+    pub(crate) backend: Arc<FileMemoryBackend>,
+    pub(crate) mode: tutor_agent::LearnerMemoryMode,
+    pub(crate) approver: Option<Arc<dyn LearnerMemoryApprover>>,
+}
+
+pub(crate) fn install_agent_knowledge_and_memory(
+    mut router: tutor_agent::CapabilityRouter,
+    course_source: Option<Arc<dyn KnowledgeSource>>,
+    learner_memory: Option<LearnerMemoryRuntimeInput>,
+    security: &AgentRuntimeSecurity,
+) -> tutor_agent::Result<tutor_agent::CapabilityRouter> {
+    let access_control = agent_knowledge_access_control();
+    let has_course_source = course_source.is_some();
+    let mut sources = Vec::new();
+    if let Some(source) = course_source {
+        sources.push(source);
+    }
+
+    let mut memory_source = None;
+    if let Some(input) = learner_memory {
+        if input.mode == tutor_agent::LearnerMemoryMode::Disabled {
+            return Err(tutor_agent::TutorError::Internal(
+                "disabled Learner Memory must not provide a backend".into(),
+            ));
+        }
+        let source = Arc::new(LearnerMemoryKnowledgeSource::new(input.backend.clone()));
+        sources.push(source.clone());
+        memory_source = Some((source, input));
+    }
+
+    if !sources.is_empty() {
+        let citation_policy =
+            agent_knowledge_citation_policy(has_course_source, memory_source.is_some())?;
+        let runtime = tutor_agent::assemble_knowledge_runtime(
+            sources,
+            access_control.clone(),
+            security.evidence_authority(),
+            tutor_agent::agent_knowledge_evidence_provider_id(),
+            citation_policy,
+        )?;
+        router = router.with_knowledge_runtime(runtime);
+    }
+
+    match memory_source {
+        None => router.with_learner_memory_runtime(tutor_agent::LearnerMemoryMode::Disabled, None),
+        Some((_source, input)) if input.mode == tutor_agent::LearnerMemoryMode::ReadOnly => {
+            if input.approver.is_some() {
+                return Err(tutor_agent::TutorError::Internal(
+                    "read-only Learner Memory must not install an approver".into(),
+                ));
+            }
+            router.with_learner_memory_runtime(tutor_agent::LearnerMemoryMode::ReadOnly, None)
+        }
+        Some((source, input)) => {
+            let approver = input.approver.ok_or_else(|| {
+                tutor_agent::TutorError::Internal(
+                    "interactive Learner Memory requires an approval coordinator".into(),
+                )
+            })?;
+            let service = assemble_learner_memory_service(
+                source,
+                input.backend,
+                access_control,
+                security.memory_policy_secret(),
+                approver,
+            )
+            .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?;
+            let plugin: Arc<dyn Plugin> = Arc::new(MemoryPlugin::new(Arc::new(service)));
+            router.with_learner_memory_runtime(
+                tutor_agent::LearnerMemoryMode::InteractiveMutation,
+                Some(plugin),
+            )
+        }
+    }
 }
 
 pub(crate) fn agent_knowledge_access_control() -> Arc<KnowledgeAccessControl> {
@@ -126,9 +259,20 @@ fn csv_is_subset(value: Option<&String>, allowed: &[&str], allow_empty: bool) ->
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use llm_harness_loop::test_utils::{MockLlmClient, MockResponse, NoOpEnv};
     use llm_harness_runtime_knowledge::{KnowledgeRef, KnowledgeScope, PrincipalRef};
+    use llm_harness_runtime_memory::MemorySessionId;
+    use llm_harness_types::RunRequest;
+    use tokio_util::sync::CancellationToken;
 
     use super::*;
+    use crate::memory_approval::{ApprovalResponseOutcome, WebMemoryApprovalCoordinator};
+    use crate::memory_store::{DurableMemoryWrite, memory_entry_revision};
+    use crate::stream::{StreamEvent, TutorStream};
+    use tutor_agent::governance::GovernanceConfig;
+    use tutor_agent::{Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig};
 
     fn access(profile: &str, principal: &str) -> KnowledgeAccessContext {
         let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
@@ -173,6 +317,21 @@ mod tests {
             )
             .await
             .unwrap()
+    }
+
+    fn router(responses: Vec<MockResponse>) -> CapabilityRouter {
+        CapabilityRouter::new(
+            Arc::new(NoOpEnv),
+            LlmConfig::anthropic("mock-model", ""),
+            GovernanceConfig::new(2.0, None, false),
+        )
+        .with_client(Arc::new(MockLlmClient::new(responses)))
+    }
+
+    fn run_request(profile: &str, session_id: &str, text: &str) -> RunRequest {
+        RunRequest::from_text(text)
+            .with_extension(access(profile, "local-user"))
+            .with_extension(MemorySessionId::new(session_id).unwrap())
     }
 
     #[tokio::test]
@@ -234,5 +393,166 @@ mod tests {
             .await,
             AuthorizationDecision::Deny
         );
+    }
+
+    #[test]
+    fn interactive_assembly_requires_a_live_approval_coordinator() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let error = install_agent_knowledge_and_memory(
+            router(vec![]),
+            None,
+            Some(LearnerMemoryRuntimeInput {
+                backend,
+                mode: LearnerMemoryMode::InteractiveMutation,
+                approver: None,
+            }),
+            &AgentRuntimeSecurity::generate(),
+        )
+        .err()
+        .expect("interactive assembly must fail closed");
+
+        assert!(
+            error
+                .to_string()
+                .contains("requires an approval coordinator")
+        );
+    }
+
+    #[tokio::test]
+    async fn interactive_chat_calls_web_gate_before_persisting_memory() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let stream = TutorStream::new(8);
+        let mut events = stream.subscribe();
+        let coordinator = Arc::new(WebMemoryApprovalCoordinator::new(
+            stream,
+            "session-a",
+            "run-a",
+            CancellationToken::new(),
+        ));
+        let router = install_agent_knowledge_and_memory(
+            router(vec![
+                MockResponse::tool_use(
+                    "memory-write-1",
+                    "memory_write",
+                    r#"{"content":"Prefers diagrams.","kind":"preference"}"#,
+                ),
+                MockResponse::text("I will remember that preference."),
+            ]),
+            None,
+            Some(LearnerMemoryRuntimeInput {
+                backend: backend.clone(),
+                mode: LearnerMemoryMode::InteractiveMutation,
+                approver: Some(coordinator.clone()),
+            }),
+            &AgentRuntimeSecurity::generate(),
+        )
+        .unwrap();
+
+        let task = tokio::spawn(async move {
+            router
+                .run_request(
+                    Capability::Chat,
+                    run_request(
+                        "interactive_mutation",
+                        "session-a",
+                        "Remember that I prefer diagrams.",
+                    ),
+                )
+                .await
+        });
+        let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+            .await
+            .expect("memory write must request approval")
+            .unwrap();
+        let StreamEvent::Status { kind, data } = event else {
+            panic!("expected approval status");
+        };
+        assert_eq!(kind, "approval_request");
+        assert_eq!(data["tool"], "memory_write");
+        assert_eq!(
+            backend.read("L3/preferences.md").unwrap().markdown,
+            "# Learning preferences\n\n"
+        );
+        let request_id = data["request_id"].as_str().unwrap();
+        assert_eq!(
+            coordinator.resolve(request_id, true),
+            ApprovalResponseOutcome::Resolved
+        );
+
+        let answer = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("approved Chat run must finish")
+            .unwrap()
+            .unwrap();
+        assert!(answer.contains("remember"));
+        assert!(
+            backend
+                .read("L3/preferences.md")
+                .unwrap()
+                .markdown
+                .contains("Prefers diagrams.")
+        );
+        coordinator.close();
+    }
+
+    #[tokio::test]
+    async fn read_only_chat_uses_memory_without_forcing_a_visible_citation() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let entry = backend
+            .upsert_durable_preference(DurableMemoryWrite {
+                content: "Prefers diagrams.".into(),
+                kind: "preference".into(),
+                provenance: serde_json::json!({"source": "test"}),
+                idempotency_key: "test-preference".into(),
+                expires_at: None,
+            })
+            .unwrap();
+        let reference = KnowledgeRef {
+            source_id: LEARNER_MEMORY_SOURCE_ID.into(),
+            item_id: format!("l3/preferences/{}", entry.marker),
+            revision: Some(memory_entry_revision(&entry).unwrap()),
+        };
+        let read_args = serde_json::json!({
+            "reference": reference,
+            "selector": {"kind": "document"}
+        })
+        .to_string();
+        let router = install_agent_knowledge_and_memory(
+            router(vec![
+                MockResponse::tool_use(
+                    "memory-search-1",
+                    "knowledge_search",
+                    r#"{"query":"diagrams","source_id":"llm-tutor.learner-memory"}"#,
+                ),
+                MockResponse::tool_use("memory-read-1", "knowledge_read", &read_args),
+                MockResponse::text("I will explain this with diagrams."),
+            ]),
+            None,
+            Some(LearnerMemoryRuntimeInput {
+                backend,
+                mode: LearnerMemoryMode::ReadOnly,
+                approver: None,
+            }),
+            &AgentRuntimeSecurity::generate(),
+        )
+        .unwrap();
+
+        let answer = router
+            .run_request(
+                Capability::Chat,
+                run_request(
+                    "read_only",
+                    "session-a",
+                    "Explain this in the way I prefer.",
+                ),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(answer, "I will explain this with diagrams.");
+        assert!(!answer.contains("[^"));
     }
 }

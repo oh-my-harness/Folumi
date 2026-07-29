@@ -33,7 +33,7 @@ use tutor_agent::event_sink::EventSink;
 use tutor_agent::governance::GovernanceConfig;
 use tutor_agent::research::{ResearchWorkflowInput, run_research_workflow_with_runtime};
 use tutor_agent::{
-    CapabilityRouter, LlmConfig, assemble_course_knowledge, course_evidence_provider_id,
+    CapabilityRouter, LlmConfig, agent_knowledge_evidence_provider_id, assemble_course_knowledge,
 };
 use tutor_rag::{EmbeddingConfig, LanceDbKnowledgeSource, LanceDbRag};
 
@@ -443,8 +443,9 @@ async fn chat_uses_runtime_knowledge_tools_and_keeps_read_bodies_out_of_session(
         .await
         .unwrap();
 
-    let authority =
-        Arc::new(EvidenceAuthority::new(vec![7; 32], [course_evidence_provider_id()]).unwrap());
+    let authority = Arc::new(
+        EvidenceAuthority::new(vec![7; 32], [agent_knowledge_evidence_provider_id()]).unwrap(),
+    );
     let knowledge_runtime =
         assemble_course_knowledge(LanceDbKnowledgeSource::new(rag, "kb-a"), authority).unwrap();
     let access = knowledge_access("kb-a");
@@ -591,8 +592,9 @@ async fn chat_rejects_a_valid_knowledge_citation_reused_across_runs() {
     .await
     .unwrap();
 
-    let authority =
-        Arc::new(EvidenceAuthority::new(vec![7; 32], [course_evidence_provider_id()]).unwrap());
+    let authority = Arc::new(
+        EvidenceAuthority::new(vec![7; 32], [agent_knowledge_evidence_provider_id()]).unwrap(),
+    );
     let knowledge_runtime =
         assemble_course_knowledge(LanceDbKnowledgeSource::new(rag, "kb-a"), authority).unwrap();
     let access = knowledge_access("kb-a");
@@ -687,38 +689,6 @@ async fn chat_web_tool_call_then_text() {
         .await
         .unwrap();
     assert!(answer.contains("Newton"));
-}
-
-#[tokio::test]
-async fn chat_can_call_read_memory_then_text() {
-    let memory_dir = tempfile::tempdir().unwrap();
-    let memory_root = memory_dir.path().join("memory");
-    std::fs::create_dir_all(memory_root.join("L3")).unwrap();
-    std::fs::write(
-        memory_root.join("L3/profile.md"),
-        "# Student profile\n\n- Learns best from worked examples.",
-    )
-    .unwrap();
-    let sink = Arc::new(TraceRecorder::default());
-    let responses = vec![
-        MockResponse::tool_use("use-memory", "read_memory", r#"{"scope":"profile"}"#),
-        MockResponse::text("I will adapt the next explanation to your profile."),
-    ];
-    let router = make_router(responses, make_governance(None))
-        .with_memory_root(memory_root)
-        .with_learner_memory_access(true)
-        .with_event_sink(sink.clone());
-    let answer = router
-        .run(Capability::Chat, "review this based on my profile")
-        .await
-        .unwrap();
-    assert!(answer.contains("profile"));
-    assert!(sink.events().iter().any(|(kind, data)| {
-        kind == "tool_result"
-            && data["tool"] == "read_memory"
-            && data["details"]["empty"] == false
-            && data["details"]["files"][0] == "L3/profile.md"
-    }));
 }
 
 #[tokio::test]
@@ -1015,8 +985,9 @@ async fn research_workflow_uses_runtime_knowledge_and_refreshes_final_citations(
     .await
     .unwrap();
 
-    let authority =
-        Arc::new(EvidenceAuthority::new(vec![7; 32], [course_evidence_provider_id()]).unwrap());
+    let authority = Arc::new(
+        EvidenceAuthority::new(vec![7; 32], [agent_knowledge_evidence_provider_id()]).unwrap(),
+    );
     let knowledge_runtime =
         assemble_course_knowledge(LanceDbKnowledgeSource::new(rag, "kb-a"), authority).unwrap();
     let access = knowledge_access("kb-a");

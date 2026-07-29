@@ -1,6 +1,6 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: in progress (Phase 5 approval foundation complete; source-aware citation available; live cutover next) |
+> Status: in progress (ordinary Chat cut over to runtime Knowledge/Memory; full release validation and maintenance cutover next) |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
@@ -341,8 +341,8 @@ and call the result atomic.
 - [ ] Wait for runtime PR #82 to be non-draft, green, and merged.
 - [ ] Pin all `llm-harness-*` crates, including
   `llm-harness-runtime-memory`, to one immutable merged revision.
-- [ ] Align `llm_adapter` to the revision required by that runtime.
-- [ ] Run Cargo metadata/tree checks and reject mixed runtime revisions.
+- [x] Align `llm_adapter` to the revision required by that runtime.
+- [x] Run Cargo metadata/tree checks and reject mixed runtime revisions.
 
 Adapter and real Chat product-validation development use `ddd9e8f`. Production
 pinning and legacy protocol deletion still require an immutable merged
@@ -385,7 +385,7 @@ revision.
 - [x] Persist runtime provenance, idempotency, and expiry metadata.
 - [x] Wrap `SecureMemoryWritePolicy` with the trusted product mutation gate and
   an allowlist containing only `preference`.
-- [ ] Use a process secret of at least 32 bytes from product secret management;
+- [x] Use a process secret of at least 32 bytes from product secret management;
   never put it in settings responses, logs, prompts, or Session entries.
 - [x] Assemble `MemoryService` with the same read source and access control.
 - [x] Run runtime `verify_memory_store_contract`.
@@ -411,13 +411,13 @@ blocker, and the next checkpoint installs both sources with course
 - [x] Build one trusted access context from session, selected KB, Tutor
   permissions, Learner Memory profile, and authorization version.
 - [x] Attach `MemorySessionId` to ordinary and workflow requests.
-- [ ] Install exactly one `KnowledgePlugin`.
-- [ ] Install `MemoryPlugin` only for `InteractiveMutation`.
-- [ ] Fail assembly when mutation is requested without the approval
+- [x] Install exactly one `KnowledgePlugin`.
+- [x] Install `MemoryPlugin` only for `InteractiveMutation`.
+- [x] Fail assembly when mutation is requested without the approval
   coordinator.
 - [ ] Make CLI memory access read-only by default and require an explicit
   `TerminalApprover` for mutation.
-- [ ] Consume the upstream source-aware citation solution while keeping strict
+- [x] Consume the upstream source-aware citation solution while keeping strict
   course citations and citation-optional memory personalization.
 
 ### Phase 5: Cut over ordinary conversations
@@ -427,14 +427,14 @@ blocker, and the next checkpoint installs both sources with course
 - [x] Wire `approval_response` to the pending request rather than trace-only
   handling.
 - [x] Propagate stop, disconnect, timeout, and terminal-run cancellation.
-- [ ] Replace memory-root/tool fields on `CapabilityRouter` with the assembled
+- [x] Replace memory-root/tool fields on `CapabilityRouter` with the assembled
   runtime boundaries and access profile.
-- [ ] Replace prompt references to `read_memory/write_memory` with natural
+- [x] Replace prompt references to `read_memory/write_memory` with natural
   generic Knowledge/Memory behavior.
-- [ ] Update mocks to call `knowledge_search/read`,
+- [x] Update mocks to call `knowledge_search/read`,
   `memory_write`, and `memory_forget`.
 - [ ] Verify projected receipts persist but memory read bodies do not.
-- [ ] Verify disabled and read-only runs have no mutation Tools.
+- [x] Verify disabled and read-only runs have no mutation Tools.
 
 ### Phase 6: Cut over maintenance evidence and apply
 
@@ -455,7 +455,7 @@ blocker, and the next checkpoint installs both sources with course
 - [ ] Delete `tutor-tools::ReadMemoryTool`.
 - [ ] Delete `tutor-tools::WriteMemoryTool`.
 - [ ] Delete model-provided `approved`, scope, raw section, and path schemas.
-- [ ] Remove `CapabilityRouter.memory_root`,
+- [x] Remove `CapabilityRouter.memory_root`,
   `learner_memory_tools`, and manual Tool mounting.
 - [ ] Remove legacy Tool names from prompts, mocks, README, specifications, and
   `docs/runtime-tool-projections.json`.

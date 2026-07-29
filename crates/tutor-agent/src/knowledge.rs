@@ -16,7 +16,7 @@ use tutor_rag::LanceDbKnowledgeSource;
 
 use crate::error::{Result, TutorError};
 
-pub const COURSE_EVIDENCE_PROVIDER_ID: &str = "llm-tutor.course-knowledge";
+pub const AGENT_KNOWLEDGE_EVIDENCE_PROVIDER_ID: &str = "llm-tutor.agent-knowledge";
 
 #[derive(Clone)]
 pub struct KnowledgeRuntime {
@@ -154,8 +154,8 @@ impl KnowledgeRuntime {
     }
 }
 
-pub fn course_evidence_provider_id() -> EvidenceProviderId {
-    EvidenceProviderId(COURSE_EVIDENCE_PROVIDER_ID.into())
+pub fn agent_knowledge_evidence_provider_id() -> EvidenceProviderId {
+    EvidenceProviderId(AGENT_KNOWLEDGE_EVIDENCE_PROVIDER_ID.into())
 }
 
 pub fn required_course_citation_policy() -> Result<KnowledgeCitationPolicy> {
@@ -179,7 +179,7 @@ pub fn assemble_course_knowledge(
         [Arc::new(source) as Arc<dyn KnowledgeSource>],
         access_control,
         authority,
-        course_evidence_provider_id(),
+        agent_knowledge_evidence_provider_id(),
         required_course_citation_policy()?,
     )
 }
@@ -324,7 +324,7 @@ mod tests {
                 send_dimensions: false,
             },
         );
-        let provider_id = course_evidence_provider_id();
+        let provider_id = agent_knowledge_evidence_provider_id();
         let authority = Arc::new(EvidenceAuthority::new(vec![7; 32], [provider_id]).unwrap());
         assemble_course_knowledge(LanceDbKnowledgeSource::new(rag, "kb-a"), authority).unwrap()
     }
@@ -474,7 +474,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let provider_id = course_evidence_provider_id();
+        let provider_id = agent_knowledge_evidence_provider_id();
         let authority = Arc::new(EvidenceAuthority::new(vec![7; 32], [provider_id]).unwrap());
         let runtime =
             assemble_course_knowledge(LanceDbKnowledgeSource::new(rag, "kb-a"), authority).unwrap();

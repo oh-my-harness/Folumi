@@ -3,7 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use llm_adapter::provider::Provider;
-use llm_harness_agent::Session;
+use llm_harness_agent::{Plugin, Session};
 use llm_harness_types::{AgentMessage, ExecutionEnv, RunRequest, Tool};
 use tokio_util::sync::CancellationToken;
 
@@ -12,7 +12,7 @@ use crate::event_sink::SharedEventSink;
 use crate::governance::GovernanceConfig;
 use crate::knowledge::KnowledgeRuntime;
 use crate::llm_provider::LlmConfig;
-use tutor_tools::{ReadMemoryTool, WebSearchConfig, WriteMemoryTool};
+use tutor_tools::WebSearchConfig;
 
 pub(crate) const NATURAL_MEMORY_INTERACTION_POLICY: &str = "Treat memory reads as silent internal context loading. Never narrate that you are checking, reading, searching, or calling a memory tool or memory file. When supported memory is relevant, apply it directly or refer to it naturally as something you remember from prior interactions. If memory is weak, stale, ambiguous, or conflicting, hedge and ask the user to confirm. Never claim to remember content when no memory result supports it. If the user explicitly asks how you know, explain the relevant prior interaction or memory category truthfully; tool calls remain visible in trace.";
 
@@ -46,6 +46,32 @@ impl FromStr for Capability {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LearnerMemoryMode {
+    #[default]
+    Disabled,
+    ReadOnly,
+    InteractiveMutation,
+}
+
+impl LearnerMemoryMode {
+    pub fn profile_name(self) -> Option<&'static str> {
+        match self {
+            Self::Disabled => None,
+            Self::ReadOnly => Some("read_only"),
+            Self::InteractiveMutation => Some("interactive_mutation"),
+        }
+    }
+
+    fn can_read(self) -> bool {
+        !matches!(self, Self::Disabled)
+    }
+
+    fn can_mutate(self) -> bool {
+        matches!(self, Self::InteractiveMutation)
+    }
+}
+
 /// Entry point for all capabilities.
 #[derive(Clone)]
 pub struct CapabilityRouter {
@@ -57,10 +83,10 @@ pub struct CapabilityRouter {
     pub web_search: Option<WebSearchConfig>,
     pub product_tools: Vec<Arc<dyn Tool>>,
     pub workflow_root: Option<PathBuf>,
-    pub memory_root: Option<PathBuf>,
-    pub learner_memory_access: bool,
+    pub learner_memory_mode: LearnerMemoryMode,
     pub product_instruction: Option<String>,
     client: Option<Arc<dyn Provider>>,
+    learner_memory_plugin: Option<Arc<dyn Plugin>>,
 }
 
 impl CapabilityRouter {
@@ -74,10 +100,10 @@ impl CapabilityRouter {
             web_search: None,
             product_tools: vec![],
             workflow_root: None,
-            memory_root: None,
-            learner_memory_access: false,
+            learner_memory_mode: LearnerMemoryMode::Disabled,
             product_instruction: None,
             client: None,
+            learner_memory_plugin: None,
         }
     }
 
@@ -113,14 +139,27 @@ impl CapabilityRouter {
         self
     }
 
-    pub fn with_memory_root(mut self, root: impl Into<PathBuf>) -> Self {
-        self.memory_root = Some(root.into());
-        self
-    }
-
-    pub fn with_learner_memory_access(mut self, allowed: bool) -> Self {
-        self.learner_memory_access = allowed;
-        self
+    pub fn with_learner_memory_runtime(
+        mut self,
+        mode: LearnerMemoryMode,
+        mutation_plugin: Option<Arc<dyn Plugin>>,
+    ) -> Result<Self> {
+        match (mode, mutation_plugin.is_some()) {
+            (LearnerMemoryMode::InteractiveMutation, false) => {
+                return Err(TutorError::Internal(
+                    "interactive Learner Memory requires a mutation plugin".into(),
+                ));
+            }
+            (LearnerMemoryMode::Disabled | LearnerMemoryMode::ReadOnly, true) => {
+                return Err(TutorError::Internal(
+                    "Learner Memory mutation plugin requires interactive mode".into(),
+                ));
+            }
+            _ => {}
+        }
+        self.learner_memory_mode = mode;
+        self.learner_memory_plugin = mutation_plugin;
+        Ok(self)
     }
 
     pub fn with_product_instruction(mut self, instruction: impl Into<String>) -> Self {
@@ -141,33 +180,13 @@ impl CapabilityRouter {
             .iter()
             .map(|tool| tool.name().to_string())
             .collect::<Vec<_>>();
-        let memory_policy = memory_routing_policy(self.learner_memory_access, &product_tool_names);
+        let memory_policy = memory_routing_policy(self.learner_memory_mode, &product_tool_names);
         let prompt = append_memory_routing_policy(system_prompt, &memory_policy);
         apply_product_instruction(&prompt, self.product_instruction.as_deref())
     }
 
-    pub(crate) fn read_memory_tool(&self) -> ReadMemoryTool {
-        self.memory_root
-            .clone()
-            .map(ReadMemoryTool::with_root)
-            .unwrap_or_default()
-    }
-
-    pub(crate) fn write_memory_tool(&self) -> WriteMemoryTool {
-        self.memory_root
-            .clone()
-            .map(WriteMemoryTool::with_root)
-            .unwrap_or_default()
-    }
-
-    pub(crate) fn learner_memory_tools(&self) -> Vec<Arc<dyn Tool>> {
-        if !self.learner_memory_access {
-            return vec![];
-        }
-        vec![
-            Arc::new(self.read_memory_tool()),
-            Arc::new(self.write_memory_tool()),
-        ]
+    pub(crate) fn learner_memory_plugin(&self) -> Option<Arc<dyn Plugin>> {
+        self.learner_memory_plugin.clone()
     }
 
     /// Returns the injected client or builds one from `LlmConfig`.
@@ -308,7 +327,7 @@ impl CapabilityRouter {
 }
 
 pub(crate) fn memory_routing_policy(
-    learner_memory_access: bool,
+    learner_memory_mode: LearnerMemoryMode,
     product_tool_names: &[String],
 ) -> String {
     let has_tool = |name: &str| product_tool_names.iter().any(|tool| tool == name);
@@ -316,7 +335,7 @@ pub(crate) fn memory_routing_policy(
     let can_write_tutor_memory = has_tool("remember_for_later");
     let can_resolve_tutor_memory = has_tool("resolve_tutor_memory");
 
-    if !learner_memory_access && !can_read_tutor_memory {
+    if !learner_memory_mode.can_read() && !can_read_tutor_memory {
         return String::new();
     }
 
@@ -324,9 +343,15 @@ pub(crate) fn memory_routing_policy(
         "# Memory routing\n\n{NATURAL_MEMORY_INTERACTION_POLICY}"
     )];
 
-    if learner_memory_access {
+    if learner_memory_mode.can_read() {
         rules.push(
-            "Learner Memory is shared user context. Use read_memory only when learner profile, preferences, strengths, weaknesses, scope, or recent learning state would materially improve the response. Memory is personalization context, never factual evidence. Use write_memory only when the user explicitly asks you to remember something or clearly approves recording a durable learner fact or preference. Ordinary conversation and inferred traits stay in session/L1 evidence; do not silently promote them to Learner Memory."
+            "Learner Memory is shared user context exposed through knowledge_search and knowledge_read. Search it only when learner profile, preferences, strengths, weaknesses, scope, or recent learning state would materially improve the response. Memory is personalization context, never factual course evidence."
+                .into(),
+        );
+    }
+    if learner_memory_mode.can_mutate() {
+        rules.push(
+            "Use memory_write only when the user explicitly asks you to remember something or clearly requests recording a durable learner preference. Use memory_forget only for an exact current Learner Memory reference. Ordinary conversation and inferred traits stay in session/L1 evidence; do not silently promote them to durable Learner Memory. Every mutation requires a live user confirmation outside the model."
                 .into(),
         );
     }
@@ -342,11 +367,11 @@ pub(crate) fn memory_routing_policy(
         rules.push(tutor_rule);
     }
 
-    if learner_memory_access && can_write_tutor_memory {
+    if learner_memory_mode.can_mutate() && can_write_tutor_memory {
         rules.push("Route by ownership before writing: facts about the learner belong only to the Learner Memory path; promises, plans, and open loops owned by this tutor belong only to Tutor Memory. Never write the same item to both stores.".into());
     }
 
-    if learner_memory_access || can_write_tutor_memory {
+    if learner_memory_mode.can_mutate() || can_write_tutor_memory {
         rules.push("Research findings, external factual claims, report prose, Notebook content, quiz questions, and quiz answers belong in their product artifacts, not in either memory store.".into());
     }
 
@@ -423,34 +448,46 @@ mod tests {
     }
 
     #[test]
-    fn learner_memory_tools_follow_explicit_access_policy() {
-        assert!(
-            test_router().learner_memory_tools().is_empty(),
-            "CLI and generic routers must fail closed until memory is explicitly enabled"
-        );
-        let allowed = test_router()
-            .with_learner_memory_access(true)
-            .learner_memory_tools();
-        assert_eq!(
-            allowed.iter().map(|tool| tool.name()).collect::<Vec<_>>(),
-            vec!["read_memory", "write_memory"]
-        );
+    fn interactive_memory_requires_a_runtime_mutation_plugin() {
+        let error = test_router()
+            .with_learner_memory_runtime(LearnerMemoryMode::InteractiveMutation, None)
+            .err()
+            .expect("interactive assembly must fail closed");
+        assert!(error.to_string().contains("requires a mutation plugin"));
+
+        let read_only = test_router()
+            .with_learner_memory_runtime(LearnerMemoryMode::ReadOnly, None)
+            .unwrap();
+        assert!(read_only.learner_memory_plugin().is_none());
+
+        let disabled = test_router()
+            .with_learner_memory_runtime(LearnerMemoryMode::Disabled, None)
+            .unwrap();
+        assert!(disabled.learner_memory_plugin().is_none());
     }
 
     #[test]
     fn memory_routing_policy_matches_mounted_tools() {
-        let learner_only = memory_routing_policy(true, &[]);
-        assert!(learner_only.contains("read_memory"));
-        assert!(learner_only.contains("write_memory"));
+        let learner_only = memory_routing_policy(LearnerMemoryMode::InteractiveMutation, &[]);
+        assert!(learner_only.contains("knowledge_search"));
+        assert!(learner_only.contains("knowledge_read"));
+        assert!(learner_only.contains("memory_write"));
+        assert!(learner_only.contains("memory_forget"));
         assert!(!learner_only.contains("read_tutor_memory"));
 
-        let tutor_read_only = memory_routing_policy(false, &["read_tutor_memory".into()]);
+        let tutor_read_only =
+            memory_routing_policy(LearnerMemoryMode::Disabled, &["read_tutor_memory".into()]);
         assert!(tutor_read_only.contains("read_tutor_memory"));
         assert!(!tutor_read_only.contains("remember_for_later"));
-        assert!(!tutor_read_only.contains("read_memory"));
+        assert!(!tutor_read_only.contains("Learner Memory is shared"));
+
+        let learner_read_only = memory_routing_policy(LearnerMemoryMode::ReadOnly, &[]);
+        assert!(learner_read_only.contains("knowledge_search"));
+        assert!(!learner_read_only.contains("memory_write"));
+        assert!(!learner_read_only.contains("memory_forget"));
 
         let both_writable = memory_routing_policy(
-            true,
+            LearnerMemoryMode::InteractiveMutation,
             &[
                 "read_tutor_memory".into(),
                 "remember_for_later".into(),
@@ -462,6 +499,6 @@ mod tests {
         assert!(both_writable.contains("Never write the same item to both stores"));
         assert!(both_writable.contains("product artifacts"));
 
-        assert!(memory_routing_policy(false, &[]).is_empty());
+        assert!(memory_routing_policy(LearnerMemoryMode::Disabled, &[]).is_empty());
     }
 }

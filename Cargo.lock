@@ -8125,6 +8125,7 @@ dependencies = [
  "chrono",
  "futures",
  "llm-harness-agent",
+ "llm-harness-loop",
  "llm-harness-runtime",
  "llm-harness-runtime-audit-jsonl",
  "llm-harness-runtime-knowledge",

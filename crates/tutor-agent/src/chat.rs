@@ -200,7 +200,9 @@ pub(crate) async fn run_conversation_with_request(
     {
         plugins.push(knowledge_runtime.plugin());
     }
-    tools.extend(router.learner_memory_tools());
+    if let Some(memory_plugin) = router.learner_memory_plugin() {
+        plugins.push(memory_plugin);
+    }
     tools.extend(router.product_tools.iter().cloned());
 
     let client = router.make_client();
@@ -616,7 +618,9 @@ mod tests {
         final_answer_mode_for_capability, looks_like_research_report, organize_system_prompt,
         quiz_system_prompt, research_system_prompt, text_delta_route_for_capability,
     };
-    use crate::capability::{append_memory_routing_policy, memory_routing_policy};
+    use crate::capability::{
+        LearnerMemoryMode, append_memory_routing_policy, memory_routing_policy,
+    };
     use llm_harness_loop::{FinalAnswerMissingBehavior, FinalAnswerMode};
 
     #[test]
@@ -646,7 +650,10 @@ mod tests {
             organize_system_prompt(),
             quiz_system_prompt(),
         ] {
-            let prompt = append_memory_routing_policy(&prompt, &memory_routing_policy(true, &[]));
+            let prompt = append_memory_routing_policy(
+                &prompt,
+                &memory_routing_policy(LearnerMemoryMode::InteractiveMutation, &[]),
+            );
             assert!(prompt.contains("silent internal context loading"));
             assert!(prompt.contains("Never narrate that you are checking"));
             assert!(prompt.contains("refer to it naturally"));

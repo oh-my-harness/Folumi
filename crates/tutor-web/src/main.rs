@@ -61,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
         config.data_dir.join("tutors"),
     ));
     let rag_root = config.data_dir.join("rag");
+    let runtime_security = knowledge_runtime::AgentRuntimeSecurity::generate();
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -78,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
             knowledge.clone(),
             notebook.clone(),
             memory.clone(),
+            runtime_security.evidence_authority(),
             rag_root.clone(),
             config.data_dir.join("workflow-sessions").join("quiz"),
         ))
@@ -112,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
             notebook.clone(),
             quizzes.clone(),
             routes::ws::TutorRuntimeStores::new(tutors.clone(), tutor_memory),
+            runtime_security,
             rag_root,
         ))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))

@@ -1,4 +1,4 @@
-mod knowledge_runtime;
+pub mod knowledge_runtime;
 pub mod knowledge_store;
 pub mod learner_memory_source;
 pub mod learner_memory_write;

@@ -285,10 +285,19 @@ pub fn quiz_router(
     knowledge: Arc<KnowledgeStore>,
     notebook: Arc<NotebookStore>,
     memory: Arc<FileMemoryBackend>,
+    evidence_authority: Arc<EvidenceAuthority>,
     rag_root: impl Into<PathBuf>,
     workflow_root: impl Into<PathBuf>,
 ) -> Router {
-    quiz_router_with_rag_root(store, knowledge, notebook, memory, rag_root, workflow_root)
+    quiz_router_with_rag_root(
+        store,
+        knowledge,
+        notebook,
+        memory,
+        evidence_authority,
+        rag_root,
+        workflow_root,
+    )
 }
 
 fn quiz_router_with_rag_root(
@@ -296,6 +305,7 @@ fn quiz_router_with_rag_root(
     knowledge: Arc<KnowledgeStore>,
     notebook: Arc<NotebookStore>,
     memory: Arc<FileMemoryBackend>,
+    evidence_authority: Arc<EvidenceAuthority>,
     rag_root: impl Into<PathBuf>,
     workflow_root: impl Into<PathBuf>,
 ) -> Router {
@@ -304,7 +314,7 @@ fn quiz_router_with_rag_root(
         knowledge,
         notebook,
         memory,
-        evidence_authority: crate::knowledge_runtime::course_evidence_authority(),
+        evidence_authority,
         rag_root: rag_root.into(),
         workflow_root: workflow_root.into(),
     };
@@ -358,7 +368,7 @@ async fn generate_questions(
         ],
         crate::knowledge_runtime::agent_knowledge_access_control(),
         state.evidence_authority.clone(),
-        tutor_agent::course_evidence_provider_id(),
+        tutor_agent::agent_knowledge_evidence_provider_id(),
         tutor_agent::required_course_citation_policy()?,
     )?;
     let access =
@@ -821,6 +831,7 @@ mod tests {
             knowledge,
             notebook,
             memory.clone(),
+            crate::knowledge_runtime::AgentRuntimeSecurity::generate().evidence_authority(),
             rag_root,
             dir.path().join("workflow-sessions"),
         );
@@ -875,6 +886,7 @@ mod tests {
             knowledge,
             notebook,
             memory,
+            crate::knowledge_runtime::AgentRuntimeSecurity::generate().evidence_authority(),
             dir.path().join("rag"),
             dir.path().join("workflow-sessions"),
         );
@@ -955,6 +967,7 @@ mod tests {
             knowledge,
             notebook,
             memory,
+            crate::knowledge_runtime::AgentRuntimeSecurity::generate().evidence_authority(),
             dir.path().join("rag"),
             dir.path().join("workflow-sessions"),
         );

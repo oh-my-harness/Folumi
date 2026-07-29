@@ -187,10 +187,6 @@ fn build_research_engine(
     }))
     .with_max_retries(1);
 
-    for tool in router.learner_memory_tools() {
-        engine = engine.with_tool(tool);
-    }
-
     for tool in &router.product_tools {
         engine = engine.with_tool(tool.clone());
     }

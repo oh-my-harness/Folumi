@@ -250,10 +250,6 @@ impl FileMemoryBackend {
         store
     }
 
-    pub fn root_path(&self) -> &Path {
-        &self.root
-    }
-
     pub fn list(&self) -> Result<Vec<MemoryFile>> {
         self.ensure_skeleton()?;
         let mut files = Vec::new();

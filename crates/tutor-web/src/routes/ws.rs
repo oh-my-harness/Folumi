@@ -14,7 +14,7 @@ use axum::{
 use futures::{SinkExt, StreamExt, future::BoxFuture};
 use llm_harness_runtime_audit_jsonl::JsonlAuditSink;
 use llm_harness_runtime_knowledge::{
-    EvidenceAuthority, KnowledgeAccessContext, KnowledgeScope, KnowledgeSource, PrincipalRef,
+    KnowledgeAccessContext, KnowledgeScope, KnowledgeSource, PrincipalRef,
 };
 use llm_harness_runtime_memory::MemorySessionId;
 use llm_harness_runtime_sandbox_os::OsEnv;
@@ -23,7 +23,7 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tutor_agent::event_sink::{EventSink, SharedEventSink};
 use tutor_agent::governance::GovernanceConfig;
-use tutor_agent::{Capability, CapabilityRouter, LlmConfig, LlmProviderKind};
+use tutor_agent::{Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, LlmProviderKind};
 
 use crate::knowledge_store::KnowledgeStore;
 use crate::learner_memory_source::{
@@ -59,7 +59,7 @@ struct WsState {
     quizzes: Arc<QuizStore>,
     tutors: Arc<TutorStore>,
     tutor_memory: Arc<TutorMemoryStore>,
-    evidence_authority: Arc<EvidenceAuthority>,
+    runtime_security: crate::knowledge_runtime::AgentRuntimeSecurity,
     rag_root: PathBuf,
 }
 
@@ -479,7 +479,7 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
 fn agent_knowledge_access_context(
     session_id: &str,
     knowledge_base_id: Option<&str>,
-    learner_memory_allowed: bool,
+    learner_memory_mode: LearnerMemoryMode,
     tutor: Option<&TutorProfile>,
 ) -> KnowledgeAccessContext {
     let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
@@ -490,10 +490,10 @@ fn agent_knowledge_access_context(
             knowledge_base_id.to_string(),
         );
     }
-    if learner_memory_allowed {
+    if let Some(profile) = learner_memory_mode.profile_name() {
         scope
             .attributes
-            .insert(LEARNER_MEMORY_PROFILE_ATTRIBUTE.into(), "read_only".into());
+            .insert(LEARNER_MEMORY_PROFILE_ATTRIBUTE.into(), profile.into());
         scope.attributes.insert(
             LEARNER_MEMORY_PRINCIPAL_ATTRIBUTE.into(),
             "local-user".into(),
@@ -524,10 +524,13 @@ fn agent_knowledge_access_context(
                 "tutor:{}:agent-knowledge:{}:learner-memory:{}",
                 tutor.id,
                 knowledge_base_ids.join(","),
-                learner_memory_allowed
+                learner_memory_mode.profile_name().unwrap_or("disabled")
             )
         }
-        None => format!("local-user:agent-knowledge:v1:learner-memory:{learner_memory_allowed}"),
+        None => format!(
+            "local-user:agent-knowledge:v1:learner-memory:{}",
+            learner_memory_mode.profile_name().unwrap_or("disabled")
+        ),
     });
     access
 }
@@ -536,15 +539,15 @@ fn agent_run_request(
     content: String,
     session_id: &str,
     knowledge_base_id: Option<&str>,
-    learner_memory_allowed: bool,
+    learner_memory_mode: LearnerMemoryMode,
     tutor: Option<&TutorProfile>,
 ) -> tutor_agent::Result<RunRequest> {
     let mut request = RunRequest::from_text(content);
-    if knowledge_base_id.is_some() || learner_memory_allowed {
+    if knowledge_base_id.is_some() || learner_memory_mode.profile_name().is_some() {
         request = request.with_extension(agent_knowledge_access_context(
             session_id,
             knowledge_base_id,
-            learner_memory_allowed,
+            learner_memory_mode,
             tutor,
         ));
     }
@@ -560,6 +563,7 @@ pub fn ws_router(
     notebook: Arc<NotebookStore>,
     quizzes: Arc<QuizStore>,
     tutor_runtime: TutorRuntimeStores,
+    runtime_security: crate::knowledge_runtime::AgentRuntimeSecurity,
     rag_root: impl Into<PathBuf>,
 ) -> Router {
     let state = WsState {
@@ -570,7 +574,7 @@ pub fn ws_router(
         quizzes,
         tutors: tutor_runtime.profiles,
         tutor_memory: tutor_runtime.memory,
-        evidence_authority: crate::knowledge_runtime::course_evidence_authority(),
+        runtime_security,
         rag_root: rag_root.into(),
     };
     Router::new()
@@ -587,7 +591,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         quizzes,
         tutors,
         tutor_memory,
-        evidence_authority,
+        runtime_security,
         rag_root,
     } = state;
     let TutorMessageInput {
@@ -596,8 +600,9 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         mentions,
         run_id,
         cancel,
-        memory_approver: _memory_approver,
+        memory_approver,
     } = input;
+    let evidence_authority = runtime_security.evidence_authority();
     let history_len = pool.history_len(&entry.id).await + 1;
     let bound_tutor = match entry.tutor_id.as_deref() {
         Some(tutor_id) => match tutors.get_available(tutor_id) {
@@ -693,18 +698,21 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         });
         let mut router = CapabilityRouter::new(env, llm, governance)
             .with_event_sink(sink)
-            .with_workflow_root(rag_root.join("workflow-sessions"))
-            .with_memory_root(memory.root_path().to_path_buf());
+            .with_workflow_root(rag_root.join("workflow-sessions"));
         let learner_memory_allowed = bound_tutor
             .as_ref()
             .is_none_or(|tutor| tutor.learner_memory_access);
+        let learner_memory_mode = if learner_memory_allowed {
+            LearnerMemoryMode::InteractiveMutation
+        } else {
+            LearnerMemoryMode::Disabled
+        };
         let notebook_allowed = bound_tutor
             .as_ref()
             .is_none_or(|tutor| tutor.resource_permissions.notebook);
         let space_allowed = bound_tutor
             .as_ref()
             .is_none_or(|tutor| tutor.resource_permissions.space);
-        router = router.with_learner_memory_access(learner_memory_allowed);
         if space_allowed {
             router = router.with_product_tool(Arc::new(ReadSpaceItemTool::new(
                 notebook.clone(),
@@ -804,20 +812,26 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                 "bound tutor does not have Space access".into(),
             ));
         }
-        if let Some(embedding) = entry.embedding.clone() {
-            let rag = tutor_rag::LanceDbRag::new(rag_root, embedding);
-            if let Some(kb) = entry.kb.as_deref() {
-                let knowledge_runtime = tutor_agent::assemble_knowledge_runtime(
-                    [Arc::new(tutor_rag::LanceDbKnowledgeSource::new(rag, kb))
-                        as Arc<dyn KnowledgeSource>],
-                    crate::knowledge_runtime::agent_knowledge_access_control(),
-                    evidence_authority.clone(),
-                    tutor_agent::course_evidence_provider_id(),
-                    tutor_agent::required_course_citation_policy()?,
-                )?;
-                router = router.with_knowledge_runtime(knowledge_runtime);
+        let course_source = match (entry.embedding.clone(), entry.kb.as_deref()) {
+            (Some(embedding), Some(kb)) => {
+                let rag = tutor_rag::LanceDbRag::new(rag_root.clone(), embedding);
+                Some(Arc::new(tutor_rag::LanceDbKnowledgeSource::new(rag, kb))
+                    as Arc<dyn KnowledgeSource>)
             }
-        }
+            _ => None,
+        };
+        let learner_memory =
+            learner_memory_allowed.then(|| crate::knowledge_runtime::LearnerMemoryRuntimeInput {
+                backend: memory.clone(),
+                mode: learner_memory_mode,
+                approver: Some(memory_approver),
+            });
+        router = crate::knowledge_runtime::install_agent_knowledge_and_memory(
+            router,
+            course_source,
+            learner_memory,
+            &runtime_security,
+        )?;
         if entry.capability == "research" {
             let workflow_router = router.clone();
             router = router
@@ -842,7 +856,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             resolved_content.content,
             &entry.id,
             entry.kb.as_deref(),
-            learner_memory_allowed,
+            learner_memory_mode,
             bound_tutor.as_ref(),
         )?;
         let answer = router
@@ -1170,8 +1184,13 @@ mod tests {
     use crate::notebook_store::{NotebookEntryInput, NotebookEntryType};
 
     #[test]
-    fn agent_knowledge_access_is_scoped_to_session_resources_and_read_only_memory() {
-        let access = agent_knowledge_access_context("session-a", Some("kb-a"), true, None);
+    fn agent_knowledge_access_is_scoped_to_session_resources_and_interactive_memory() {
+        let access = agent_knowledge_access_context(
+            "session-a",
+            Some("kb-a"),
+            LearnerMemoryMode::InteractiveMutation,
+            None,
+        );
 
         assert_eq!(access.scope.namespace, tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
         assert_eq!(access.scope.project.as_deref(), Some("session-a"));
@@ -1189,7 +1208,7 @@ mod tests {
                 .attributes
                 .get(LEARNER_MEMORY_PROFILE_ATTRIBUTE)
                 .map(String::as_str),
-            Some("read_only")
+            Some("interactive_mutation")
         );
         assert_eq!(
             access
@@ -1203,13 +1222,18 @@ mod tests {
         assert_eq!(access.principal.principal_type, "local_user");
         assert_eq!(
             access.authorization_version.as_deref(),
-            Some("local-user:agent-knowledge:v1:learner-memory:true")
+            Some("local-user:agent-knowledge:v1:learner-memory:interactive_mutation")
         );
     }
 
     #[test]
     fn disabled_learner_memory_omits_all_memory_claims() {
-        let access = agent_knowledge_access_context("session-a", Some("kb-a"), false, None);
+        let access = agent_knowledge_access_context(
+            "session-a",
+            Some("kb-a"),
+            LearnerMemoryMode::Disabled,
+            None,
+        );
 
         assert!(
             !access
@@ -1227,8 +1251,14 @@ mod tests {
 
     #[test]
     fn ordinary_agent_request_carries_typed_knowledge_and_memory_session_context() {
-        let request =
-            agent_run_request("hello".into(), "session-a", Some("kb-a"), true, None).unwrap();
+        let request = agent_run_request(
+            "hello".into(),
+            "session-a",
+            Some("kb-a"),
+            LearnerMemoryMode::InteractiveMutation,
+            None,
+        )
+        .unwrap();
 
         assert!(request.extensions.get::<KnowledgeAccessContext>().is_some());
         assert_eq!(
