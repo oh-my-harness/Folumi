@@ -5,8 +5,8 @@
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
 > [llm-harness-runtime PR #82](https://github.com/oh-my-harness/llm-harness-runtime/pull/82) |
-> Reviewed development revision:
-> [`ddd9e8f`](https://github.com/oh-my-harness/llm-harness-runtime/commit/ddd9e8f96644a80a59e546457b76f04c38688dbd)
+> Merged production revision:
+> [`ee97890`](https://github.com/oh-my-harness/llm-harness-runtime/commit/ee97890b00b6a549dfb3b94519997af613adf456)
 
 ## 1. Goal
 
@@ -47,8 +47,8 @@ and lifecycle model and is not part of B3.
 
 ### Product baseline
 
-Development pins every runtime crate to the reviewed Memory PR head `ddd9e8f`;
-the final production pin still waits for the Memory foundation to merge.
+Every runtime crate is pinned to the immutable merged Memory foundation
+revision `ee97890`.
 
 The active Learner Memory paths are:
 
@@ -69,7 +69,7 @@ The active Learner Memory paths are:
 - course Knowledge already uses `knowledge_search` / `knowledge_read` with
   strict runtime citation validation.
 
-### Runtime baseline at `ddd9e8f`
+### Runtime baseline at `ee97890`
 
 Runtime PR #82 provides:
 
@@ -85,11 +85,8 @@ Runtime PR #82 provides:
 - reusable Knowledge source and Memory store contract tests;
 - `WorkflowRunRequest` propagation to every workflow LLM step.
 
-The reviewed upstream PR is still draft. The runtime repository reports that
-its local workspace tests and strict Clippy pass; remote Actions are currently
-not starting runners because of the GitHub account billing/spending limit.
-`ddd9e8f` is therefore the unified product-validation baseline, not the final
-production pin.
+The upstream PR is merged. Runtime reports that its workspace tests and strict
+Clippy pass; `ee97890` is the immutable downstream production pin.
 
 ### Confirmed protocol gaps
 
@@ -99,7 +96,7 @@ Three integration decisions must be closed before the destructive cutover:
    `MemoryStore` exposes one `upsert` or `delete`; it has no batch,
    compare-and-swap, or transaction contract for an accepted maintenance
    change set.
-2. Runtime `ddd9e8f` resolves the approval ambiguity with a mandatory
+2. Runtime `ee97890` resolves the approval ambiguity with a mandatory
    `MemoryMutationGate` that receives the final normalized write or exact
    delete reference plus trusted mutation origin.
 3. [`runtime #91`](https://github.com/oh-my-harness/llm-harness-runtime/issues/91)
@@ -338,15 +335,13 @@ and call the result atomic.
 - [x] Ask upstream to clarify the trusted approval expectation for
   `memory_write`; consume a runtime grant if one is added, otherwise document
   the required AccessControl + Tool-hook composition.
-- [ ] Wait for runtime PR #82 to be non-draft, green, and merged.
-- [ ] Pin all `llm-harness-*` crates, including
+- [x] Wait for runtime PR #82 to be non-draft, green, and merged.
+- [x] Pin all `llm-harness-*` crates, including
   `llm-harness-runtime-memory`, to one immutable merged revision.
 - [x] Align `llm_adapter` to the revision required by that runtime.
 - [x] Run Cargo metadata/tree checks and reject mixed runtime revisions.
 
-Adapter and real Chat product-validation development use `ddd9e8f`. Production
-pinning and legacy protocol deletion still require an immutable merged
-revision.
+All development and production validation now use merged revision `ee97890`.
 
 ### Phase 1: Isolate the product file backend
 
