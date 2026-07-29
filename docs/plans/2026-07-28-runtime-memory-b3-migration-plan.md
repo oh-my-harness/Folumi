@@ -1,6 +1,6 @@
 # Runtime Learner Memory B3 Migration Plan
 
-> Status: implementation and release gates complete; issue closure pending |
+> Status: completed |
 > Date: 2026-07-28 | Tracks:
 > [llm-tutor issue #3](https://github.com/oh-my-harness/llm-tutor/issues/3) |
 > Upstream review:
@@ -461,7 +461,7 @@ Product hosts may explicitly compose read-only or interactive access.
   approval grants, access attributes, or policy secrets.
 - [x] Run concurrent-user isolation and cross-run ref/grant replay tests.
 - [x] Run the full Rust, projection, frontend test, and production build gates.
-- [ ] Update the runtime audit, framework feedback resolutions, QA evidence,
+- [x] Update the runtime audit, framework feedback resolutions, QA evidence,
   README, specs, and issue #3.
 
 ## 6. Test Matrix
