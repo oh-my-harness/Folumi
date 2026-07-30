@@ -30,13 +30,29 @@ pub const LEARNER_MEMORY_KINDS_ATTRIBUTE: &str = "learner_memory_kinds";
 pub const LEARNER_MEMORY_L1_SESSION_ATTRIBUTE: &str = "learner_memory_l1_session_id";
 
 const MAX_SEARCH_LIMIT: usize = 50;
+const SEMANTIC_SCORE_THRESHOLD: f32 = 0.35;
 const MEMORY_SEARCH_SNIPPET: &str =
     "Learner Memory match. Content is available only through an exact knowledge_read.";
 
 #[derive(Clone)]
 pub struct LearnerMemoryKnowledgeSource {
     backend: Arc<FileMemoryBackend>,
+    semantic_embedder: Option<Arc<dyn SemanticMemoryEmbedder>>,
     descriptor: KnowledgeSourceDescriptor,
+}
+
+trait SemanticMemoryEmbedder: Send + Sync {
+    fn embed<'a>(&'a self, input: Vec<String>) -> BoxFuture<'a, anyhow::Result<Vec<Vec<f32>>>>;
+}
+
+struct RagSemanticMemoryEmbedder {
+    rag: tutor_rag::LanceDbRag,
+}
+
+impl SemanticMemoryEmbedder for RagSemanticMemoryEmbedder {
+    fn embed<'a>(&'a self, input: Vec<String>) -> BoxFuture<'a, anyhow::Result<Vec<Vec<f32>>>> {
+        Box::pin(async move { self.rag.embed_texts(input).await })
+    }
 }
 
 #[derive(Clone)]
@@ -79,6 +95,7 @@ impl LearnerMemoryKnowledgeSource {
             .collect();
         Self {
             backend,
+            semantic_embedder: None,
             descriptor: KnowledgeSourceDescriptor {
                 id: LEARNER_MEMORY_SOURCE_ID.into(),
                 name: "Learner memory".into(),
@@ -110,6 +127,22 @@ impl LearnerMemoryKnowledgeSource {
                 filter_fields,
             },
         }
+    }
+
+    pub fn with_semantic_rag(backend: Arc<FileMemoryBackend>, rag: tutor_rag::LanceDbRag) -> Self {
+        let mut source = Self::new(backend);
+        source.semantic_embedder = Some(Arc::new(RagSemanticMemoryEmbedder { rag }));
+        source
+    }
+
+    #[cfg(test)]
+    fn with_test_embedder(
+        backend: Arc<FileMemoryBackend>,
+        semantic_embedder: Arc<dyn SemanticMemoryEmbedder>,
+    ) -> Self {
+        let mut source = Self::new(backend);
+        source.semantic_embedder = Some(semantic_embedder);
+        source
     }
 
     fn scope(
@@ -215,6 +248,38 @@ impl LearnerMemoryKnowledgeSource {
         items.sort_by(|left, right| left.reference.item_id.cmp(&right.reference.item_id));
         Ok(items)
     }
+
+    async fn semantic_scores(&self, query: &str, items: &[MemoryItem]) -> Vec<usize> {
+        let fallback = vec![0; items.len()];
+        let Some(embedder) = &self.semantic_embedder else {
+            return fallback;
+        };
+        let mut input = Vec::with_capacity(items.len() + 1);
+        input.push(query.to_string());
+        input.extend(
+            items
+                .iter()
+                .map(|item| format!("{} {}", item.title, item.body)),
+        );
+        let Ok(mut vectors) = embedder.embed(input).await else {
+            return fallback;
+        };
+        if vectors.len() != items.len() + 1 {
+            return fallback;
+        }
+        let query_vector = vectors.remove(0);
+        vectors
+            .iter()
+            .map(|vector| {
+                let similarity = cosine_similarity(&query_vector, vector);
+                if similarity >= SEMANTIC_SCORE_THRESHOLD {
+                    (similarity.clamp(0.0, 1.0) * 100.0).round() as usize
+                } else {
+                    0
+                }
+            })
+            .collect()
+    }
 }
 
 impl KnowledgeSource for LearnerMemoryKnowledgeSource {
@@ -243,11 +308,20 @@ impl KnowledgeSource for LearnerMemoryKnowledgeSource {
             let terms = query.split_whitespace().collect::<Vec<_>>();
             let intent = memory_query_intent(&query);
             let query_bigrams = cjk_bigrams(&query);
-            let mut matches = self
+            let items = self
                 .items(&scope)?
                 .into_iter()
                 .filter(|item| filters_match(item, &request.filters))
-                .filter_map(|item| {
+                .collect::<Vec<_>>();
+            let semantic_scores = if query == "*" {
+                vec![0; items.len()]
+            } else {
+                self.semantic_scores(&query, &items).await
+            };
+            let mut matches = items
+                .into_iter()
+                .zip(semantic_scores)
+                .filter_map(|(item, semantic_score)| {
                     let haystack = format!("{} {}", item.title, item.body).to_lowercase();
                     let term_matches = terms
                         .iter()
@@ -263,7 +337,7 @@ impl KnowledgeSource for LearnerMemoryKnowledgeSource {
                             .count()
                     };
                     let intent_score = intent.score(&item);
-                    let score = intent_score + term_matches * 10 + bigram_matches;
+                    let score = intent_score + term_matches * 10 + bigram_matches + semantic_score;
                     (query == "*" || score > 0).then_some((item, score))
                 })
                 .collect::<Vec<_>>();
@@ -463,6 +537,24 @@ fn is_cjk(ch: char) -> bool {
             | '\u{F900}'..='\u{FAFF}'
             | '\u{20000}'..='\u{2FA1F}'
     )
+}
+
+fn cosine_similarity(left: &[f32], right: &[f32]) -> f32 {
+    if left.is_empty() || left.len() != right.len() {
+        return 0.0;
+    }
+    let dot = left
+        .iter()
+        .zip(right)
+        .map(|(left, right)| left * right)
+        .sum::<f32>();
+    let left_norm = left.iter().map(|value| value * value).sum::<f32>().sqrt();
+    let right_norm = right.iter().map(|value| value * value).sum::<f32>().sqrt();
+    if left_norm == 0.0 || right_norm == 0.0 {
+        0.0
+    } else {
+        dot / (left_norm * right_norm)
+    }
 }
 
 fn parse_access_set(
@@ -788,6 +880,25 @@ mod tests {
         }
     }
 
+    struct RelatedMeaningEmbedder;
+
+    impl SemanticMemoryEmbedder for RelatedMeaningEmbedder {
+        fn embed<'a>(&'a self, input: Vec<String>) -> BoxFuture<'a, anyhow::Result<Vec<Vec<f32>>>> {
+            Box::pin(async move {
+                Ok(input
+                    .into_iter()
+                    .map(|text| {
+                        if text.contains("可视化") || text.contains("流程图") {
+                            vec![1.0, 0.0]
+                        } else {
+                            vec![0.0, 1.0]
+                        }
+                    })
+                    .collect())
+            })
+        }
+    }
+
     fn fixture() -> (
         tempfile::TempDir,
         LearnerMemoryKnowledgeSource,
@@ -975,6 +1086,42 @@ mod tests {
 
         assert_eq!(page.hits.len(), 1);
         assert_eq!(page.hits[0].reference.item_id, "l3/preferences/m_diagram");
+    }
+
+    #[tokio::test]
+    async fn semantic_recall_finds_equivalent_free_text_without_lexical_overlap() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let markdown = serialize_memory_entries(
+            "Learning preferences",
+            &[preference_entry("m_diagram", "希望采用流程图说明概念")],
+        )
+        .unwrap();
+        backend.write("L3/preferences.md", markdown).unwrap();
+        let source = LearnerMemoryKnowledgeSource::with_test_embedder(
+            backend,
+            Arc::new(RelatedMeaningEmbedder),
+        );
+        let allowed = access(LEARNER_MEMORY_NAMESPACE, "l3", "", "preferences");
+        let run = RunContext::new(RunRequest::from_text("回忆教学形式"));
+
+        let page = source
+            .search(
+                context(&run, &allowed),
+                SourceSearchRequest {
+                    query: "我倾向的可视化教学形式".into(),
+                    filters: vec![],
+                    limit: 5,
+                    cursor: None,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(page.hits.len(), 1);
+        assert_eq!(page.hits[0].reference.item_id, "l3/preferences/m_diagram");
+        assert!(page.hits[0].score.is_some_and(|score| score >= 99.0));
     }
 
     #[tokio::test]

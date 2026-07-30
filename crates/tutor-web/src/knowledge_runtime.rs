@@ -91,6 +91,7 @@ pub(crate) fn agent_knowledge_citation_policy(
 
 pub(crate) struct LearnerMemoryRuntimeInput {
     pub(crate) backend: Arc<FileMemoryBackend>,
+    pub(crate) semantic_rag: Option<tutor_rag::LanceDbRag>,
     pub(crate) mode: tutor_agent::LearnerMemoryMode,
     pub(crate) approver: Option<Arc<dyn LearnerMemoryApprover>>,
 }
@@ -121,7 +122,12 @@ pub(crate) fn install_agent_knowledge_and_memory(
                 "disabled Learner Memory must not provide a backend".into(),
             ));
         }
-        let source = Arc::new(LearnerMemoryKnowledgeSource::new(input.backend.clone()));
+        let source = Arc::new(match input.semantic_rag.clone() {
+            Some(rag) => {
+                LearnerMemoryKnowledgeSource::with_semantic_rag(input.backend.clone(), rag)
+            }
+            None => LearnerMemoryKnowledgeSource::new(input.backend.clone()),
+        });
         sources.push(source.clone());
         memory_source = Some((source, input));
     }
@@ -570,6 +576,7 @@ mod tests {
             None,
             Some(LearnerMemoryRuntimeInput {
                 backend,
+                semantic_rag: None,
                 mode: LearnerMemoryMode::InteractiveMutation,
                 approver: None,
             }),
@@ -610,6 +617,7 @@ mod tests {
             None,
             Some(LearnerMemoryRuntimeInput {
                 backend: backend.clone(),
+                semantic_rag: None,
                 mode: LearnerMemoryMode::InteractiveMutation,
                 approver: Some(coordinator.clone()),
             }),
@@ -703,6 +711,7 @@ mod tests {
             None,
             Some(LearnerMemoryRuntimeInput {
                 backend: backend.clone(),
+                semantic_rag: None,
                 mode: LearnerMemoryMode::InteractiveMutation,
                 approver: Some(coordinator.clone()),
             }),
@@ -797,6 +806,7 @@ mod tests {
             None,
             Some(LearnerMemoryRuntimeInput {
                 backend,
+                semantic_rag: None,
                 mode: LearnerMemoryMode::ReadOnly,
                 approver: None,
             }),
@@ -861,6 +871,7 @@ mod tests {
             None,
             Some(LearnerMemoryRuntimeInput {
                 backend,
+                semantic_rag: None,
                 mode: LearnerMemoryMode::ReadOnly,
                 approver: None,
             }),

@@ -44,6 +44,7 @@ use crate::routes::space::{SpaceMention, resolve_space_mention_markdown};
 use crate::session::{
     ActiveRunSummary, LlmSessionConfig, SearchSessionConfig, SessionEntry, SessionPool,
 };
+use crate::settings_store::SettingsStore;
 use crate::space_tool::{
     ListNotebookTreeTool, ProposeNotebookEditTool, ReadSpaceItemTool, SearchNotebookTool,
 };
@@ -63,6 +64,7 @@ struct WsState {
     memory: Arc<FileMemoryBackend>,
     notebook: Arc<NotebookStore>,
     quizzes: Arc<QuizStore>,
+    settings: Arc<SettingsStore>,
     tutors: Arc<TutorStore>,
     tutor_memory: Arc<TutorMemoryStore>,
     runtime_security: crate::knowledge_runtime::AgentRuntimeSecurity,
@@ -87,6 +89,7 @@ pub struct WsDataStores {
     memory: Arc<FileMemoryBackend>,
     notebook: Arc<NotebookStore>,
     quizzes: Arc<QuizStore>,
+    settings: Arc<SettingsStore>,
 }
 
 impl WsDataStores {
@@ -95,12 +98,14 @@ impl WsDataStores {
         memory: Arc<FileMemoryBackend>,
         notebook: Arc<NotebookStore>,
         quizzes: Arc<QuizStore>,
+        settings: Arc<SettingsStore>,
     ) -> Self {
         Self {
             knowledge,
             memory,
             notebook,
             quizzes,
+            settings,
         }
     }
 }
@@ -616,6 +621,7 @@ pub fn ws_router(
         memory: data_stores.memory,
         notebook: data_stores.notebook,
         quizzes: data_stores.quizzes,
+        settings: data_stores.settings,
         tutors: tutor_runtime.profiles,
         tutor_memory: tutor_runtime.memory,
         runtime_security,
@@ -633,6 +639,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         memory,
         notebook,
         quizzes,
+        settings,
         tutors,
         tutor_memory,
         runtime_security,
@@ -881,6 +888,11 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         let learner_memory =
             learner_memory_allowed.then(|| crate::knowledge_runtime::LearnerMemoryRuntimeInput {
                 backend: memory.clone(),
+                semantic_rag: entry
+                    .embedding
+                    .clone()
+                    .or_else(|| settings.active_embedding_config())
+                    .map(|embedding| tutor_rag::LanceDbRag::new(rag_root.clone(), embedding)),
                 mode: learner_memory_mode,
                 approver: Some(memory_approver),
             });

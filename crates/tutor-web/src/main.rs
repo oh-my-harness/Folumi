@@ -117,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
                 memory.clone(),
                 notebook.clone(),
                 quizzes.clone(),
+                settings.clone(),
             ),
             routes::ws::TutorRuntimeStores::new(tutors.clone(), tutor_memory),
             runtime_security,

@@ -246,7 +246,10 @@ impl LanceDbRag {
         Ok(source_chunks_from_batches(&batches))
     }
 
-    async fn embed_texts(&self, input: Vec<String>) -> Result<Vec<Vec<f32>>> {
+    /// Embed arbitrary product text with the same configured provider used by
+    /// course RAG. Callers remain responsible for storage, ranking, and data
+    /// governance for their product domain.
+    pub async fn embed_texts(&self, input: Vec<String>) -> Result<Vec<Vec<f32>>> {
         if self.embedding.provider == "hash" || self.embedding.provider == "local-test" {
             let dimensions = self.embedding.dimensions.unwrap_or(32).max(8);
             return Ok(input

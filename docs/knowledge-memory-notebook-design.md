@@ -109,6 +109,14 @@ Pure vector similarity is not sufficient for identity facts. Pure lexical
 matching is not sufficient for free-text memory. Markdown remains
 authoritative; vector and lexical indexes are derived.
 
+Semantic Learner Memory retrieval uses the embedding configuration explicitly
+selected in product settings. A Knowledge Base/session-specific embedding
+configuration takes precedence; otherwise the active embedding configuration
+is used. If no embedding configuration is selected or the provider is
+unavailable, structured and lexical recall remain available. When a remote
+embedding provider is selected, eligible memory text is sent to that configured
+provider for embedding.
+
 ## Course RAG
 
 Course RAG remains a runtime Knowledge source.
