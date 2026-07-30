@@ -24,8 +24,10 @@ mod session;
 mod settings_store;
 mod space_tool;
 mod stream;
+mod tutor_memory_source;
 mod tutor_memory_store;
 mod tutor_memory_tool;
+mod tutor_memory_write;
 mod tutor_store;
 
 #[tokio::main]

@@ -54,6 +54,24 @@
     boundary, or add a batch/CAS Memory API with expected revision, atomic
     outcome, receipts, cancellation, authorization, and idempotency semantics.
 
+- **MemoryPlugin cannot route multiple memory stores in one Agent**
+  - Expected: one Agent can use separate policy and storage scopes for shared
+    Learner Memory and tutor-private continuity memory without duplicating the
+    runtime Memory tools.
+  - Actual: `MemoryService` binds exactly one read source and one write store,
+    while `MemoryPlugin` always registers the fixed names `memory_write` and
+    `memory_forget`. Installing a second plugin silently shadows the first
+    plugin's tools because plugin tool names are last-wins.
+  - Product workaround: Tutor Memory reads are a runtime `KnowledgeSource`, and
+    the existing domain-specific `remember_for_later` tool is now a thin caller
+    of a separate runtime `MemoryService`. Learner Memory retains the generic
+    runtime `MemoryPlugin`. Tutor `resolve` remains a product status transition.
+  - Suggestion: provide a multi-source `MemoryService` router with
+    source-/kind-aware policy and mutation-gate routing, or allow a
+    `MemoryPlugin` to declare non-conflicting names and model-facing
+    descriptions for a scoped service. Duplicate plugin tool names should also
+    fail at assembly instead of being silently shadowed.
+
 - **Resolved 2026-07-28: Memory write and delete require a trusted mutation gate**
   - Tracked upstream in
     [`llm-harness-runtime#93`](https://github.com/oh-my-harness/llm-harness-runtime/issues/93).

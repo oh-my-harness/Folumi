@@ -72,6 +72,28 @@ impl LearnerMemoryMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TutorMemoryMode {
+    #[default]
+    Disabled,
+    ReadOnly,
+    Autonomous,
+}
+
+impl TutorMemoryMode {
+    pub fn profile_name(self) -> Option<&'static str> {
+        match self {
+            Self::Disabled => None,
+            Self::ReadOnly => Some("read_only"),
+            Self::Autonomous => Some("autonomous"),
+        }
+    }
+
+    fn can_read(self) -> bool {
+        !matches!(self, Self::Disabled)
+    }
+}
+
 /// Entry point for all capabilities.
 #[derive(Clone)]
 pub struct CapabilityRouter {
@@ -84,6 +106,7 @@ pub struct CapabilityRouter {
     pub product_tools: Vec<Arc<dyn Tool>>,
     pub workflow_root: Option<PathBuf>,
     pub learner_memory_mode: LearnerMemoryMode,
+    pub tutor_memory_mode: TutorMemoryMode,
     pub product_instruction: Option<String>,
     client: Option<Arc<dyn Provider>>,
     learner_memory_plugin: Option<Arc<dyn Plugin>>,
@@ -101,6 +124,7 @@ impl CapabilityRouter {
             product_tools: vec![],
             workflow_root: None,
             learner_memory_mode: LearnerMemoryMode::Disabled,
+            tutor_memory_mode: TutorMemoryMode::Disabled,
             product_instruction: None,
             client: None,
             learner_memory_plugin: None,
@@ -170,6 +194,11 @@ impl CapabilityRouter {
         self
     }
 
+    pub fn with_tutor_memory_runtime(mut self, mode: TutorMemoryMode) -> Self {
+        self.tutor_memory_mode = mode;
+        self
+    }
+
     pub(crate) fn apply_product_instruction(&self, system_prompt: &str) -> String {
         apply_product_instruction(system_prompt, self.product_instruction.as_deref())
     }
@@ -180,7 +209,11 @@ impl CapabilityRouter {
             .iter()
             .map(|tool| tool.name().to_string())
             .collect::<Vec<_>>();
-        let memory_policy = memory_routing_policy(self.learner_memory_mode, &product_tool_names);
+        let memory_policy = memory_routing_policy(
+            self.learner_memory_mode,
+            self.tutor_memory_mode,
+            &product_tool_names,
+        );
         let prompt = append_memory_routing_policy(system_prompt, &memory_policy);
         apply_product_instruction(&prompt, self.product_instruction.as_deref())
     }
@@ -328,10 +361,10 @@ impl CapabilityRouter {
 
 pub(crate) fn memory_routing_policy(
     learner_memory_mode: LearnerMemoryMode,
+    tutor_memory_mode: TutorMemoryMode,
     product_tool_names: &[String],
 ) -> String {
     let has_tool = |name: &str| product_tool_names.iter().any(|tool| tool == name);
-    let can_read_tutor_memory = has_tool("read_tutor_memory");
     let can_write_tutor_memory = has_tool("remember_for_later");
     let can_resolve_tutor_memory = has_tool("resolve_tutor_memory");
 
@@ -354,8 +387,8 @@ pub(crate) fn memory_routing_policy(
         rules.push("No Learner Memory mutation tool is available in this run. Never promise to save or forget shared learner information for later.".into());
     }
 
-    if can_read_tutor_memory {
-        let mut tutor_rule = "Tutor Memory is private continuity for this tutor relationship. Use read_tutor_memory for this tutor's commitments, unresolved follow-ups, lesson plans, reflections, and teaching strategies. Do not treat Tutor Memory as a learner profile or external factual source.".to_string();
+    if tutor_memory_mode.can_read() {
+        let mut tutor_rule = "Tutor Memory is private continuity for this tutor relationship and is exposed through knowledge_search and knowledge_read. Search it when this tutor's commitments, unresolved follow-ups, lesson plans, reflections, or teaching strategies would materially improve the response. Omit source_id and let the authorized router select sources. A search hit is only a candidate: copy its complete revisioned reference unchanged into knowledge_read before using it. Do not treat Tutor Memory as a learner profile or external factual source.".to_string();
         if can_write_tutor_memory {
             tutor_rule.push_str(" Use remember_for_later only for a low-risk tutor commitment, open loop, lesson plan, teaching reflection, or concrete future teaching strategy. Never store learner profile facts, credentials, sensitive personal data, external claims, or unsupported judgments there.");
         } else {
@@ -468,7 +501,11 @@ mod tests {
 
     #[test]
     fn memory_routing_policy_matches_mounted_tools() {
-        let learner_only = memory_routing_policy(LearnerMemoryMode::InteractiveMutation, &[]);
+        let learner_only = memory_routing_policy(
+            LearnerMemoryMode::InteractiveMutation,
+            TutorMemoryMode::Disabled,
+            &[],
+        );
         assert!(learner_only.contains("knowledge_search"));
         assert!(learner_only.contains("knowledge_read"));
         assert!(learner_only.contains("memory_write"));
@@ -476,16 +513,18 @@ mod tests {
         assert!(learner_only.contains("omit source_id"));
         assert!(learner_only.contains("including its non-null revision"));
         assert!(learner_only.contains("exactly preference"));
-        assert!(!learner_only.contains("read_tutor_memory"));
+        assert!(!learner_only.contains("Tutor Memory is private continuity"));
 
         let tutor_read_only =
-            memory_routing_policy(LearnerMemoryMode::Disabled, &["read_tutor_memory".into()]);
-        assert!(tutor_read_only.contains("read_tutor_memory"));
+            memory_routing_policy(LearnerMemoryMode::Disabled, TutorMemoryMode::ReadOnly, &[]);
+        assert!(tutor_read_only.contains("knowledge_search and knowledge_read"));
+        assert!(tutor_read_only.contains("complete revisioned reference"));
         assert!(tutor_read_only.contains("No Tutor Memory write tool"));
         assert!(!tutor_read_only.contains("remember_for_later"));
         assert!(!tutor_read_only.contains("Learner Memory is shared"));
 
-        let learner_read_only = memory_routing_policy(LearnerMemoryMode::ReadOnly, &[]);
+        let learner_read_only =
+            memory_routing_policy(LearnerMemoryMode::ReadOnly, TutorMemoryMode::Disabled, &[]);
         assert!(learner_read_only.contains("knowledge_search"));
         assert!(learner_read_only.contains("No Learner Memory mutation tool"));
         assert!(!learner_read_only.contains("memory_write"));
@@ -493,18 +532,16 @@ mod tests {
 
         let both_writable = memory_routing_policy(
             LearnerMemoryMode::InteractiveMutation,
-            &[
-                "read_tutor_memory".into(),
-                "remember_for_later".into(),
-                "resolve_tutor_memory".into(),
-            ],
+            TutorMemoryMode::Autonomous,
+            &["remember_for_later".into(), "resolve_tutor_memory".into()],
         );
         assert!(both_writable.contains("remember_for_later"));
         assert!(both_writable.contains("resolve_tutor_memory"));
         assert!(both_writable.contains("Never write the same item to both stores"));
         assert!(both_writable.contains("product artifacts"));
 
-        let no_memory_tools = memory_routing_policy(LearnerMemoryMode::Disabled, &[]);
+        let no_memory_tools =
+            memory_routing_policy(LearnerMemoryMode::Disabled, TutorMemoryMode::Disabled, &[]);
         assert!(no_memory_tools.contains("Never announce or imply"));
         assert!(no_memory_tools.contains("No Learner Memory mutation tool"));
     }

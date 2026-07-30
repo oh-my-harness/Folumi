@@ -57,6 +57,10 @@ content, course facts, research results, or unsupported judgments.
 - Tutor-specific operations that runtime Memory does not model, such as
   resolving an open loop while retaining its history, remain thin product
   domain tools until runtime provides an appropriate update/status contract.
+- While runtime exposes only one fixed-name `MemoryPlugin` per Agent, a
+  tutor-scoped product tool may call a separate runtime `MemoryService`
+  directly. It must not bypass runtime policy, mutation gate, provenance, or
+  receipt validation.
 - Any missing runtime capability is recorded in `docs/framework-feedback.md`.
 
 ### Retrieval
@@ -188,8 +192,9 @@ and reported upstream, not by bypassing runtime access controls.
 
 ### Tutor Memory migration
 
-- No custom product tool duplicates generic runtime memory create/delete
-  behavior.
+- No Tutor Memory tool writes directly to the product store. A temporary
+  scoped tool may be a thin `MemoryService` caller until runtime supports
+  routing multiple memory stores without fixed-name tool conflicts.
 - Tutor Memory reads use runtime Knowledge search and exact revisioned read.
 - Tutor isolation, stale-reference rejection, and mutation policy have boundary
   tests.

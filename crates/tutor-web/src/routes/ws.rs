@@ -23,7 +23,9 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tutor_agent::event_sink::{EventSink, SharedEventSink};
 use tutor_agent::governance::GovernanceConfig;
-use tutor_agent::{Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, LlmProviderKind};
+use tutor_agent::{
+    Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, LlmProviderKind, TutorMemoryMode,
+};
 
 use crate::knowledge_store::KnowledgeStore;
 use crate::learner_memory_source::{
@@ -46,8 +48,12 @@ use crate::space_tool::{
     ListNotebookTreeTool, ProposeNotebookEditTool, ReadSpaceItemTool, SearchNotebookTool,
 };
 use crate::stream::StreamEvent;
-use crate::tutor_memory_store::{TutorMemoryEntry, TutorMemoryKind, TutorMemoryStore};
-use crate::tutor_memory_tool::{ReadTutorMemoryTool, RememberForLaterTool, ResolveTutorMemoryTool};
+use crate::tutor_memory_source::{
+    TUTOR_MEMORY_MODE_ATTRIBUTE, TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE, TutorMemoryKnowledgeSource,
+};
+use crate::tutor_memory_store::TutorMemoryStore;
+use crate::tutor_memory_tool::{RememberForLaterTool, ResolveTutorMemoryTool};
+use crate::tutor_memory_write::assemble_tutor_memory_service;
 use crate::tutor_store::{TutorProfile, TutorStore};
 
 #[derive(Clone)]
@@ -533,6 +539,20 @@ fn agent_knowledge_access_context(
             session_id.to_string(),
         );
     }
+    if let Some(tutor) = tutor {
+        scope
+            .attributes
+            .insert(TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE.into(), tutor.id.clone());
+        scope.attributes.insert(
+            TUTOR_MEMORY_MODE_ATTRIBUTE.into(),
+            if tutor.autonomous_memory {
+                "autonomous"
+            } else {
+                "read_only"
+            }
+            .into(),
+        );
+    }
     let mut access =
         KnowledgeAccessContext::new(scope, PrincipalRef::new("local-user", "local_user"));
     access.authorization_version = Some(match tutor {
@@ -540,10 +560,15 @@ fn agent_knowledge_access_context(
             let mut knowledge_base_ids = tutor.resource_permissions.knowledge_base_ids.clone();
             knowledge_base_ids.sort();
             format!(
-                "tutor:{}:agent-knowledge:{}:learner-memory:{}",
+                "tutor:{}:agent-knowledge:{}:learner-memory:{}:tutor-memory:{}",
                 tutor.id,
                 knowledge_base_ids.join(","),
-                learner_memory_mode.profile_name().unwrap_or("disabled")
+                learner_memory_mode.profile_name().unwrap_or("disabled"),
+                if tutor.autonomous_memory {
+                    "autonomous"
+                } else {
+                    "read_only"
+                }
             )
         }
         None => format!(
@@ -562,7 +587,10 @@ fn agent_run_request(
     tutor: Option<&TutorProfile>,
 ) -> tutor_agent::Result<RunRequest> {
     let mut request = RunRequest::from_text(content);
-    if knowledge_base_id.is_some() || learner_memory_mode.profile_name().is_some() {
+    if knowledge_base_id.is_some()
+        || learner_memory_mode.profile_name().is_some()
+        || tutor.is_some()
+    {
         request = request.with_extension(agent_knowledge_access_context(
             session_id,
             knowledge_base_id,
@@ -733,6 +761,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                 quizzes.clone(),
             )));
         }
+        let mut tutor_memory_runtime = None;
         if let Some(tutor) = bound_tutor.as_ref() {
             if !tutor
                 .allowed_capabilities
@@ -743,27 +772,42 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                     entry.capability.clone(),
                 ));
             }
-            let active_memory = tutor_memory
-                .list(&tutor.id, false)
-                .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?;
-            router =
-                router.with_product_instruction(tutor_product_instruction(tutor, &active_memory));
-            router = router.with_product_tool(Arc::new(ReadTutorMemoryTool::new(
+            router = router.with_product_instruction(tutor_product_instruction(tutor));
+            let tutor_memory_mode = if tutor.autonomous_memory {
+                TutorMemoryMode::Autonomous
+            } else {
+                TutorMemoryMode::ReadOnly
+            };
+            let tutor_memory_source = Arc::new(TutorMemoryKnowledgeSource::new(
                 tutor_memory.clone(),
                 tutor.id.clone(),
-            )));
+            ));
             if tutor.autonomous_memory {
-                router = router
-                    .with_product_tool(Arc::new(RememberForLaterTool::new(
+                let service = Arc::new(
+                    assemble_tutor_memory_service(
+                        tutor_memory_source.clone(),
                         tutor_memory.clone(),
                         tutor.id.clone(),
-                        entry.id.clone(),
+                        crate::knowledge_runtime::agent_knowledge_access_control(),
+                        runtime_security.memory_policy_secret(),
+                    )
+                    .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?,
+                );
+                router = router
+                    .with_product_tool(Arc::new(RememberForLaterTool::new(
+                        service,
+                        tutor_memory.clone(),
+                        tutor.id.clone(),
                     )))
                     .with_product_tool(Arc::new(ResolveTutorMemoryTool::new(
                         tutor_memory.clone(),
                         tutor.id.clone(),
                     )));
             }
+            tutor_memory_runtime = Some(crate::knowledge_runtime::TutorMemoryRuntimeInput {
+                source: tutor_memory_source,
+                mode: tutor_memory_mode,
+            });
         }
         if entry.capability == "quiz" {
             let quiz_tool = CreateQuizTool::new(
@@ -844,6 +888,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             router,
             course_source,
             learner_memory,
+            tutor_memory_runtime,
             &runtime_security,
         )?;
         if entry.capability == "research" {
@@ -981,56 +1026,12 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
     }
 }
 
-fn tutor_product_instruction(tutor: &TutorProfile, active_memory: &[TutorMemoryEntry]) -> String {
-    let mut instruction = format!(
+fn tutor_product_instruction(tutor: &TutorProfile) -> String {
+    format!(
         "Tutor name: {}\n\n## Tutor Soul (user-authored Markdown)\n\n{}",
         tutor.name.trim(),
         tutor.soul_markdown.trim()
-    );
-    let memory_lines = active_memory
-        .iter()
-        .take(8)
-        .map(|entry| {
-            let mut line = format!(
-                "- [{}:{}] {}",
-                tutor_memory_kind_name(entry.kind),
-                entry.id,
-                bounded_text(&entry.text, 320)
-            );
-            if let Some(next_action) = entry.next_action.as_deref() {
-                line.push_str("; next: ");
-                line.push_str(&bounded_text(next_action, 180));
-            }
-            line
-        })
-        .collect::<Vec<_>>();
-    if !memory_lines.is_empty() {
-        instruction.push_str(
-            "\n\n## Active private tutor continuity\n\nThese items belong only to this tutor. Apply them naturally and use read_tutor_memory for more detail. Do not treat them as general learner-profile facts.\n",
-        );
-        instruction.push_str(&memory_lines.join("\n"));
-    }
-    instruction
-}
-
-fn tutor_memory_kind_name(kind: TutorMemoryKind) -> &'static str {
-    match kind {
-        TutorMemoryKind::Commitment => "commitment",
-        TutorMemoryKind::OpenLoop => "open_loop",
-        TutorMemoryKind::LessonPlan => "lesson_plan",
-        TutorMemoryKind::Reflection => "reflection",
-        TutorMemoryKind::Strategy => "strategy",
-    }
-}
-
-fn bounded_text(value: &str, max_chars: usize) -> String {
-    let mut chars = value.trim().chars();
-    let bounded = chars.by_ref().take(max_chars).collect::<String>();
-    if chars.next().is_some() {
-        format!("{bounded}...")
-    } else {
-        bounded
-    }
+    )
 }
 
 fn should_record_chat_memory(capability: &str, research_report_started: bool) -> bool {

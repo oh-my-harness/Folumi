@@ -45,6 +45,10 @@ pub struct TutorMemoryEntry {
     pub updated_at: DateTime<Utc>,
     #[serde(default)]
     pub resolved_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_idempotency_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_provenance: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -75,6 +79,24 @@ pub struct UpdateTutorMemoryEntry {
     pub status: Option<TutorMemoryStatus>,
     #[serde(default)]
     pub resolution_note: Option<Option<String>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RuntimeTutorMemoryWrite {
+    pub kind: TutorMemoryKind,
+    pub text: String,
+    pub next_action: Option<String>,
+    pub source_session_id: Option<String>,
+    pub source_message_id: Option<String>,
+    pub idempotency_key: String,
+    pub provenance: serde_json::Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExactTutorMemoryDeleteOutcome {
+    Deleted,
+    NotFound,
+    Stale { latest_revision: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -171,9 +193,48 @@ impl TutorMemoryStore {
             created_at: now,
             updated_at: now,
             resolved_at: None,
+            runtime_idempotency_key: None,
+            runtime_provenance: None,
         };
         let _guard = self.lock.lock().unwrap();
         let mut file = self.load_locked(tutor_id)?;
+        file.entries.push(entry.clone());
+        self.save_locked(tutor_id, &file)?;
+        Ok(entry)
+    }
+
+    pub fn upsert_runtime(
+        &self,
+        tutor_id: &str,
+        input: RuntimeTutorMemoryWrite,
+    ) -> Result<TutorMemoryEntry, TutorMemoryError> {
+        validate_tutor_id(tutor_id)?;
+        let idempotency_key = clean_required(input.idempotency_key, "idempotency key", 512)?;
+        let _guard = self.lock.lock().unwrap();
+        let mut file = self.load_locked(tutor_id)?;
+        if let Some(existing) = file.entries.iter().find(|entry| {
+            entry.runtime_idempotency_key.as_deref() == Some(idempotency_key.as_str())
+        }) {
+            return Ok(existing.clone());
+        }
+        let now = Utc::now();
+        let entry = TutorMemoryEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            tutor_id: tutor_id.to_string(),
+            kind: input.kind,
+            text: clean_required(input.text, "memory text", MAX_MEMORY_TEXT_CHARS)?,
+            status: TutorMemoryStatus::Active,
+            next_action: clean_optional(input.next_action, "next action", MAX_NEXT_ACTION_CHARS)?,
+            due_at: None,
+            source_session_id: clean_source(input.source_session_id),
+            source_message_id: clean_source(input.source_message_id),
+            resolution_note: None,
+            created_at: now,
+            updated_at: now,
+            resolved_at: None,
+            runtime_idempotency_key: Some(idempotency_key),
+            runtime_provenance: Some(input.provenance),
+        };
         file.entries.push(entry.clone());
         self.save_locked(tutor_id, &file)?;
         Ok(entry)
@@ -250,6 +311,27 @@ impl TutorMemoryStore {
         self.save_locked(tutor_id, &file)
     }
 
+    pub fn delete_exact(
+        &self,
+        tutor_id: &str,
+        entry_id: &str,
+        expected_revision: &str,
+    ) -> Result<ExactTutorMemoryDeleteOutcome, TutorMemoryError> {
+        validate_tutor_id(tutor_id)?;
+        let _guard = self.lock.lock().unwrap();
+        let mut file = self.load_locked(tutor_id)?;
+        let Some(index) = file.entries.iter().position(|entry| entry.id == entry_id) else {
+            return Ok(ExactTutorMemoryDeleteOutcome::NotFound);
+        };
+        let latest_revision = tutor_memory_entry_revision(&file.entries[index]);
+        if latest_revision != expected_revision {
+            return Ok(ExactTutorMemoryDeleteOutcome::Stale { latest_revision });
+        }
+        file.entries.remove(index);
+        self.save_locked(tutor_id, &file)?;
+        Ok(ExactTutorMemoryDeleteOutcome::Deleted)
+    }
+
     pub fn reset(&self, tutor_id: &str) -> Result<(), TutorMemoryError> {
         validate_tutor_id(tutor_id)?;
         let _guard = self.lock.lock().unwrap();
@@ -259,9 +341,13 @@ impl TutorMemoryStore {
     fn load_locked(&self, tutor_id: &str) -> Result<TutorMemoryFile, TutorMemoryError> {
         let path = self.memory_path(tutor_id);
         match fs::read_to_string(path) {
-            Ok(text) => Ok(serde_json::from_str(&text)
-                .map_err(anyhow::Error::from)
-                .map_err(TutorMemoryError::Storage)?),
+            Ok(text) => {
+                let mut file = serde_json::from_str::<TutorMemoryFile>(&text)
+                    .map_err(anyhow::Error::from)
+                    .map_err(TutorMemoryError::Storage)?;
+                file.schema_version = schema_version();
+                Ok(file)
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 Ok(TutorMemoryFile::default())
             }
@@ -289,7 +375,18 @@ impl TutorMemoryStore {
 }
 
 fn schema_version() -> u32 {
-    1
+    2
+}
+
+pub fn tutor_memory_entry_revision(entry: &TutorMemoryEntry) -> String {
+    let normalized =
+        serde_json::to_string(entry).expect("TutorMemoryEntry serialization is infallible");
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in normalized.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
 
 fn status_rank(status: TutorMemoryStatus) -> u8 {
@@ -389,6 +486,6 @@ mod tests {
             &std::fs::read_to_string(dir.path().join("tutor-a/memory.json")).unwrap(),
         )
         .unwrap();
-        assert_eq!(reset_file["schema_version"], 1);
+        assert_eq!(reset_file["schema_version"], 2);
     }
 }

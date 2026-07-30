@@ -516,7 +516,7 @@ fn maintenance_knowledge_runtime(
         agent_knowledge_access_control(),
         runtime_security.evidence_authority(),
         tutor_agent::agent_knowledge_evidence_provider_id(),
-        agent_knowledge_citation_policy(false, true).map_err(|error| error.to_string())?,
+        agent_knowledge_citation_policy(false, true, false).map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())?;
     let access = maintenance_access_context(target_path, run_id)?;

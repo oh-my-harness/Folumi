@@ -16,6 +16,10 @@ use crate::learner_memory_source::{
 };
 use crate::learner_memory_write::{LearnerMemoryApprover, assemble_learner_memory_service};
 use crate::memory_store::FileMemoryBackend;
+use crate::tutor_memory_source::{
+    TUTOR_MEMORY_MODE_ATTRIBUTE, TUTOR_MEMORY_SOURCE_ID, TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE,
+    TutorMemoryKnowledgeSource,
+};
 
 #[derive(Clone)]
 pub struct AgentRuntimeSecurity {
@@ -59,6 +63,7 @@ fn random_process_secret() -> Vec<u8> {
 pub(crate) fn agent_knowledge_citation_policy(
     course_source: bool,
     learner_memory_source: bool,
+    tutor_memory_source: bool,
 ) -> tutor_agent::Result<KnowledgeCitationPolicy> {
     let mut builder = KnowledgeCitationPolicy::builder();
     if course_source {
@@ -73,6 +78,12 @@ pub(crate) fn agent_knowledge_citation_policy(
             KnowledgeCitationRequirement::Optional,
         );
     }
+    if tutor_memory_source {
+        builder = builder.source(
+            TUTOR_MEMORY_SOURCE_ID,
+            KnowledgeCitationRequirement::Optional,
+        );
+    }
     builder
         .build()
         .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))
@@ -84,10 +95,16 @@ pub(crate) struct LearnerMemoryRuntimeInput {
     pub(crate) approver: Option<Arc<dyn LearnerMemoryApprover>>,
 }
 
+pub(crate) struct TutorMemoryRuntimeInput {
+    pub(crate) source: Arc<TutorMemoryKnowledgeSource>,
+    pub(crate) mode: tutor_agent::TutorMemoryMode,
+}
+
 pub(crate) fn install_agent_knowledge_and_memory(
     mut router: tutor_agent::CapabilityRouter,
     course_source: Option<Arc<dyn KnowledgeSource>>,
     learner_memory: Option<LearnerMemoryRuntimeInput>,
+    tutor_memory: Option<TutorMemoryRuntimeInput>,
     security: &AgentRuntimeSecurity,
 ) -> tutor_agent::Result<tutor_agent::CapabilityRouter> {
     let access_control = agent_knowledge_access_control();
@@ -109,9 +126,26 @@ pub(crate) fn install_agent_knowledge_and_memory(
         memory_source = Some((source, input));
     }
 
+    let tutor_memory_mode = tutor_memory
+        .as_ref()
+        .map(|input| input.mode)
+        .unwrap_or_default();
+    if let Some(input) = tutor_memory {
+        if input.mode == tutor_agent::TutorMemoryMode::Disabled {
+            return Err(tutor_agent::TutorError::Internal(
+                "disabled Tutor Memory must not provide a store".into(),
+            ));
+        }
+        sources.push(input.source);
+    }
+    router = router.with_tutor_memory_runtime(tutor_memory_mode);
+
     if !sources.is_empty() {
-        let citation_policy =
-            agent_knowledge_citation_policy(has_course_source, memory_source.is_some())?;
+        let citation_policy = agent_knowledge_citation_policy(
+            has_course_source,
+            memory_source.is_some(),
+            tutor_memory_mode != tutor_agent::TutorMemoryMode::Disabled,
+        )?;
         let runtime = tutor_agent::assemble_knowledge_runtime(
             sources,
             access_control.clone(),
@@ -193,6 +227,7 @@ impl KnowledgeAuthorizer for AgentKnowledgeAuthorizer {
                         .is_some_and(|kb| !kb.trim().is_empty())
                 }
                 LEARNER_MEMORY_SOURCE_ID => memory_access_allows(access, action),
+                TUTOR_MEMORY_SOURCE_ID => tutor_memory_access_allows(access, action),
                 _ => false,
             };
             Ok(if allowed {
@@ -202,6 +237,32 @@ impl KnowledgeAuthorizer for AgentKnowledgeAuthorizer {
             })
         })
     }
+}
+
+fn tutor_memory_access_allows(access: &KnowledgeAccessContext, action: KnowledgeAction) -> bool {
+    let attributes = &access.scope.attributes;
+    if access.scope.namespace != tutor_rag::AGENT_KNOWLEDGE_NAMESPACE
+        || !attributes
+            .get(TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE)
+            .is_some_and(|tutor_id| !tutor_id.trim().is_empty())
+    {
+        return false;
+    }
+    matches!(
+        (
+            attributes
+                .get(TUTOR_MEMORY_MODE_ATTRIBUTE)
+                .map(String::as_str),
+            action,
+        ),
+        (
+            Some("read_only" | "autonomous"),
+            KnowledgeAction::Discover | KnowledgeAction::Search | KnowledgeAction::Read,
+        ) | (
+            Some("autonomous"),
+            KnowledgeAction::Write | KnowledgeAction::Delete
+        )
+    )
 }
 
 fn memory_access_allows(access: &KnowledgeAccessContext, action: KnowledgeAction) -> bool {
@@ -274,8 +335,16 @@ mod tests {
     use crate::memory_approval::{ApprovalResponseOutcome, WebMemoryApprovalCoordinator};
     use crate::memory_store::{DurableMemoryWrite, memory_entry_revision};
     use crate::stream::{StreamEvent, TutorStream};
+    use crate::tutor_memory_source::{
+        TUTOR_MEMORY_MODE_ATTRIBUTE, TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE,
+    };
+    use crate::tutor_memory_store::{
+        CreateTutorMemoryEntry, TutorMemoryKind, TutorMemoryStore, tutor_memory_entry_revision,
+    };
     use tutor_agent::governance::GovernanceConfig;
-    use tutor_agent::{Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig};
+    use tutor_agent::{
+        Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, TutorMemoryMode,
+    };
 
     fn access(profile: &str, principal: &str) -> KnowledgeAccessContext {
         let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
@@ -337,6 +406,17 @@ mod tests {
             .with_extension(MemorySessionId::new(session_id).unwrap())
     }
 
+    fn tutor_access(tutor_id: &str, mode: &str) -> KnowledgeAccessContext {
+        let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
+        scope
+            .attributes
+            .insert(TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE.into(), tutor_id.into());
+        scope
+            .attributes
+            .insert(TUTOR_MEMORY_MODE_ATTRIBUTE.into(), mode.into());
+        KnowledgeAccessContext::new(scope, PrincipalRef::new("local-user", "user"))
+    }
+
     #[tokio::test]
     async fn source_aware_authorizer_keeps_course_read_only_and_memory_profiled() {
         let read_only = access("read_only", "local-user");
@@ -366,6 +446,34 @@ mod tests {
             decision(&read_only, KnowledgeAction::Write, LEARNER_MEMORY_SOURCE_ID,).await,
             AuthorizationDecision::Deny
         );
+        let tutor_read_only = tutor_access("tutor-a", "read_only");
+        assert_eq!(
+            decision(
+                &tutor_read_only,
+                KnowledgeAction::Read,
+                TUTOR_MEMORY_SOURCE_ID,
+            )
+            .await,
+            AuthorizationDecision::Allow
+        );
+        assert_eq!(
+            decision(
+                &tutor_read_only,
+                KnowledgeAction::Write,
+                TUTOR_MEMORY_SOURCE_ID,
+            )
+            .await,
+            AuthorizationDecision::Deny
+        );
+        assert_eq!(
+            decision(
+                &tutor_access("tutor-a", "autonomous"),
+                KnowledgeAction::Write,
+                TUTOR_MEMORY_SOURCE_ID,
+            )
+            .await,
+            AuthorizationDecision::Allow
+        );
 
         let interactive = access("interactive_mutation", "local-user");
         assert_eq!(
@@ -377,6 +485,61 @@ mod tests {
             .await,
             AuthorizationDecision::Allow
         );
+    }
+
+    #[tokio::test]
+    async fn tutor_memory_reads_through_runtime_knowledge_tools() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(TutorMemoryStore::new_with_root(temp.path().join("tutors")));
+        let entry = store
+            .create(
+                "tutor-a",
+                CreateTutorMemoryEntry {
+                    kind: TutorMemoryKind::OpenLoop,
+                    text: "Continue the attention exercise".into(),
+                    next_action: Some("Review question 3".into()),
+                    due_at: None,
+                    source_session_id: Some("session-a".into()),
+                    source_message_id: None,
+                },
+            )
+            .unwrap();
+        let reference = KnowledgeRef {
+            source_id: TUTOR_MEMORY_SOURCE_ID.into(),
+            item_id: format!("entry/{}", entry.id),
+            revision: Some(tutor_memory_entry_revision(&entry)),
+        };
+        let read_args = serde_json::json!({
+            "reference": reference,
+            "selector": {"kind": "document"}
+        })
+        .to_string();
+        let source = Arc::new(TutorMemoryKnowledgeSource::new(store, "tutor-a"));
+        let router = install_agent_knowledge_and_memory(
+            router(vec![
+                MockResponse::tool_use(
+                    "tutor-memory-search",
+                    "knowledge_search",
+                    r#"{"query":"attention","source_id":"llm-tutor.tutor-memory"}"#,
+                ),
+                MockResponse::tool_use("tutor-memory-read", "knowledge_read", &read_args),
+                MockResponse::text("We will continue the attention exercise."),
+            ]),
+            None,
+            None,
+            Some(TutorMemoryRuntimeInput {
+                source,
+                mode: TutorMemoryMode::ReadOnly,
+            }),
+            &AgentRuntimeSecurity::generate(),
+        )
+        .unwrap();
+        let request = RunRequest::from_text("What should we continue?")
+            .with_extension(tutor_access("tutor-a", "read_only"))
+            .with_extension(MemorySessionId::new("session-a").unwrap());
+
+        let answer = router.run_request(Capability::Chat, request).await.unwrap();
+        assert_eq!(answer, "We will continue the attention exercise.");
     }
 
     #[tokio::test]
@@ -410,6 +573,7 @@ mod tests {
                 mode: LearnerMemoryMode::InteractiveMutation,
                 approver: None,
             }),
+            None,
             &AgentRuntimeSecurity::generate(),
         )
         .err()
@@ -449,6 +613,7 @@ mod tests {
                 mode: LearnerMemoryMode::InteractiveMutation,
                 approver: Some(coordinator.clone()),
             }),
+            None,
             &AgentRuntimeSecurity::generate(),
         )
         .unwrap();
@@ -541,6 +706,7 @@ mod tests {
                 mode: LearnerMemoryMode::InteractiveMutation,
                 approver: Some(coordinator.clone()),
             }),
+            None,
             &AgentRuntimeSecurity::generate(),
         )
         .unwrap();
@@ -634,6 +800,7 @@ mod tests {
                 mode: LearnerMemoryMode::ReadOnly,
                 approver: None,
             }),
+            None,
             &AgentRuntimeSecurity::generate(),
         )
         .unwrap();
@@ -697,6 +864,7 @@ mod tests {
                 mode: LearnerMemoryMode::ReadOnly,
                 approver: None,
             }),
+            None,
             &AgentRuntimeSecurity::generate(),
         )
         .unwrap();

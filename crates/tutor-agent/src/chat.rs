@@ -619,7 +619,7 @@ mod tests {
         quiz_system_prompt, research_system_prompt, text_delta_route_for_capability,
     };
     use crate::capability::{
-        LearnerMemoryMode, append_memory_routing_policy, memory_routing_policy,
+        LearnerMemoryMode, TutorMemoryMode, append_memory_routing_policy, memory_routing_policy,
     };
     use llm_harness_loop::{FinalAnswerMissingBehavior, FinalAnswerMode};
 
@@ -650,7 +650,11 @@ mod tests {
         ] {
             let prompt = append_memory_routing_policy(
                 &prompt,
-                &memory_routing_policy(LearnerMemoryMode::InteractiveMutation, &[]),
+                &memory_routing_policy(
+                    LearnerMemoryMode::InteractiveMutation,
+                    TutorMemoryMode::Disabled,
+                    &[],
+                ),
             );
             assert!(prompt.contains("silent internal context loading"));
             assert!(prompt.contains("Never narrate that you are checking"));
