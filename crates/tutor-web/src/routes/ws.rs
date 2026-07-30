@@ -104,7 +104,6 @@ struct PersistedEventSink {
     pool: Arc<SessionPool>,
     session_id: String,
     stream: crate::stream::TutorStream,
-    streamed_content: Arc<AtomicBool>,
     research_report_started: Arc<AtomicBool>,
     run_id: String,
     tutor_id: Option<String>,
@@ -153,11 +152,7 @@ impl EventSink for PersistedEventSink {
 
     fn content(&self, text: String, chunk: bool) -> BoxFuture<'static, ()> {
         let stream = self.stream.clone();
-        let streamed_content = self.streamed_content.clone();
         Box::pin(async move {
-            if chunk {
-                streamed_content.store(true, Ordering::SeqCst);
-            }
             stream.content(&text, chunk).await;
         })
     }
@@ -706,12 +701,10 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             .map(|config| config.require_approval)
             .unwrap_or(false);
         let governance = GovernanceConfig::new(budget_limit, Some(audit), require_approval);
-        let streamed_content = Arc::new(AtomicBool::new(false));
         let sink: SharedEventSink = Arc::new(PersistedEventSink {
             pool: pool.clone(),
             session_id: entry.id.clone(),
             stream: entry.stream.clone(),
-            streamed_content: streamed_content.clone(),
             research_report_started: research_report_started.clone(),
             run_id: run_id.clone(),
             tutor_id: entry.tutor_id.clone(),
@@ -888,10 +881,10 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                 Some(cancel.clone()),
             )
             .await?;
-        Ok((answer, streamed_content.load(Ordering::SeqCst)))
+        Ok(answer)
     };
 
-    let result: tutor_agent::Result<(String, bool)> = work.await;
+    let result: tutor_agent::Result<String> = work.await;
     let _ = flush_pending_session_events(
         &pool,
         &entry.id,
@@ -915,7 +908,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
     }
 
     match result {
-        Ok((answer, streamed)) => {
+        Ok(answer) => {
             if should_record_chat_memory(
                 &entry.capability,
                 research_report_started.load(Ordering::SeqCst),
@@ -940,8 +933,10 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                     }),
                 );
             }
-            let final_text = if streamed { "" } else { &answer };
-            let _ = entry.stream.content(final_text, false).await;
+            // Always close the stream with the runtime-classified canonical
+            // final answer. Earlier deltas may have belonged to a Progress
+            // message before a tool call.
+            let _ = entry.stream.content(&answer, false).await;
             let history_len = pool.history_len(&entry.id).await;
             let latest_usage = pool.latest_usage(&entry.id).await.ok().flatten();
             let context_window_tokens = entry

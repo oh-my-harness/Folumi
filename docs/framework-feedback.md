@@ -270,6 +270,32 @@
   - Product workaround: `llm-tutor` installs a thin `OpenAiSafeContextConverter` that delegates to runtime's `DefaultConvertToLlm` and then drops assistant history messages with no text and no tool invocations. Tool-call assistant messages are preserved, so OpenAI tool-call adjacency remains intact.
   - Suggestion: handle this at the adapter/runtime boundary, either by omitting reasoning-only assistant messages for OpenAI-compatible wire formats or by mapping provider-supported reasoning history into a valid content representation.
 
+- **Runtime tool schemas cannot expose application memory-kind policy**
+  - Expected: when an application configures `MemoryWritePolicy.allowed_kinds`, the
+    runtime-owned `memory_write` schema tells the model which exact enum values are
+    accepted.
+  - Actual: the tool schema exposes `kind` as an unconstrained string, so a real
+    model can invent a plausible value such as `learner_preference`; the policy
+    then rejects it and the model must retry. `llm-tutor` currently adds a
+    product prompt rule that only `preference` is accepted.
+  - Suggestion: derive the `kind` schema enum/description from the configured
+    policy, or let the service provide application-specific schema metadata.
+
+- **Knowledge read schemas cannot require a revision for revisioned sources**
+  - Expected: a search hit from a source advertising
+    `KnowledgeCapability::Revisioned` leads the model to copy the complete opaque
+    reference, including `revision`, into `knowledge_read`.
+  - Actual: runtime's generic tool schema requires only `source_id` and `item_id`;
+    `revision` is optional. A real model omitted it, then retried with `null`, so
+    the source correctly rejected the read as stale while the search snippet had
+    already exposed enough short memory content to answer.
+  - Product workaround: Learner Memory search now returns a metadata-only
+    snippet and the system policy explicitly requires an unchanged exact
+    reference followed by a successful read.
+  - Suggestion: make the reference schema source-aware when all selected sources
+    are revisioned, or add a registry-level strict-reference option that requires
+    non-null revisions for `knowledge_read`.
+
 - **Resolved: workflow steps use runtime structured final output**
   - Runtime commit `8ab2a377` removed the synthetic
     `submit_step_result` Tool contract.

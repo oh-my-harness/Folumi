@@ -13,12 +13,21 @@ const module = { exports: {} }
 Function('module', 'exports', compiled)(module, module.exports)
 const {
   appendCompletedSessionMessage,
+  completedStreamText,
   isCurrentSessionEvent,
   isLatestSessionHydration,
   isLatestSessionLoad,
   reconcileSessionMessages,
   reconcileSessionRunState,
 } = module.exports
+
+test('canonical final text replaces provisional streamed progress', () => {
+  assert.equal(
+    completedStreamText('I remembered it before calling the tool.', 'The preference was saved.'),
+    'The preference was saved.',
+  )
+  assert.equal(completedStreamText('plain streamed answer', ''), 'plain streamed answer')
+})
 
 test('rejects events and session loads from a stale selection', () => {
   assert.equal(isCurrentSessionEvent('session-a', 'session-b'), false)

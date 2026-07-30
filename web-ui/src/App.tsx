@@ -40,6 +40,7 @@ import type { ResearchReportTraceData } from './researchRestore'
 import { guideTutorStarterPrompt, type ProductGuideDestination } from './productGuide'
 import {
   appendCompletedSessionMessage,
+  completedStreamText,
   isCurrentSessionEvent,
   isLatestSessionHydration,
   reconcileSessionMessages,
@@ -409,7 +410,7 @@ export default function App() {
           streamingRef.current += event.payload.text
           setStreamingText(streamingRef.current)
         } else {
-          const finalText = streamingRef.current + event.payload.text
+          const finalText = completedStreamText(streamingRef.current, event.payload.text)
           const citations = pendingCitationsRef.current
           const deepSolve = pendingDeepSolveRef.current
           const notebookEditProposal = pendingNotebookEditProposalRef.current

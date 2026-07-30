@@ -92,3 +92,12 @@ export function appendCompletedSessionMessage<T extends SessionMessageItem>(
   }
   return [...messages, message]
 }
+
+/**
+ * A non-chunk stream event carries the runtime's canonical final answer.
+ * Prefer it over provisional deltas, which can later be classified as
+ * tool-call progress rather than a durable assistant answer.
+ */
+export function completedStreamText(streamedText: string, canonicalText: string) {
+  return canonicalText || streamedText
+}

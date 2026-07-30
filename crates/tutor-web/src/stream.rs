@@ -80,8 +80,16 @@ impl TutorStream {
 
     pub async fn content(&self, text: &str, chunk: bool) {
         let mut snapshot = self.snapshot.lock().unwrap();
-        snapshot.content.push_str(text);
-        if !chunk {
+        if chunk {
+            snapshot.content.push_str(text);
+        } else {
+            // The terminal event is authoritative. Text deltas emitted before
+            // runtime message classification can belong to a Progress message
+            // that precedes a tool call, so a non-empty final answer replaces
+            // provisional content instead of being appended to it.
+            if !text.is_empty() {
+                snapshot.content = text.to_string();
+            }
             snapshot.completed = true;
         }
         let _ = self.tx.send(StreamEvent::Content {
@@ -263,6 +271,21 @@ mod tests {
         let (_, snapshot) = stream.subscribe_with_snapshot();
 
         assert_eq!(snapshot.content, "complete answer");
+        assert!(snapshot.completed);
+    }
+
+    #[tokio::test]
+    async fn final_content_replaces_provisional_progress_in_snapshot() {
+        let stream = TutorStream::new(16);
+        stream.begin_run();
+        stream
+            .content("I remembered it before the tool.", true)
+            .await;
+        stream.content("The preference was saved.", false).await;
+
+        let (_, snapshot) = stream.subscribe_with_snapshot();
+
+        assert_eq!(snapshot.content, "The preference was saved.");
         assert!(snapshot.completed);
     }
 

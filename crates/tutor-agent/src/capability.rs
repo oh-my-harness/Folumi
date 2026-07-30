@@ -14,7 +14,7 @@ use crate::knowledge::KnowledgeRuntime;
 use crate::llm_provider::LlmConfig;
 use tutor_tools::WebSearchConfig;
 
-pub(crate) const NATURAL_MEMORY_INTERACTION_POLICY: &str = "Treat memory reads as silent internal context loading. Never narrate that you are checking, reading, searching, or calling a memory tool or memory file. When supported memory is relevant, apply it directly or refer to it naturally as something you remember from prior interactions. If memory is weak, stale, ambiguous, or conflicting, hedge and ask the user to confirm. Never claim to remember content when no memory result supports it. If the user explicitly asks how you know, explain the relevant prior interaction or memory category truthfully; tool calls remain visible in trace.";
+pub(crate) const NATURAL_MEMORY_INTERACTION_POLICY: &str = "Treat memory reads as silent internal context loading. Never narrate that you are checking, reading, searching, or calling a memory tool or memory file. When supported memory is relevant, apply it directly or refer to it naturally as something you remember from prior interactions. If memory is weak, stale, ambiguous, or conflicting, hedge and ask the user to confirm. Never claim to remember content when no successful memory read supports it. If the user explicitly asks how you know, explain the relevant prior interaction or memory category truthfully; tool calls remain visible in trace. Never announce or imply that a memory write, update, resolution, or deletion succeeded before its tool result confirms success; a request can be rejected, denied, or cancelled.";
 
 /// Supported teaching modes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -335,31 +335,31 @@ pub(crate) fn memory_routing_policy(
     let can_write_tutor_memory = has_tool("remember_for_later");
     let can_resolve_tutor_memory = has_tool("resolve_tutor_memory");
 
-    if !learner_memory_mode.can_read() && !can_read_tutor_memory {
-        return String::new();
-    }
-
     let mut rules = vec![format!(
         "# Memory routing\n\n{NATURAL_MEMORY_INTERACTION_POLICY}"
     )];
 
     if learner_memory_mode.can_read() {
         rules.push(
-            "Learner Memory is shared user context exposed through knowledge_search and knowledge_read. Search it only when learner profile, preferences, strengths, weaknesses, scope, or recent learning state would materially improve the response. Memory is personalization context, never factual course evidence."
+            "Learner Memory is shared user context exposed through knowledge_search and knowledge_read. Search it only when learner profile, preferences, strengths, weaknesses, scope, or recent learning state would materially improve the response. For a Learner Memory search, omit source_id and let the authorized router select sources; never guess or invent a source id. A search hit is only a candidate: never use or paraphrase its snippet as remembered content. Copy the complete reference object returned by knowledge_search, including its non-null revision, unchanged into knowledge_read with the suggested selector. Treat Learner Memory as supported only after knowledge_read succeeds. Memory is personalization context, never factual course evidence."
                 .into(),
         );
     }
     if learner_memory_mode.can_mutate() {
         rules.push(
-            "Use memory_write only when the user explicitly asks you to remember something or clearly requests recording a durable learner preference. Use memory_forget only for an exact current Learner Memory reference. Ordinary conversation and inferred traits stay in session/L1 evidence; do not silently promote them to durable Learner Memory. Every mutation requires a live user confirmation outside the model."
+            "Use memory_write only when the user explicitly asks you to remember something or clearly requests recording a durable learner preference. This product currently supports only the kind preference: omit kind or set it to exactly preference; never invent another kind. Use memory_forget only for an exact current Learner Memory reference. Ordinary conversation and inferred traits stay in session/L1 evidence; do not silently promote them to durable Learner Memory. Every mutation requires a live user confirmation outside the model. If approval is denied or the tool fails, say the memory was not changed."
                 .into(),
         );
+    } else {
+        rules.push("No Learner Memory mutation tool is available in this run. Never promise to save or forget shared learner information for later.".into());
     }
 
     if can_read_tutor_memory {
         let mut tutor_rule = "Tutor Memory is private continuity for this tutor relationship. Use read_tutor_memory for this tutor's commitments, unresolved follow-ups, lesson plans, reflections, and teaching strategies. Do not treat Tutor Memory as a learner profile or external factual source.".to_string();
         if can_write_tutor_memory {
             tutor_rule.push_str(" Use remember_for_later only for a low-risk tutor commitment, open loop, lesson plan, teaching reflection, or concrete future teaching strategy. Never store learner profile facts, credentials, sensitive personal data, external claims, or unsupported judgments there.");
+        } else {
+            tutor_rule.push_str(" No Tutor Memory write tool is available in this run. Never promise to persist private tutor continuity for later.");
         }
         if can_resolve_tutor_memory {
             tutor_rule.push_str(" Use resolve_tutor_memory when a recorded tutor commitment, follow-up, or plan is actually complete.");
@@ -473,16 +473,21 @@ mod tests {
         assert!(learner_only.contains("knowledge_read"));
         assert!(learner_only.contains("memory_write"));
         assert!(learner_only.contains("memory_forget"));
+        assert!(learner_only.contains("omit source_id"));
+        assert!(learner_only.contains("including its non-null revision"));
+        assert!(learner_only.contains("exactly preference"));
         assert!(!learner_only.contains("read_tutor_memory"));
 
         let tutor_read_only =
             memory_routing_policy(LearnerMemoryMode::Disabled, &["read_tutor_memory".into()]);
         assert!(tutor_read_only.contains("read_tutor_memory"));
+        assert!(tutor_read_only.contains("No Tutor Memory write tool"));
         assert!(!tutor_read_only.contains("remember_for_later"));
         assert!(!tutor_read_only.contains("Learner Memory is shared"));
 
         let learner_read_only = memory_routing_policy(LearnerMemoryMode::ReadOnly, &[]);
         assert!(learner_read_only.contains("knowledge_search"));
+        assert!(learner_read_only.contains("No Learner Memory mutation tool"));
         assert!(!learner_read_only.contains("memory_write"));
         assert!(!learner_read_only.contains("memory_forget"));
 
@@ -499,6 +504,8 @@ mod tests {
         assert!(both_writable.contains("Never write the same item to both stores"));
         assert!(both_writable.contains("product artifacts"));
 
-        assert!(memory_routing_policy(LearnerMemoryMode::Disabled, &[]).is_empty());
+        let no_memory_tools = memory_routing_policy(LearnerMemoryMode::Disabled, &[]);
+        assert!(no_memory_tools.contains("Never announce or imply"));
+        assert!(no_memory_tools.contains("No Learner Memory mutation tool"));
     }
 }

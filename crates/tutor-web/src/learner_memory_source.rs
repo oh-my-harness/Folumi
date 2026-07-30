@@ -30,7 +30,8 @@ pub const LEARNER_MEMORY_KINDS_ATTRIBUTE: &str = "learner_memory_kinds";
 pub const LEARNER_MEMORY_L1_SESSION_ATTRIBUTE: &str = "learner_memory_l1_session_id";
 
 const MAX_SEARCH_LIMIT: usize = 50;
-const MAX_SNIPPET_BYTES: usize = 500;
+const MEMORY_SEARCH_SNIPPET: &str =
+    "Learner Memory match. Content is available only through an exact knowledge_read.";
 
 #[derive(Clone)]
 pub struct LearnerMemoryKnowledgeSource {
@@ -268,12 +269,15 @@ impl KnowledgeSource for LearnerMemoryKnowledgeSource {
                 .skip(offset)
                 .take(limit)
                 .map(|(item, matched)| {
-                    let (snippet, _) = truncate_utf8(&item.body, MAX_SNIPPET_BYTES);
                     let uri = item_uri(&item.reference.item_id);
                     KnowledgeHit {
                         reference: item.reference,
                         title: Some(item.title),
-                        snippet,
+                        // Search establishes relevance but is not a read
+                        // authority. Avoid exposing short memory bodies in full
+                        // through snippets, which would let a model bypass the
+                        // exact revisioned read contract.
+                        snippet: MEMORY_SEARCH_SNIPPET.into(),
                         suggested_selectors: vec![ContentSelector::Document],
                         uri: Some(uri),
                         score: (query != "*").then_some(matched as f32 / terms.len() as f32),
@@ -714,6 +718,29 @@ mod tests {
         };
 
         verify_source_contract(&source, &run, &case).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn search_hits_do_not_expose_memory_body_before_exact_read() {
+        let (_temp, source, allowed, run) = fixture();
+        let page = source
+            .search(
+                context(&run, &allowed),
+                SourceSearchRequest {
+                    query: "visual".into(),
+                    filters: vec![],
+                    limit: 5,
+                    cursor: None,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(page.hits.len(), 1);
+        assert_eq!(page.hits[0].snippet, MEMORY_SEARCH_SNIPPET);
+        assert!(!page.hits[0].snippet.contains("Prefers visual diagrams."));
+        assert!(page.hits[0].reference.revision.is_some());
     }
 
     #[tokio::test]
