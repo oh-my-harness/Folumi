@@ -539,7 +539,7 @@ fn last_assistant_text(messages: &[AgentMessage]) -> Option<String> {
 
 fn chat_system_prompt() -> String {
     "You are a knowledgeable tutor. When knowledge_search and knowledge_read are available, \
-     use them for facts from the selected Knowledge Base. Search first, then read only the exact \
+     use them for facts from the selected Knowledge Base. For a selected Knowledge Base search, set source_id to exactly `course_knowledge`. Search first, then read only the exact \
      opaque references returned by knowledge_search. Base Knowledge Base claims on content returned \
      by knowledge_read, and cite only the citation handles returned by that read. Never cite a \
      search hit that you did not read, never invent a citation handle, and never ask the user for \
@@ -566,7 +566,7 @@ fn research_system_prompt() -> String {
     "You are a research tutor. Your job is to help the user clarify research needs and, when appropriate, turn a confirmed topic into a sourced, reusable research report. \
      Research findings belong in reports, not memory. \
      Research has two modes: Research Chat and Detailed Research Workflow. \
-     When knowledge_search and knowledge_read are available in Research Chat, use them only when selected course material is relevant: search first, read exact returned references, and cite only handles returned by knowledge_read. Never invent a Knowledge citation or ask the user to provide opaque identifiers or authorization scope. \
+     When knowledge_search and knowledge_read are available in Research Chat, use them only when selected course material is relevant: set source_id to exactly `course_knowledge`, search first, read exact returned references, and cite only handles returned by knowledge_read. Never invent a Knowledge citation or ask the user to provide opaque identifiers or authorization scope. \
      In Research Chat, discuss the topic, ask focused clarification questions, and help define goal, scope, source preferences, output format, depth, time range, and whether Notebook or Knowledge Base context should be used. \
      Do not call web_search, web_fetch, or produce a full report when the user's request is ambiguous or they are only discussing scope. \
      When the research need is mostly clear but not confirmed, call propose_research_plan with the proposed topic, scope, output format, depth, time range, sources, and workflow steps, then ask the user to confirm or revise it. \
@@ -624,6 +624,7 @@ mod tests {
         assert!(!prompt.contains("rag_search"));
         assert!(prompt.contains("knowledge_search"));
         assert!(prompt.contains("knowledge_read"));
+        assert!(prompt.contains("source_id to exactly `course_knowledge`"));
         assert!(prompt.contains("Search first"));
         assert!(prompt.contains("cite only the citation handles"));
         assert!(prompt.contains("never invent a citation handle"));
@@ -666,6 +667,7 @@ mod tests {
         assert!(!prompt.contains("rag_search"));
         assert!(prompt.contains("knowledge_search"));
         assert!(prompt.contains("knowledge_read"));
+        assert!(prompt.contains("source_id to exactly `course_knowledge`"));
         assert!(prompt.contains("search first"));
         assert!(prompt.contains("cite only handles"));
         assert!(prompt.contains("Research findings belong in reports"));

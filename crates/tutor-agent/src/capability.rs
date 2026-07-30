@@ -374,7 +374,7 @@ pub(crate) fn memory_routing_policy(
 
     if learner_memory_mode.can_read() {
         rules.push(
-            "Learner Memory is shared user context exposed through knowledge_search and knowledge_read. Search it only when learner profile, preferences, strengths, weaknesses, scope, or recent learning state would materially improve the response. For a Learner Memory search, omit source_id and let the authorized router select sources; never guess or invent a source id. A search hit is only a candidate: never use or paraphrase its snippet as remembered content. Copy the complete reference object returned by knowledge_search, including its non-null revision, unchanged into knowledge_read with the suggested selector. Treat Learner Memory as supported only after knowledge_read succeeds. Memory is personalization context, never factual course evidence."
+            "Learner Memory is shared user context exposed through knowledge_search and knowledge_read. Search it when learner identity, requested name, profile, preferences, strengths, weaknesses, scope, or recent learning state would materially improve the response. For every Learner Memory search, set source_id to exactly `llm-tutor.learner-memory`; this is the trusted source catalog identifier, not a user-provided value. A search hit is only a candidate: never use or paraphrase its snippet as remembered content. Copy the complete reference object returned by knowledge_search, including its non-null revision, unchanged into knowledge_read with the suggested selector. Treat Learner Memory as supported only after knowledge_read succeeds. If the user asks who they are or what their name is, search and read Learner Memory before claiming that it is unknown. Memory is personalization context, never factual course evidence."
                 .into(),
         );
     }
@@ -388,7 +388,7 @@ pub(crate) fn memory_routing_policy(
     }
 
     if tutor_memory_mode.can_read() {
-        let mut tutor_rule = "Tutor Memory is private continuity for this tutor relationship and is exposed through knowledge_search and knowledge_read. Search it when this tutor's commitments, unresolved follow-ups, lesson plans, reflections, or teaching strategies would materially improve the response. Omit source_id and let the authorized router select sources. A search hit is only a candidate: copy its complete revisioned reference unchanged into knowledge_read before using it. Do not treat Tutor Memory as a learner profile or external factual source.".to_string();
+        let mut tutor_rule = "Tutor Memory is private continuity for this tutor relationship and is exposed through knowledge_search and knowledge_read. Search it when this tutor's commitments, unresolved follow-ups, lesson plans, reflections, or teaching strategies would materially improve the response. For every Tutor Memory search, set source_id to exactly `llm-tutor.tutor-memory`; this is the trusted source catalog identifier. A search hit is only a candidate: copy its complete revisioned reference unchanged into knowledge_read before using it. Do not treat Tutor Memory as a learner profile or external factual source.".to_string();
         if can_write_tutor_memory {
             tutor_rule.push_str(" Use remember_for_later only for a low-risk tutor commitment, open loop, lesson plan, teaching reflection, or concrete future teaching strategy. Never store learner profile facts, credentials, sensitive personal data, external claims, or unsupported judgments there.");
         } else {
@@ -510,7 +510,8 @@ mod tests {
         assert!(learner_only.contains("knowledge_read"));
         assert!(learner_only.contains("memory_write"));
         assert!(learner_only.contains("memory_forget"));
-        assert!(learner_only.contains("omit source_id"));
+        assert!(learner_only.contains("source_id to exactly `llm-tutor.learner-memory`"));
+        assert!(learner_only.contains("before claiming that it is unknown"));
         assert!(learner_only.contains("including its non-null revision"));
         assert!(learner_only.contains("exactly preference"));
         assert!(!learner_only.contains("Tutor Memory is private continuity"));
@@ -518,6 +519,7 @@ mod tests {
         let tutor_read_only =
             memory_routing_policy(LearnerMemoryMode::Disabled, TutorMemoryMode::ReadOnly, &[]);
         assert!(tutor_read_only.contains("knowledge_search and knowledge_read"));
+        assert!(tutor_read_only.contains("source_id to exactly `llm-tutor.tutor-memory`"));
         assert!(tutor_read_only.contains("complete revisioned reference"));
         assert!(tutor_read_only.contains("No Tutor Memory write tool"));
         assert!(!tutor_read_only.contains("remember_for_later"));

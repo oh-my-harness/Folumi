@@ -20,6 +20,25 @@
 
 ## Friction Points
 
+- **Knowledge search requires model-provided source routing when multiple sources are visible**
+  - Reproduced in the desktop app on 2026-07-30 with Learner Memory and Tutor
+    Memory mounted in one runtime `KnowledgeRegistry`.
+  - `knowledge_search` makes `source_id` optional, but
+    `KnowledgeRegistry::search` rejects an unscoped request unless it resolves
+    to exactly one visible source. With both memory sources visible, a
+    semantically correct query therefore fails with
+    `UnsupportedCapability` before either source can search.
+  - Product mitigation: runtime instructions now provide the exact trusted
+    catalog identifiers for Course Knowledge, Learner Memory, and Tutor Memory,
+    and require source-routed searches. A combined-source regression test
+    covers the Learner identity path, including a legacy name entry stored
+    under preferences.
+  - Suggestion: expose authorized source discovery to the model, make
+    `source_id` conditionally required with an enumerated authorized catalog,
+    or support federated search with per-source failures. The default tool
+    contract should not accept a request shape that deterministically fails
+    whenever more than one source is visible.
+
 - **Resolved 2026-07-29: Knowledge citation policy distinguishes course evidence from
   personalization memory**
   - Tracked upstream in

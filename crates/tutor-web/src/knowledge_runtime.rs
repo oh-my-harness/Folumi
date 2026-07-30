@@ -549,6 +549,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn learner_identity_read_is_source_routed_when_tutor_memory_is_also_visible() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let identity = backend
+            .upsert_durable_memory(DurableMemoryWrite {
+                content: "学生名叫雷季达".into(),
+                // Reproduce the legacy write that placed an identity fact in
+                // preferences before profile routing was enforced.
+                kind: "preference".into(),
+                provenance: serde_json::json!({"source": "test"}),
+                idempotency_key: "identity-test".into(),
+                expires_at: None,
+            })
+            .unwrap();
+        let reference = KnowledgeRef {
+            source_id: LEARNER_MEMORY_SOURCE_ID.into(),
+            item_id: format!("l3/preferences/{}", identity.marker),
+            revision: Some(memory_entry_revision(&identity).unwrap()),
+        };
+        let read_args = serde_json::json!({
+            "reference": reference,
+            "selector": {"kind": "document"}
+        })
+        .to_string();
+        let tutor_store = Arc::new(TutorMemoryStore::new_with_root(temp.path().join("tutors")));
+        let tutor_source = Arc::new(TutorMemoryKnowledgeSource::new(tutor_store, "tutor-a"));
+        let router = install_agent_knowledge_and_memory(
+            router(vec![
+                MockResponse::tool_use(
+                    "learner-identity-search",
+                    "knowledge_search",
+                    r#"{"query":"我是谁 姓名","source_id":"llm-tutor.learner-memory"}"#,
+                ),
+                MockResponse::tool_use("learner-identity-read", "knowledge_read", &read_args),
+                MockResponse::text("你叫雷季达。"),
+            ]),
+            None,
+            Some(LearnerMemoryRuntimeInput {
+                backend,
+                semantic_rag: None,
+                mode: LearnerMemoryMode::ReadOnly,
+                approver: None,
+            }),
+            Some(TutorMemoryRuntimeInput {
+                source: tutor_source,
+                mode: TutorMemoryMode::ReadOnly,
+            }),
+            &AgentRuntimeSecurity::generate(),
+        )
+        .unwrap();
+        let mut combined_access = access("read_only", "local-user");
+        combined_access
+            .scope
+            .attributes
+            .insert(TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE.into(), "tutor-a".into());
+        combined_access
+            .scope
+            .attributes
+            .insert(TUTOR_MEMORY_MODE_ATTRIBUTE.into(), "read_only".into());
+        let request = RunRequest::from_text("你知道我是谁吗？")
+            .with_extension(combined_access)
+            .with_extension(MemorySessionId::new("session-a").unwrap());
+
+        let answer = router.run_request(Capability::Chat, request).await.unwrap();
+        assert_eq!(answer, "你叫雷季达。");
+    }
+
+    #[tokio::test]
     async fn source_aware_authorizer_rejects_cross_principal_and_unknown_sources() {
         let mut forged = access("interactive_mutation", "local-user");
         forged.principal.subject = "other-user".into();
