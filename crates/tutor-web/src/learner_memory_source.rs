@@ -241,17 +241,30 @@ impl KnowledgeSource for LearnerMemoryKnowledgeSource {
             let offset = decode_cursor(request.cursor.as_deref(), &fingerprint)?;
             let query = request.query.trim().to_lowercase();
             let terms = query.split_whitespace().collect::<Vec<_>>();
+            let intent = memory_query_intent(&query);
+            let query_bigrams = cjk_bigrams(&query);
             let mut matches = self
                 .items(&scope)?
                 .into_iter()
                 .filter(|item| filters_match(item, &request.filters))
                 .filter_map(|item| {
                     let haystack = format!("{} {}", item.title, item.body).to_lowercase();
-                    let matched = terms
+                    let term_matches = terms
                         .iter()
                         .filter(|term| haystack.contains(**term))
                         .count();
-                    (query == "*" || matched > 0).then_some((item, matched))
+                    let bigram_matches = if query_bigrams.is_empty() {
+                        0
+                    } else {
+                        let haystack_bigrams = cjk_bigrams(&haystack);
+                        query_bigrams
+                            .iter()
+                            .filter(|bigram| haystack_bigrams.contains(*bigram))
+                            .count()
+                    };
+                    let intent_score = intent.score(&item);
+                    let score = intent_score + term_matches * 10 + bigram_matches;
+                    (query == "*" || score > 0).then_some((item, score))
                 })
                 .collect::<Vec<_>>();
             if abort.is_cancelled() {
@@ -280,7 +293,7 @@ impl KnowledgeSource for LearnerMemoryKnowledgeSource {
                         snippet: MEMORY_SEARCH_SNIPPET.into(),
                         suggested_selectors: vec![ContentSelector::Document],
                         uri: Some(uri),
-                        score: (query != "*").then_some(matched as f32 / terms.len() as f32),
+                        score: (query != "*").then_some(matched as f32),
                         updated_at: item.updated_at,
                         metadata: item.metadata,
                     }
@@ -340,6 +353,116 @@ impl KnowledgeSource for LearnerMemoryKnowledgeSource {
             })
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MemoryQueryIntent {
+    General,
+    Profile,
+    Preference,
+}
+
+impl MemoryQueryIntent {
+    fn score(self, item: &MemoryItem) -> usize {
+        // Durable identity is small, high-value structured state. Always keep
+        // it in the candidate set so an unusual phrasing cannot make a name or
+        // identity fact disappear; explicit intent only changes its rank.
+        let structured_baseline = if item.kind.as_deref() == Some("profile") {
+            2
+        } else if identity_profile_text(&item.body) {
+            // Compatibility for identity facts written to preferences by
+            // older prompts. New writes are routed to L3/profile.md.
+            1
+        } else {
+            0
+        };
+        match self {
+            Self::Profile if item.kind.as_deref() == Some("profile") => 100,
+            Self::Profile if identity_profile_text(&item.body) => 90,
+            Self::Preference if item.kind.as_deref() == Some("preferences") => 100,
+            _ => structured_baseline,
+        }
+    }
+}
+
+fn memory_query_intent(query: &str) -> MemoryQueryIntent {
+    if [
+        "姓名",
+        "名字",
+        "叫什么",
+        "我是谁",
+        "身份",
+        "称呼",
+        "name",
+        "identity",
+        "who am i",
+        "call me",
+    ]
+    .iter()
+    .any(|pattern| query.contains(pattern))
+    {
+        MemoryQueryIntent::Profile
+    } else if [
+        "偏好",
+        "喜欢",
+        "习惯",
+        "preference",
+        "prefer",
+        "learning style",
+    ]
+    .iter()
+    .any(|pattern| query.contains(pattern))
+    {
+        MemoryQueryIntent::Preference
+    } else {
+        MemoryQueryIntent::General
+    }
+}
+
+fn identity_profile_text(text: &str) -> bool {
+    let normalized = text.to_lowercase();
+    [
+        "我叫",
+        "名叫",
+        "姓名",
+        "名字是",
+        "称呼我",
+        "my name is",
+        "call me",
+        "name is",
+    ]
+    .iter()
+    .any(|pattern| normalized.contains(pattern))
+}
+
+fn cjk_bigrams(value: &str) -> BTreeSet<String> {
+    let mut bigrams = BTreeSet::new();
+    let mut run = Vec::new();
+    let flush = |run: &mut Vec<char>, bigrams: &mut BTreeSet<String>| {
+        for pair in run.windows(2) {
+            bigrams.insert(pair.iter().collect());
+        }
+        run.clear();
+    };
+    for ch in value.chars() {
+        if is_cjk(ch) {
+            run.push(ch);
+        } else {
+            flush(&mut run, &mut bigrams);
+        }
+    }
+    flush(&mut run, &mut bigrams);
+    bigrams
+}
+
+fn is_cjk(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{3400}'..='\u{4DBF}'
+            | '\u{4E00}'..='\u{9FFF}'
+            | '\u{F900}'..='\u{FAFF}'
+            | '\u{20000}'..='\u{2FA1F}'
+    )
 }
 
 fn parse_access_set(
@@ -654,6 +777,17 @@ mod tests {
         }
     }
 
+    fn profile_entry(marker: &str, text: &str) -> MemoryEntry {
+        MemoryEntry {
+            line_number: 3,
+            section: Some("Identity".into()),
+            text: text.into(),
+            marker: marker.into(),
+            source_refs: Vec::new(),
+            metadata: None,
+        }
+    }
+
     fn fixture() -> (
         tempfile::TempDir,
         LearnerMemoryKnowledgeSource,
@@ -741,6 +875,106 @@ mod tests {
         assert_eq!(page.hits[0].snippet, MEMORY_SEARCH_SNIPPET);
         assert!(!page.hits[0].snippet.contains("Prefers visual diagrams."));
         assert!(page.hits[0].reference.revision.is_some());
+    }
+
+    #[tokio::test]
+    async fn identity_intent_recalls_legacy_misclassified_name_without_literal_overlap() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let markdown = serialize_memory_entries(
+            "Learning preferences",
+            &[preference_entry("m_name", "学生名叫小林")],
+        )
+        .unwrap();
+        backend.write("L3/preferences.md", markdown).unwrap();
+        let source = LearnerMemoryKnowledgeSource::new(backend);
+        let allowed = access(LEARNER_MEMORY_NAMESPACE, "l3", "", "preferences");
+        let run = RunContext::new(RunRequest::from_text("我叫什么"));
+
+        let page = source
+            .search(
+                context(&run, &allowed),
+                SourceSearchRequest {
+                    // Deliberately avoids the source's common name aliases and
+                    // has no CJK bigram overlap with "学生名叫小林".
+                    query: "档案中的全名是什么".into(),
+                    filters: vec![],
+                    limit: 5,
+                    cursor: None,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(page.hits.len(), 1);
+        assert_eq!(page.hits[0].reference.item_id, "l3/preferences/m_name");
+    }
+
+    #[tokio::test]
+    async fn identity_intent_deterministically_recalls_profile_category() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let markdown = serialize_memory_entries(
+            "Student profile",
+            &[profile_entry("m_identity", "登记称谓为小林")],
+        )
+        .unwrap();
+        backend.write("L3/profile.md", markdown).unwrap();
+        let source = LearnerMemoryKnowledgeSource::new(backend);
+        let allowed = access(LEARNER_MEMORY_NAMESPACE, "l3", "", "profile");
+        let run = RunContext::new(RunRequest::from_text("我叫什么"));
+
+        let page = source
+            .search(
+                context(&run, &allowed),
+                SourceSearchRequest {
+                    // Profile entries are always candidates even when the
+                    // query uses wording the source has never seen.
+                    query: "档案中的全名是什么".into(),
+                    filters: vec![],
+                    limit: 5,
+                    cursor: None,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(page.hits.len(), 1);
+        assert_eq!(page.hits[0].reference.item_id, "l3/profile/m_identity");
+    }
+
+    #[tokio::test]
+    async fn chinese_bigrams_recall_related_free_text_without_whole_query_match() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
+        let markdown = serialize_memory_entries(
+            "Learning preferences",
+            &[preference_entry("m_diagram", "希望使用流程图说明概念")],
+        )
+        .unwrap();
+        backend.write("L3/preferences.md", markdown).unwrap();
+        let source = LearnerMemoryKnowledgeSource::new(backend);
+        let allowed = access(LEARNER_MEMORY_NAMESPACE, "l3", "", "preferences");
+        let run = RunContext::new(RunRequest::from_text("流程说明"));
+
+        let page = source
+            .search(
+                context(&run, &allowed),
+                SourceSearchRequest {
+                    query: "流程说明".into(),
+                    filters: vec![],
+                    limit: 5,
+                    cursor: None,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(page.hits.len(), 1);
+        assert_eq!(page.hits[0].reference.item_id, "l3/preferences/m_diagram");
     }
 
     #[tokio::test]
@@ -919,12 +1153,28 @@ mod tests {
             .unwrap();
 
         assert_eq!(page.hits.len(), 1);
-        assert!(page.hits[0].snippet.contains("Session one"));
+        assert_eq!(page.hits[0].snippet, MEMORY_SEARCH_SNIPPET);
         assert!(
             page.hits
                 .iter()
                 .all(|hit| hit.reference.item_id.starts_with("l1/chat/"))
         );
+        let content = source
+            .read(
+                context(&run, &allowed),
+                KnowledgeReadRequest {
+                    reference: page.hits[0].reference.clone(),
+                    selector: ContentSelector::Document,
+                    max_bytes: 4096,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        match &content.blocks[0] {
+            DataBlock::Text { text, .. } => assert!(text.contains("Session one")),
+            other => panic!("expected text memory content, got {other:?}"),
+        }
     }
 
     #[tokio::test]

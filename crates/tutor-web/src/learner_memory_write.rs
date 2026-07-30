@@ -25,6 +25,8 @@ use crate::memory_store::{
 
 const PREFERENCE_ITEM_PREFIX: &str = "l3/preferences/";
 const PREFERENCE_TARGET: &str = "L3/preferences.md";
+const PROFILE_ITEM_PREFIX: &str = "l3/profile/";
+const PROFILE_TARGET: &str = "L3/profile.md";
 
 #[derive(Clone)]
 pub struct LearnerMemoryWriteStore {
@@ -57,16 +59,36 @@ impl MemoryStore for LearnerMemoryWriteStore {
     ) -> BoxFuture<'a, Result<MemoryWriteReceipt, KnowledgeError>> {
         Box::pin(async move {
             authorize_mutation(ctx, &abort)?;
-            if write.kind.as_deref() != Some("preference")
-                || write.metadata.get("target") != Some(&json!(PREFERENCE_TARGET))
-            {
+            let Some(kind) = write.kind.as_deref() else {
+                return Err(KnowledgeError::Unauthorized);
+            };
+            let (target, item_prefix) = match kind {
+                "profile" => (PROFILE_TARGET, PROFILE_ITEM_PREFIX),
+                "preference" => (PREFERENCE_TARGET, PREFERENCE_ITEM_PREFIX),
+                _ => return Err(KnowledgeError::Unauthorized),
+            };
+            let access_kind = if kind == "profile" {
+                "profile"
+            } else {
+                "preferences"
+            };
+            if !csv_contains(
+                ctx.access
+                    .scope
+                    .attributes
+                    .get(LEARNER_MEMORY_KINDS_ATTRIBUTE),
+                access_kind,
+            ) {
+                return Err(KnowledgeError::Unauthorized);
+            }
+            if write.metadata.get("target") != Some(&json!(target)) {
                 return Err(KnowledgeError::Unauthorized);
             }
             let entry = self
                 .backend
-                .upsert_durable_preference(DurableMemoryWrite {
+                .upsert_durable_memory(DurableMemoryWrite {
                     content: write.content,
-                    kind: "preference".into(),
+                    kind: kind.into(),
                     provenance: serde_json::to_value(write.provenance).map_err(backend_error)?,
                     idempotency_key: write.idempotency_key,
                     expires_at: write.expires_at,
@@ -76,7 +98,7 @@ impl MemoryStore for LearnerMemoryWriteStore {
             Ok(MemoryWriteReceipt {
                 reference: KnowledgeRef {
                     source_id: LEARNER_MEMORY_SOURCE_ID.into(),
-                    item_id: format!("{PREFERENCE_ITEM_PREFIX}{}", entry.marker),
+                    item_id: format!("{item_prefix}{}", entry.marker),
                     revision: Some(revision),
                 },
                 visibility: MemoryVisibility::Visible,
@@ -95,18 +117,39 @@ impl MemoryStore for LearnerMemoryWriteStore {
             if reference.source_id != LEARNER_MEMORY_SOURCE_ID {
                 return Err(KnowledgeError::NotFound);
             }
-            let marker = reference
-                .item_id
-                .strip_prefix(PREFERENCE_ITEM_PREFIX)
-                .filter(|marker| !marker.is_empty() && !marker.contains('/'))
-                .ok_or(KnowledgeError::NotFound)?;
+            let (kind, marker) = if let Some(marker) =
+                reference.item_id.strip_prefix(PROFILE_ITEM_PREFIX)
+            {
+                ("profile", marker)
+            } else if let Some(marker) = reference.item_id.strip_prefix(PREFERENCE_ITEM_PREFIX) {
+                ("preference", marker)
+            } else {
+                return Err(KnowledgeError::NotFound);
+            };
+            if marker.is_empty() || marker.contains('/') {
+                return Err(KnowledgeError::NotFound);
+            }
+            let access_kind = if kind == "profile" {
+                "profile"
+            } else {
+                "preferences"
+            };
+            if !csv_contains(
+                ctx.access
+                    .scope
+                    .attributes
+                    .get(LEARNER_MEMORY_KINDS_ATTRIBUTE),
+                access_kind,
+            ) {
+                return Err(KnowledgeError::Unauthorized);
+            }
             let expected_revision = reference
                 .revision
                 .as_deref()
                 .ok_or(KnowledgeError::StaleReference { latest: None })?;
             match self
                 .backend
-                .delete_durable_preference(marker, expected_revision)
+                .delete_durable_memory(kind, marker, expected_revision)
                 .map_err(backend_error)?
             {
                 ExactMemoryDeleteOutcome::Deleted => Ok(MemoryDeleteReceipt {
@@ -140,7 +183,7 @@ impl LearnerMemoryWritePolicy {
             secret,
             SecureMemoryWritePolicyConfig {
                 max_content_bytes: 4 * 1_200,
-                allowed_kinds: Some(BTreeSet::from(["preference".into()])),
+                allowed_kinds: Some(BTreeSet::from(["preference".into(), "profile".into()])),
                 default_ttl: None,
                 max_ttl: Duration::from_secs(365 * 24 * 60 * 60),
                 metadata,
@@ -158,19 +201,47 @@ impl MemoryWritePolicy for LearnerMemoryWritePolicy {
         provenance: MemoryProvenance,
         abort: CancellationToken,
     ) -> BoxFuture<'a, Result<MemoryWrite, MemoryPolicyError>> {
-        if intent.kind.is_none() {
+        if identity_profile_content(&intent.content) {
+            intent.kind = Some("profile".into());
+        } else if intent.kind.is_none() {
             intent.kind = Some("preference".into());
         }
         Box::pin(async move {
-            let write = self.inner.prepare(ctx, intent, provenance, abort).await?;
+            let mut write = self.inner.prepare(ctx, intent, provenance, abort).await?;
             if write.content.chars().count() > 1_200 {
                 return Err(MemoryPolicyError::Rejected(
                     MemoryPolicyRejection::ContentTooLarge,
                 ));
             }
+            let target = match write.kind.as_deref() {
+                Some("profile") => PROFILE_TARGET,
+                Some("preference") => PREFERENCE_TARGET,
+                _ => {
+                    return Err(MemoryPolicyError::Rejected(
+                        MemoryPolicyRejection::UnsupportedKind,
+                    ));
+                }
+            };
+            write.metadata.insert("target".into(), json!(target));
             Ok(write)
         })
     }
+}
+
+fn identity_profile_content(content: &str) -> bool {
+    let normalized = content.trim().to_lowercase();
+    [
+        "我叫",
+        "名叫",
+        "姓名",
+        "名字是",
+        "称呼我",
+        "my name is",
+        "call me",
+        "name is",
+    ]
+    .iter()
+    .any(|pattern| normalized.contains(pattern))
 }
 
 pub trait LearnerMemoryApprover: Send + Sync {
@@ -254,10 +325,10 @@ fn authorize_mutation(
             .get(LEARNER_MEMORY_PROFILE_ATTRIBUTE)
             .is_some_and(|profile| profile == "interactive_mutation")
         && csv_contains(attributes.get(LEARNER_MEMORY_LAYERS_ATTRIBUTE), "l3")
-        && csv_contains(
+        && (csv_contains(
             attributes.get(LEARNER_MEMORY_KINDS_ATTRIBUTE),
             "preferences",
-        );
+        ) || csv_contains(attributes.get(LEARNER_MEMORY_KINDS_ATTRIBUTE), "profile"));
     if allowed {
         Ok(())
     } else {
@@ -309,9 +380,10 @@ mod tests {
         scope
             .attributes
             .insert(LEARNER_MEMORY_LAYERS_ATTRIBUTE.into(), "l3".into());
-        scope
-            .attributes
-            .insert(LEARNER_MEMORY_KINDS_ATTRIBUTE.into(), "preferences".into());
+        scope.attributes.insert(
+            LEARNER_MEMORY_KINDS_ATTRIBUTE.into(),
+            "profile,preferences".into(),
+        );
         scope
             .attributes
             .insert(LEARNER_MEMORY_SURFACES_ATTRIBUTE.into(), String::new());
@@ -610,6 +682,24 @@ mod tests {
         assert_eq!(prepared.metadata["target"], PREFERENCE_TARGET);
         assert!(prepared.expires_at.is_some());
 
+        let identity = policy
+            .prepare(
+                context(&run, &allowed),
+                MemoryWriteIntent {
+                    content: "学生名叫小林".into(),
+                    // Older prompts and real models may classify identity as a
+                    // preference. The trusted product policy must correct it.
+                    kind: Some("preference".into()),
+                    requested_ttl: None,
+                },
+                provenance.clone(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(identity.kind.as_deref(), Some("profile"));
+        assert_eq!(identity.metadata["target"], PROFILE_TARGET);
+
         let rejected = match policy
             .prepare(
                 context(&run, &allowed),
@@ -662,6 +752,73 @@ mod tests {
                 llm_harness_runtime_memory::MemoryPolicyRejection::ContentTooLarge
             )
         ));
+    }
+
+    #[tokio::test]
+    async fn profile_write_routes_to_profile_and_supports_exact_forget() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
+        let store = LearnerMemoryWriteStore::new(backend.clone());
+        let run = RunContext::new(RunRequest::from_text("remember my name"));
+        let allowed = access("interactive_mutation", "local-user");
+        let mut profile_write = write(&run, "profile-key", "学生名叫小林");
+        profile_write.kind = Some("profile".into());
+        profile_write
+            .metadata
+            .insert("target".into(), json!(PROFILE_TARGET));
+        let mut preference_only = access("interactive_mutation", "local-user");
+        preference_only
+            .scope
+            .attributes
+            .insert(LEARNER_MEMORY_KINDS_ATTRIBUTE.into(), "preferences".into());
+        let denied = store
+            .upsert(
+                context(&run, &preference_only),
+                profile_write.clone(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            denied.code(),
+            llm_harness_runtime_knowledge::KnowledgeErrorCode::Unauthorized
+        );
+
+        let receipt = store
+            .upsert(
+                context(&run, &allowed),
+                profile_write,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(receipt.reference.item_id.starts_with(PROFILE_ITEM_PREFIX));
+
+        let entries =
+            try_parse_memory_entries(&backend.read(PROFILE_TARGET).unwrap().markdown).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].section.as_deref(), Some("Identity"));
+        assert_eq!(
+            entries[0]
+                .metadata
+                .as_ref()
+                .map(|value| value.kind.as_str()),
+            Some("profile")
+        );
+
+        store
+            .delete(
+                context(&run, &allowed),
+                receipt.reference,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            try_parse_memory_entries(&backend.read(PROFILE_TARGET).unwrap().markdown)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[derive(Default)]

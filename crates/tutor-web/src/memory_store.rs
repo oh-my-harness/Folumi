@@ -160,6 +160,14 @@ pub enum ExactMemoryDeleteOutcome {
     Stale { latest_revision: String },
 }
 
+fn durable_memory_spec(kind: &str) -> Result<(&'static str, &'static str, &'static str)> {
+    match kind {
+        "profile" => Ok(("L3/profile.md", "Identity", "Student profile")),
+        "preference" => Ok(("L3/preferences.md", "Preferences", "Learning preferences")),
+        _ => Err(anyhow!("unsupported durable memory kind")),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryL2Entry {
     pub reference: String,
@@ -304,11 +312,8 @@ impl FileMemoryBackend {
         self.write_normalized(&path, markdown)
     }
 
-    pub fn upsert_durable_preference(&self, write: DurableMemoryWrite) -> Result<MemoryEntry> {
-        const TARGET: &str = "L3/preferences.md";
-        if write.kind != "preference" {
-            return Err(anyhow!("unsupported durable memory kind"));
-        }
+    pub fn upsert_durable_memory(&self, write: DurableMemoryWrite) -> Result<MemoryEntry> {
+        let (target, section, default_title) = durable_memory_spec(&write.kind)?;
         let content = write.content.trim();
         if content.is_empty() || content.chars().count() > MAX_L3_MEMORY_ENTRY_TEXT_CHARS {
             return Err(anyhow!("durable memory content is invalid"));
@@ -318,7 +323,7 @@ impl FileMemoryBackend {
         }
 
         self.ensure_skeleton()?;
-        let path = normalize_memory_path(TARGET)?;
+        let path = normalize_memory_path(target)?;
         let target_lock = self.target_lock(&path)?;
         let _guard = lock(&target_lock)?;
         let current = self.read_normalized(&path)?;
@@ -335,7 +340,7 @@ impl FileMemoryBackend {
         let marker = format!("m_{}", uuid::Uuid::new_v4().simple());
         let entry = MemoryEntry {
             line_number: 0,
-            section: Some("Preferences".into()),
+            section: Some(section.into()),
             text: content.to_string(),
             marker: marker.clone(),
             source_refs: Vec::new(),
@@ -343,33 +348,41 @@ impl FileMemoryBackend {
                 schema_version: MEMORY_ENTRY_METADATA_SCHEMA_VERSION,
                 item_id: marker,
                 kind: write.kind,
-                target: TARGET.into(),
+                target: target.into(),
                 provenance: write.provenance,
                 idempotency_key: write.idempotency_key,
                 expires_at: write.expires_at,
             }),
         };
         entries.push(entry.clone());
-        let title =
-            memory_title(&current.markdown).unwrap_or_else(|| "Learning preferences".into());
+        let title = memory_title(&current.markdown).unwrap_or_else(|| default_title.into());
         let markdown = serialize_memory_entries(&title, &entries)?;
         self.write_normalized(&path, markdown)?;
         Ok(entry)
     }
 
-    pub fn delete_durable_preference(
+    #[cfg(test)]
+    pub fn upsert_durable_preference(&self, write: DurableMemoryWrite) -> Result<MemoryEntry> {
+        if write.kind != "preference" {
+            return Err(anyhow!("unsupported durable memory kind"));
+        }
+        self.upsert_durable_memory(write)
+    }
+
+    pub fn delete_durable_memory(
         &self,
+        kind: &str,
         marker: &str,
         expected_revision: &str,
     ) -> Result<ExactMemoryDeleteOutcome> {
-        const TARGET: &str = "L3/preferences.md";
+        let (target, _, default_title) = durable_memory_spec(kind)?;
         serialize_memory_marker(marker)?;
         if expected_revision.trim().is_empty() {
             return Err(anyhow!("expected durable memory revision is empty"));
         }
 
         self.ensure_skeleton()?;
-        let path = normalize_memory_path(TARGET)?;
+        let path = normalize_memory_path(target)?;
         let target_lock = self.target_lock(&path)?;
         let _guard = lock(&target_lock)?;
         let current = self.read_normalized(&path)?;
@@ -382,11 +395,19 @@ impl FileMemoryBackend {
             return Ok(ExactMemoryDeleteOutcome::Stale { latest_revision });
         }
         entries.remove(index);
-        let title =
-            memory_title(&current.markdown).unwrap_or_else(|| "Learning preferences".into());
+        let title = memory_title(&current.markdown).unwrap_or_else(|| default_title.into());
         let markdown = serialize_memory_entries(&title, &entries)?;
         self.write_normalized(&path, markdown)?;
         Ok(ExactMemoryDeleteOutcome::Deleted)
+    }
+
+    #[cfg(test)]
+    pub fn delete_durable_preference(
+        &self,
+        marker: &str,
+        expected_revision: &str,
+    ) -> Result<ExactMemoryDeleteOutcome> {
+        self.delete_durable_memory("preference", marker, expected_revision)
     }
 
     // Phase 4 will schedule this through the composed runtime boundary.

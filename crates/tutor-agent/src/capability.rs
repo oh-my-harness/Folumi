@@ -347,7 +347,7 @@ pub(crate) fn memory_routing_policy(
     }
     if learner_memory_mode.can_mutate() {
         rules.push(
-            "Use memory_write only when the user explicitly asks you to remember something or clearly requests recording a durable learner preference. This product currently supports only the kind preference: omit kind or set it to exactly preference; never invent another kind. Use memory_forget only for an exact current Learner Memory reference. Ordinary conversation and inferred traits stay in session/L1 evidence; do not silently promote them to durable Learner Memory. Every mutation requires a live user confirmation outside the model. If approval is denied or the tool fails, say the memory was not changed."
+            "Use memory_write only when the user explicitly asks you to remember something or clearly requests recording durable learner information. Set kind to exactly profile for durable identity/profile facts such as the learner's requested name, and exactly preference for explicit preferences; never invent another kind. Use memory_forget only for an exact current Learner Memory reference. Ordinary conversation and inferred traits stay in session/L1 evidence; do not silently promote them to durable Learner Memory. Every mutation requires a live user confirmation outside the model. If approval is denied or the tool fails, say the memory was not changed."
                 .into(),
         );
     } else {

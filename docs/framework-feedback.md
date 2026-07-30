@@ -296,6 +296,21 @@
     are revisioned, or add a registry-level strict-reference option that requires
     non-null revisions for `knowledge_read`.
 
+- **Knowledge search schemas cannot expose source-declared structured filters**
+  - Expected: a model querying a structured source such as Learner Memory can
+    constrain the generic runtime search to a source-declared field such as
+    `kind=profile`, rather than inventing lexical synonyms for identity data.
+  - Actual: `SourceSearchRequest` and source descriptors support allowlisted
+    filters, but the model-facing `knowledge_search` tool exposes only query,
+    source, domains, and limit. Queries such as “用户姓名” therefore cannot
+    deterministically select a profile record whose body says “学生名叫…”.
+  - Product workaround: the Learner Memory source performs a small, typed
+    intent-to-kind routing step and uses CJK bigram overlap for remaining free
+    text. Exact revisioned reads are still required before content is exposed.
+  - Suggestion: include source-aware filter fields in the runtime tool schema,
+    or provide a registry-level structured selector that maps only to
+    descriptor-allowlisted fields.
+
 - **Resolved: workflow steps use runtime structured final output**
   - Runtime commit `8ab2a377` removed the synthetic
     `submit_step_result` Tool contract.
