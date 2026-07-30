@@ -46,7 +46,8 @@ use crate::session::{
 };
 use crate::settings_store::SettingsStore;
 use crate::space_tool::{
-    ListNotebookTreeTool, ProposeNotebookEditTool, ReadSpaceItemTool, SearchNotebookTool,
+    CreateNotebookItemTool, ListNotebookTreeTool, MoveNotebookItemTool, ProposeNotebookEditTool,
+    ReadNotebookItemTool, ReadSpaceItemTool, SearchNotebookTool, UpdateNotebookItemTool,
 };
 use crate::stream::StreamEvent;
 use crate::tutor_memory_source::{
@@ -844,7 +845,11 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         if entry.notebook_enabled && notebook_allowed {
             router = router
                 .with_product_tool(Arc::new(ListNotebookTreeTool::new(notebook.clone())))
-                .with_product_tool(Arc::new(SearchNotebookTool::new(notebook.clone())));
+                .with_product_tool(Arc::new(SearchNotebookTool::new(notebook.clone())))
+                .with_product_tool(Arc::new(ReadNotebookItemTool::new(notebook.clone())))
+                .with_product_tool(Arc::new(CreateNotebookItemTool::new(notebook.clone())))
+                .with_product_tool(Arc::new(UpdateNotebookItemTool::new(notebook.clone())))
+                .with_product_tool(Arc::new(MoveNotebookItemTool::new(notebook.clone())));
         }
         if entry.capability == "organize" && notebook_allowed {
             router =

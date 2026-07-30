@@ -27,7 +27,7 @@ pub enum Capability {
     Quiz,
     /// Research external/internal sources and synthesize a cited report.
     Research,
-    /// Organize Notebook/Space content through search and preview-only proposals.
+    /// Organize Notebook/Space content through bounded direct tools and proposals.
     Organize,
 }
 

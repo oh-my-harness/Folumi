@@ -6,6 +6,26 @@ This document defines the ownership boundary between runtime capabilities and
 `llm-tutor` product capabilities. It is the target architecture for the next
 migration stages.
 
+## Implementation Status
+
+As of 2026-07-30:
+
+- the ownership boundary is accepted;
+- Tutor Memory reads and generic mutations use runtime Knowledge and Memory
+  contracts through thin tutor-scoped adapters;
+- Learner Memory combines structured, lexical/CJK, and derived semantic recall
+  while keeping L1/L2/L3 files authoritative;
+- Notebook tree/search/read and explicit create/update/rename/move operations
+  are available as bounded product tools in the runtime tool loop;
+- Notebook update, rename, and move require an exact revision from a prior
+  read, reject stale writes, reject root-escaping paths, and return the final
+  artifact and revision;
+- self-initiated Notebook edits remain reviewable proposals;
+- Agent-initiated delete and a user-facing recovery/undo flow remain pending
+  because they require a trusted destructive-confirmation boundary. Until that
+  boundary exists, the Agent is explicitly forbidden from deleting Notebook
+  content.
+
 ## Goals
 
 - Use `llm-harness-runtime` for reusable Agent infrastructure and protocols.
@@ -237,9 +257,14 @@ and reported upstream, not by bypassing runtime access controls.
 
 ## Delivery Order
 
-1. Record and accept this ownership boundary.
-2. Migrate Tutor Memory reads and generic mutations to runtime adapters.
-3. Add derived hybrid semantic retrieval to Learner Memory.
-4. Expand Notebook proposal-only editing into bounded direct management.
-5. Run end-to-end desktop acceptance covering all three stores and verify that
-   no implicit cross-domain copying occurs.
+1. [Complete] Record and accept this ownership boundary.
+2. [Complete] Migrate Tutor Memory reads and generic mutations to runtime
+   adapters.
+3. [Complete] Add derived hybrid semantic retrieval to Learner Memory.
+4. [In progress] Expand Notebook proposal-only editing into bounded direct
+   management.
+   - [Complete] List, search, exact read, create, update/rename, and move.
+   - [Complete] Stale-revision and root-confinement enforcement.
+   - [Pending] Trusted destructive confirmation, delete, and recovery/undo.
+5. [Pending] Run end-to-end desktop acceptance covering all three stores and
+   verify that no implicit cross-domain copying occurs.

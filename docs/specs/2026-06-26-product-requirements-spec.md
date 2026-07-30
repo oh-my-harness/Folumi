@@ -438,10 +438,10 @@ other generated learning records.
 - REQ-637: The former send-to-Books requirement is retired.
 - REQ-638: Notebook entries shall remain a Markdown/plain-text workspace and shall not be indexed into RAG or vector stores. Status: planned.
 - REQ-639: Users shall be able to `@` a Notebook entry in Chat and ask the agent to revise, expand, summarize, or reorganize it. Status: implemented.
-- REQ-640: Agent-produced Notebook edits shall be previewed as a proposed Markdown replacement or diff before they are applied. Status: implemented as complete Markdown replacement preview.
-- REQ-641: Applying an agent-produced Notebook edit shall require explicit user confirmation. Status: implemented.
+- REQ-640: Self-initiated Agent Notebook edits shall be previewed as a proposed Markdown replacement or diff before they are applied. Explicit user-requested non-destructive writes may use bounded direct tools. Status: implemented as complete Markdown replacement preview plus direct create/update/rename/move tools.
+- REQ-641: Applying a self-initiated Agent Notebook edit shall require explicit user confirmation. Status: implemented.
 - REQ-642: Applied agent-produced Notebook edits shall update entry metadata and create a Notebook memory event. Status: implemented.
-- REQ-643: Direct Notebook write tools shall be gated by explicit user instruction and product approval flow, not by implicit model choice alone. Status: implemented by exposing only a preview tool to the agent; writes happen through user-confirmed product UI.
+- REQ-643: Direct Notebook write tools shall be limited to explicit user-requested create/update/rename/move operations, use exact revisions for existing items, and return the final artifact revision. Self-initiated edits remain proposals; destructive writes require a separate trusted product confirmation. Status: implemented for non-destructive writes; destructive confirmation is planned.
 - REQ-780: Notebook shall evolve toward a Markdown-first, Obsidian-like knowledge workspace with connected notes. Status: planned.
 - REQ-781: Notebook shall support wiki-style note links such as `[[Note Title]]` and `[[note-id|alias]]`. Status: planned.
 - REQ-782: Notebook shall parse and display backlinks for notes that reference the current note. Status: planned.
@@ -469,7 +469,7 @@ other generated learning records.
 - REQ-804: The UI shall prevent selecting Notebook and Knowledge Base simultaneously from the shared source selector until a multi-source design exists. Status: planned.
 - REQ-805: Notebook search results used by the agent shall include navigable Notebook source ids. Status: planned.
 - REQ-806: Chat shall add an Organize mode for Notebook and Space organization workflows. Status: planned.
-- REQ-807: Organize mode shall enable Notebook search/read and proposal-first organization tools by default. Status: planned.
+- REQ-807: Organize mode shall enable Notebook search/read, bounded explicit non-destructive writes, and proposal-first self-initiated organization tools by default. Status: implemented.
 - REQ-808: Code execution shall be treated as a tool available to suitable modes rather than a standalone user-facing Chat mode. Status: planned.
 - REQ-809: Notebook import shall show skipped-file details after the final import, not only during preview. Each skipped item shall include the original file name or zip path and a human-readable reason. Status: implemented.
 - REQ-810: Notebook zip or folder import shall create entries in a batch and persist the Notebook store once per import operation rather than rewriting the full store after each entry. Status: implemented.
@@ -479,14 +479,14 @@ other generated learning records.
 - REQ-814: Notebook shall keep a lightweight index file for stable ids, relative paths, entry types, source mappings, timestamps, and product metadata that should not be stored only in Markdown body text. Status: implemented.
 - REQ-815: Notebook import from Markdown or Obsidian Vault folders shall prefer the source file name stem as the entry title, while preserving `frontmatter.title` as metadata, subtitle, or alias. Status: implemented.
 - REQ-816: Notebook file-backed storage shall preserve imported relative folder paths where possible. Status: implemented.
-- REQ-817: Notebook create, edit, rename, delete, import, export, and agent-applied edit flows shall update Markdown files and the Notebook index consistently. Status: partially implemented; create, edit, delete, import, export, and agent-applied edits are covered, while explicit path rename/link-update workflows remain planned.
+- REQ-817: Notebook create, edit, rename, delete, import, export, and agent-applied edit flows shall update Markdown files and the Notebook index consistently. Status: partially implemented; create, edit, direct rename/move, delete, import, export, and agent-applied edits update both files and index, while link-update workflows remain planned.
 - REQ-818: Agent autonomous Notebook/Vault exploration shall be available only when the chat source selector is associated with Notebook. Status: planned.
 - REQ-819: When Notebook is not associated and the user has not explicitly `@` mentioned a Notebook entry, the agent shall not silently search or read Notebook content. Status: planned.
 - REQ-820: Explicit `@` Notebook references shall still allow reading the referenced entry through `read_space_item`, even when Notebook is not the associated source. Status: planned.
 - REQ-821: Notebook/Vault maintenance capabilities such as edit proposals, link suggestions, tag cleanup, move/rename proposals, duplicate review, merge proposals, and new-note proposals shall be enabled only in Organize mode. Status: planned.
 - REQ-822: Non-Organize modes may answer from explicitly referenced or associated Notebook content, but shall not initiate Notebook maintenance proposals unless the session is switched to Organize mode. Status: planned.
 - REQ-823: Notebook exploration tools shall be vault-aware and return stable ids together with paths, titles, entry types, tags, snippets, and link/backlink metadata where available. Status: planned.
-- REQ-824: Notebook maintenance tools shall remain proposal-only; applying changes shall require user confirmation and shall execute through product Notebook APIs, not direct agent file-system writes. Status: planned.
+- REQ-824: Self-initiated Notebook maintenance shall remain proposal-only. Explicit user-requested non-destructive writes may execute through bounded product Notebook APIs in the runtime tool loop; the Agent shall never receive arbitrary file-system access. Status: implemented for create/update/rename/move.
 - REQ-825: Notebook file browsing shall use lightweight tree/list metadata and shall not return full Markdown bodies in the file browser payload. Status: implemented.
 - REQ-826: Notebook shall load full Markdown content only when a note is opened or explicitly read by an agent/product tool. Status: implemented.
 - REQ-827: Notebook shall avoid a blocking full Vault rescan every time the Notebook tab is opened or revisited. Status: implemented.

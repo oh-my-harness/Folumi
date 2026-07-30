@@ -547,8 +547,7 @@ fn chat_system_prompt() -> String {
      Use search_notebook when Notebook is associated and saved Markdown notes may be relevant. \
      When the user references Space artifacts such as Notebook entries, Quiz sessions, or Quiz questions, \
      call read_space_item before relying on their content. Do not guess the contents of a referenced Space item. \
-     When the user asks you to modify a referenced Notebook entry, call read_space_item first, then call \
-     propose_notebook_edit with the complete replacement Markdown; do not claim the edit has been applied. \
+     When the user explicitly asks you to create a Notebook item, use create_notebook_item. When the user explicitly asks you to modify, rename, or move an existing Notebook item, call read_notebook_item first and then use update_notebook_item or move_notebook_item with the exact returned revision. Use propose_notebook_edit only for self-initiated suggestions that the user did not explicitly request. Never delete Notebook content. \
      Web verification rules are strict: when the user asks you to collect facts, trivia, \
      current information, latest information, sources, external references, or information \
      about real-world/public entities, products, games, communities, papers, libraries, \
@@ -577,7 +576,7 @@ fn research_system_prompt() -> String {
      (2) call web_search for external facts, (3) call web_fetch on the most relevant sources before relying on them, \
      (4) call read_space_item when the user references Notebook or Quiz artifacts, (5) optionally call search_notebook when Notebook is associated, (6) carry any confirmed Knowledge Base source preference into create_research_report, \
      (7) synthesize a Markdown report. Do not answer detailed research requests from memory when external verification is needed. \
-     If the user asks to modify a referenced Notebook entry, read it first and use propose_notebook_edit; the product will ask the user to confirm before applying. \
+     If the user explicitly asks to create, update, rename, or move Notebook content, use the bounded Notebook mutation tools; read an existing item first and pass its exact revision. Use propose_notebook_edit only for self-initiated suggestions. Never delete Notebook content. \
      If search or fetch fails, clearly state what failed and what remains unverified. \
      When create_research_report completes, briefly tell the user the report is ready; the product UI renders the full report from tool metadata. The report must be Markdown with these sections: Title, Summary, Key Findings, Analysis, Limitations, Follow-up Questions, Sources. \
      Cite factual claims using numbered source references that match the Sources section. \
@@ -590,11 +589,7 @@ fn organize_system_prompt() -> String {
      inspect, clean up, link, tag, deduplicate, and revise saved Notebook content. Notebook is a \
      plain-text Markdown workspace, not a vector knowledge base. Prefer search_notebook when the \
      user asks about saved notes, prior notes, Notebook contents, organization, tags, links, or \
-     duplicates. Use read_space_item when the user references an explicit Space item. Before \
-     proposing edits, read the exact Notebook entry. Use propose_notebook_edit for complete \
-     replacement Markdown proposals; set proposal_kind to links, tags, merge, or edit, and include \
-     suggested_links, suggested_tags, or merge_source_entry_ids when relevant. Never claim an edit \
-     has been applied because the product UI requires explicit user confirmation. You may use code_exec for parsing or verification if it \
+     duplicates. Use read_space_item when the user references an explicit Space item. When the user explicitly requests a create, update, rename, or move, use create_notebook_item, update_notebook_item, or move_notebook_item. Read an existing item with read_notebook_item first and pass its exact revision. For self-initiated organization suggestions, use propose_notebook_edit with complete replacement Markdown; set proposal_kind to links, tags, merge, or edit, and include suggested_links, suggested_tags, or merge_source_entry_ids when relevant. Never delete Notebook content. Only claim a write succeeded after its tool result confirms it. You may use code_exec for parsing or verification if it \
      helps, and web_search only when the user explicitly asks for external/current facts. Keep \
      organization suggestions concrete and cite the Notebook entries you used."
         .into()
@@ -742,16 +737,21 @@ mod tests {
     }
 
     #[test]
-    fn organize_prompt_requires_notebook_search_and_preview_writes() {
+    fn organize_prompt_separates_explicit_writes_from_self_initiated_proposals() {
         let prompt = organize_system_prompt();
         assert!(prompt.contains("search_notebook"));
         assert!(prompt.contains("plain-text Markdown workspace"));
         assert!(prompt.contains("propose_notebook_edit"));
+        assert!(prompt.contains("create_notebook_item"));
+        assert!(prompt.contains("update_notebook_item"));
+        assert!(prompt.contains("move_notebook_item"));
+        assert!(prompt.contains("exact revision"));
         assert!(prompt.contains("proposal_kind"));
         assert!(prompt.contains("suggested_links"));
         assert!(prompt.contains("suggested_tags"));
         assert!(prompt.contains("merge_source_entry_ids"));
-        assert!(prompt.contains("requires explicit user confirmation"));
+        assert!(prompt.contains("self-initiated organization suggestions"));
+        assert!(prompt.contains("Never delete Notebook content"));
     }
 
     #[test]

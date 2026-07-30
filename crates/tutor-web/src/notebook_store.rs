@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
@@ -98,6 +98,13 @@ pub struct NotebookEntryListItem {
     pub tags: Vec<String>,
     pub file_size: Option<u64>,
     pub file_modified_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExactNotebookMutationOutcome {
+    Updated(Box<NotebookEntry>),
+    NotFound,
+    Stale { latest_revision: String },
 }
 
 pub struct NotebookStore {
@@ -418,10 +425,38 @@ impl NotebookStore {
     }
 
     pub fn create(&self, input: NotebookEntryInput) -> Result<NotebookEntry> {
-        if input.markdown.trim().is_empty() {
-            return Err(anyhow!("notebook markdown is empty"));
-        }
+        validate_notebook_entry_input(&input)?;
         let mut items = self.items.lock().unwrap();
+        let mut used_paths = used_entry_paths(&items);
+        let entry = entry_from_input(input, Utc::now(), &mut used_paths);
+        items.push(entry.clone());
+        let mut folders = self.folders.lock().unwrap();
+        add_parent_folders(&entry, &mut folders);
+        self.save_locked(&items, &folders)?;
+        Ok(entry)
+    }
+
+    pub fn create_strict(&self, mut input: NotebookEntryInput) -> Result<NotebookEntry> {
+        validate_notebook_entry_input(&input)?;
+        let requested_path = input
+            .path
+            .as_deref()
+            .map(|path| {
+                normalize_note_path(path).ok_or_else(|| anyhow!("notebook path is invalid"))
+            })
+            .transpose()?;
+        let mut items = self.items.lock().unwrap();
+        if let Some(path) = requested_path.as_deref()
+            && items.iter().any(|entry| {
+                entry
+                    .path
+                    .as_deref()
+                    .is_some_and(|existing| existing.eq_ignore_ascii_case(path))
+            })
+        {
+            return Err(anyhow!("notebook path already exists"));
+        }
+        input.path = requested_path;
         let mut used_paths = used_entry_paths(&items);
         let entry = entry_from_input(input, Utc::now(), &mut used_paths);
         items.push(entry.clone());
@@ -437,9 +472,7 @@ impl NotebookStore {
         let mut items = self.items.lock().unwrap();
         let mut used_paths = used_entry_paths(&items);
         for input in inputs {
-            if input.markdown.trim().is_empty() {
-                return Err(anyhow!("notebook markdown is empty"));
-            }
+            validate_notebook_entry_input(&input)?;
             entries.push(entry_from_input(input, now, &mut used_paths));
         }
         if entries.is_empty() {
@@ -459,42 +492,76 @@ impl NotebookStore {
         let Some(entry_index) = items.iter().position(|item| item.id == id) else {
             return Err(anyhow!("notebook entry not found"));
         };
-        let needs_path = items[entry_index].path.is_none();
-        let mut used_paths = if needs_path {
-            Some(used_entry_paths_excluding(&items, id))
-        } else {
-            None
-        };
-        let entry = &mut items[entry_index];
-        if let Some(title) = input.title {
-            entry.title = normalize_title(&title);
-            if entry.path.is_none() {
-                let used_paths = used_paths.get_or_insert_with(HashSet::new);
-                entry.path = Some(unique_note_path(&entry.title, None, used_paths));
-            }
-        }
-        if let Some(markdown) = input.markdown {
-            if markdown.trim().is_empty() {
-                return Err(anyhow!("notebook markdown is empty"));
-            }
-            entry.markdown = markdown;
-            entry.file_size = None;
-            entry.file_modified_ms = None;
-        }
-        if let Some(metadata) = input.metadata {
-            entry.metadata = Some(metadata);
-        }
-        if let Some(source_session_id) = input.source_session_id {
-            entry.source_session_id = clean_optional(Some(source_session_id));
-        }
-        if let Some(source_message_id) = input.source_message_id {
-            entry.source_message_id = clean_optional(Some(source_message_id));
-        }
-        entry.updated_at = Utc::now();
-        let updated = entry.clone();
+        let updated = apply_notebook_entry_update(&mut items, entry_index, input)?;
         let folders = self.folders.lock().unwrap();
         self.save_locked(&items, &folders)?;
         Ok(updated)
+    }
+
+    pub fn update_exact(
+        &self,
+        id: &str,
+        expected_revision: &str,
+        input: NotebookEntryUpdate,
+    ) -> Result<ExactNotebookMutationOutcome> {
+        let mut items = self.items.lock().unwrap();
+        let Some(entry_index) = items.iter().position(|item| item.id == id) else {
+            return Ok(ExactNotebookMutationOutcome::NotFound);
+        };
+        let latest_revision = notebook_entry_revision(&items[entry_index]);
+        if latest_revision != expected_revision {
+            return Ok(ExactNotebookMutationOutcome::Stale { latest_revision });
+        }
+        let updated = apply_notebook_entry_update(&mut items, entry_index, input)?;
+        let folders = self.folders.lock().unwrap();
+        self.save_locked(&items, &folders)?;
+        Ok(ExactNotebookMutationOutcome::Updated(Box::new(updated)))
+    }
+
+    pub fn move_exact(
+        &self,
+        id: &str,
+        expected_revision: &str,
+        requested_path: &str,
+    ) -> Result<ExactNotebookMutationOutcome> {
+        let mut items = self.items.lock().unwrap();
+        let Some(entry_index) = items.iter().position(|item| item.id == id) else {
+            return Ok(ExactNotebookMutationOutcome::NotFound);
+        };
+        let latest_revision = notebook_entry_revision(&items[entry_index]);
+        if latest_revision != expected_revision {
+            return Ok(ExactNotebookMutationOutcome::Stale { latest_revision });
+        }
+        let path = normalize_note_path(requested_path)
+            .ok_or_else(|| anyhow!("notebook path is invalid"))?;
+        if items.iter().enumerate().any(|(index, entry)| {
+            index != entry_index
+                && entry
+                    .path
+                    .as_deref()
+                    .is_some_and(|existing| existing.eq_ignore_ascii_case(&path))
+        }) {
+            return Err(anyhow!("notebook path already exists"));
+        }
+        let previous_path = items[entry_index].path.clone();
+        items[entry_index].path = Some(path);
+        items[entry_index].updated_at = Utc::now();
+        items[entry_index].file_size = None;
+        items[entry_index].file_modified_ms = None;
+        let updated = items[entry_index].clone();
+        let mut folders = self.folders.lock().unwrap();
+        add_parent_folders(&updated, &mut folders);
+        self.save_locked(&items, &folders)?;
+        if let Some(previous_path) = previous_path
+            && updated.path.as_deref() != Some(previous_path.as_str())
+        {
+            let vault_root = self.vault_root.lock().unwrap().clone();
+            let previous_file = vault_root.join(previous_path);
+            if previous_file.is_file() {
+                fs::remove_file(previous_file)?;
+            }
+        }
+        Ok(ExactNotebookMutationOutcome::Updated(Box::new(updated)))
     }
 
     pub fn delete(&self, id: &str) -> bool {
@@ -558,6 +625,58 @@ impl NotebookStore {
         )?;
         Ok(())
     }
+}
+
+fn apply_notebook_entry_update(
+    items: &mut [NotebookEntry],
+    entry_index: usize,
+    input: NotebookEntryUpdate,
+) -> Result<NotebookEntry> {
+    let needs_path = items[entry_index].path.is_none();
+    let entry_id = items[entry_index].id.clone();
+    let mut used_paths = if needs_path {
+        Some(used_entry_paths_excluding(items, &entry_id))
+    } else {
+        None
+    };
+    let entry = &mut items[entry_index];
+    if let Some(title) = input.title {
+        entry.title = normalize_title(&title);
+        if entry.path.is_none() {
+            let used_paths = used_paths.get_or_insert_with(HashSet::new);
+            entry.path = Some(unique_note_path(&entry.title, None, used_paths));
+        }
+    }
+    if let Some(markdown) = input.markdown {
+        if markdown.trim().is_empty() {
+            return Err(anyhow!("notebook markdown is empty"));
+        }
+        entry.markdown = markdown;
+        entry.file_size = None;
+        entry.file_modified_ms = None;
+    }
+    if let Some(metadata) = input.metadata {
+        entry.metadata = Some(metadata);
+    }
+    if let Some(source_session_id) = input.source_session_id {
+        entry.source_session_id = clean_optional(Some(source_session_id));
+    }
+    if let Some(source_message_id) = input.source_message_id {
+        entry.source_message_id = clean_optional(Some(source_message_id));
+    }
+    entry.updated_at = Utc::now();
+    Ok(entry.clone())
+}
+
+pub fn notebook_entry_revision(entry: &NotebookEntry) -> String {
+    let normalized =
+        serde_json::to_string(entry).expect("NotebookEntry serialization is infallible");
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in normalized.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1191,6 +1310,20 @@ pub struct NotebookEntryUpdate {
     pub source_message_id: Option<String>,
 }
 
+fn validate_notebook_entry_input(input: &NotebookEntryInput) -> Result<()> {
+    if input.markdown.trim().is_empty() {
+        return Err(anyhow!("notebook markdown is empty"));
+    }
+    if input
+        .path
+        .as_deref()
+        .is_some_and(|path| normalize_note_path(path).is_none())
+    {
+        return Err(anyhow!("notebook path is invalid"));
+    }
+    Ok(())
+}
+
 fn default_root() -> PathBuf {
     std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
@@ -1271,10 +1404,25 @@ fn unique_note_path(
 }
 
 fn normalize_note_path(path: &str) -> Option<String> {
+    let requested = path.trim().replace('\\', "/");
+    if requested.is_empty()
+        || requested.starts_with('/')
+        || Path::new(&requested).components().any(|component| {
+            matches!(
+                component,
+                Component::Prefix(_)
+                    | Component::RootDir
+                    | Component::ParentDir
+                    | Component::CurDir
+            )
+        })
+    {
+        return None;
+    }
     let mut parts = Vec::new();
-    for part in path.replace('\\', "/").split('/') {
+    for part in requested.split('/') {
         let part = safe_file_stem(part);
-        if !part.is_empty() && part != "." && part != ".." {
+        if !part.is_empty() {
             parts.push(part);
         }
     }

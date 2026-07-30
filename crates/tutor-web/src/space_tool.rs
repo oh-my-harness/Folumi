@@ -3,10 +3,14 @@
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
+use llm_harness_runtime_memory::MemorySessionId;
 use llm_harness_types::{DataBlock, Tool, ToolContext, ToolFailure, ToolResult};
 use serde_json::json;
 
-use crate::notebook_store::{NotebookEntrySummary, NotebookStore};
+use crate::notebook_store::{
+    ExactNotebookMutationOutcome, NotebookEntryInput, NotebookEntrySummary, NotebookEntryType,
+    NotebookEntryUpdate, NotebookStore, notebook_entry_revision,
+};
 use crate::quiz_store::QuizStore;
 use crate::routes::space::{SpaceMention, SpaceMentionType, resolve_space_mention_markdown};
 
@@ -29,6 +33,22 @@ pub struct SearchNotebookTool {
     notebook: Arc<NotebookStore>,
 }
 
+pub struct ReadNotebookItemTool {
+    notebook: Arc<NotebookStore>,
+}
+
+pub struct CreateNotebookItemTool {
+    notebook: Arc<NotebookStore>,
+}
+
+pub struct UpdateNotebookItemTool {
+    notebook: Arc<NotebookStore>,
+}
+
+pub struct MoveNotebookItemTool {
+    notebook: Arc<NotebookStore>,
+}
+
 impl ReadSpaceItemTool {
     pub fn new(notebook: Arc<NotebookStore>, quizzes: Arc<QuizStore>) -> Self {
         Self { notebook, quizzes }
@@ -48,6 +68,30 @@ impl ListNotebookTreeTool {
 }
 
 impl SearchNotebookTool {
+    pub fn new(notebook: Arc<NotebookStore>) -> Self {
+        Self { notebook }
+    }
+}
+
+impl ReadNotebookItemTool {
+    pub fn new(notebook: Arc<NotebookStore>) -> Self {
+        Self { notebook }
+    }
+}
+
+impl CreateNotebookItemTool {
+    pub fn new(notebook: Arc<NotebookStore>) -> Self {
+        Self { notebook }
+    }
+}
+
+impl UpdateNotebookItemTool {
+    pub fn new(notebook: Arc<NotebookStore>) -> Self {
+        Self { notebook }
+    }
+}
+
+impl MoveNotebookItemTool {
     pub fn new(notebook: Arc<NotebookStore>) -> Self {
         Self { notebook }
     }
@@ -128,6 +172,237 @@ impl Tool for ReadSpaceItemTool {
                 }),
                 false,
             ))
+        })
+    }
+}
+
+static READ_NOTEBOOK_ITEM_SCHEMA: std::sync::OnceLock<serde_json::Value> =
+    std::sync::OnceLock::new();
+
+impl Tool for ReadNotebookItemTool {
+    fn name(&self) -> &str {
+        "read_notebook_item"
+    }
+
+    fn description(&self) -> &str {
+        "Read one exact Notebook item by id and return its current revision. Use the returned revision for any update or move."
+    }
+
+    fn parameters_schema(&self) -> &serde_json::Value {
+        READ_NOTEBOOK_ITEM_SCHEMA.get_or_init(|| {
+            json!({
+                "type": "object",
+                "properties": {
+                    "entry_id": { "type": "string" }
+                },
+                "required": ["entry_id"],
+                "additionalProperties": false
+            })
+        })
+    }
+
+    fn execute<'a>(
+        &'a self,
+        args: serde_json::Value,
+        _ctx: &'a ToolContext,
+    ) -> BoxFuture<'a, Result<ToolResult, ToolFailure>> {
+        Box::pin(async move {
+            let entry_id = required_text(&args, "entry_id")?;
+            let entry = self.notebook.get(&entry_id).ok_or_else(|| {
+                notebook_failure("notebook_not_found", "Notebook item not found.")
+            })?;
+            let revision = notebook_entry_revision(&entry);
+            Ok(ToolResult::ephemeral(
+                vec![DataBlock::text(entry.markdown.clone())],
+                format!(
+                    "Read Notebook item `{}` at revision {revision}.",
+                    entry.title
+                ),
+                json!({
+                    "entry": entry,
+                    "revision": revision,
+                }),
+                false,
+            ))
+        })
+    }
+}
+
+static CREATE_NOTEBOOK_ITEM_SCHEMA: std::sync::OnceLock<serde_json::Value> =
+    std::sync::OnceLock::new();
+
+impl Tool for CreateNotebookItemTool {
+    fn name(&self) -> &str {
+        "create_notebook_item"
+    }
+
+    fn description(&self) -> &str {
+        "Create a Markdown Notebook item only when the user explicitly asked for this write. The tool is confined to the associated Notebook."
+    }
+
+    fn parameters_schema(&self) -> &serde_json::Value {
+        CREATE_NOTEBOOK_ITEM_SCHEMA.get_or_init(|| {
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "path": { "type": "string", "description": "Optional Notebook-relative .md path." },
+                    "markdown": { "type": "string" },
+                    "source_message_id": { "type": "string" }
+                },
+                "required": ["title", "markdown"],
+                "additionalProperties": false
+            })
+        })
+    }
+
+    fn execute<'a>(
+        &'a self,
+        args: serde_json::Value,
+        ctx: &'a ToolContext,
+    ) -> BoxFuture<'a, Result<ToolResult, ToolFailure>> {
+        Box::pin(async move {
+            let title = required_text(&args, "title")?;
+            let markdown = required_content(&args, "markdown")?;
+            let entry = self
+                .notebook
+                .create_strict(NotebookEntryInput {
+                    space_id: None,
+                    entry_type: NotebookEntryType::Note,
+                    title,
+                    path: optional_text(&args, "path"),
+                    markdown,
+                    metadata: None,
+                    source_session_id: ctx
+                        .run
+                        .extension::<MemorySessionId>()
+                        .map(|session| session.as_str().to_string()),
+                    source_message_id: optional_text(&args, "source_message_id"),
+                })
+                .map_err(|error| notebook_failure("notebook_write_failed", error.to_string()))?;
+            let revision = notebook_entry_revision(&entry);
+            let content = vec![DataBlock::text(format!(
+                "Created Notebook item `{}` at {}.",
+                entry.title,
+                entry.path.as_deref().unwrap_or("")
+            ))];
+            Ok(ToolResult::projected(
+                content.clone(),
+                content,
+                json!({ "entry": entry, "revision": revision }),
+                false,
+            ))
+        })
+    }
+}
+
+static UPDATE_NOTEBOOK_ITEM_SCHEMA: std::sync::OnceLock<serde_json::Value> =
+    std::sync::OnceLock::new();
+
+impl Tool for UpdateNotebookItemTool {
+    fn name(&self) -> &str {
+        "update_notebook_item"
+    }
+
+    fn description(&self) -> &str {
+        "Update or rename one Notebook item only after an explicit user request and an exact read. Requires the expected revision returned by read_notebook_item."
+    }
+
+    fn parameters_schema(&self) -> &serde_json::Value {
+        UPDATE_NOTEBOOK_ITEM_SCHEMA.get_or_init(|| {
+            json!({
+                "type": "object",
+                "properties": {
+                    "entry_id": { "type": "string" },
+                    "expected_revision": { "type": "string" },
+                    "title": { "type": "string" },
+                    "markdown": { "type": "string", "description": "Complete replacement Markdown." },
+                    "source_message_id": { "type": "string" }
+                },
+                "required": ["entry_id", "expected_revision"],
+                "additionalProperties": false
+            })
+        })
+    }
+
+    fn execute<'a>(
+        &'a self,
+        args: serde_json::Value,
+        ctx: &'a ToolContext,
+    ) -> BoxFuture<'a, Result<ToolResult, ToolFailure>> {
+        Box::pin(async move {
+            let entry_id = required_text(&args, "entry_id")?;
+            let expected_revision = required_text(&args, "expected_revision")?;
+            let title = optional_text(&args, "title");
+            let markdown = optional_content(&args, "markdown");
+            if title.is_none() && markdown.is_none() {
+                return Err(ToolFailure::invalid_arguments(
+                    "title or markdown is required",
+                ));
+            }
+            let outcome = self
+                .notebook
+                .update_exact(
+                    &entry_id,
+                    &expected_revision,
+                    NotebookEntryUpdate {
+                        title,
+                        markdown,
+                        metadata: None,
+                        source_session_id: ctx
+                            .run
+                            .extension::<MemorySessionId>()
+                            .map(|session| session.as_str().to_string()),
+                        source_message_id: optional_text(&args, "source_message_id"),
+                    },
+                )
+                .map_err(|error| notebook_failure("notebook_write_failed", error.to_string()))?;
+            mutation_result("Updated", outcome)
+        })
+    }
+}
+
+static MOVE_NOTEBOOK_ITEM_SCHEMA: std::sync::OnceLock<serde_json::Value> =
+    std::sync::OnceLock::new();
+
+impl Tool for MoveNotebookItemTool {
+    fn name(&self) -> &str {
+        "move_notebook_item"
+    }
+
+    fn description(&self) -> &str {
+        "Move one Notebook item to a Notebook-relative .md path only after an explicit user request and exact read. Requires the expected revision."
+    }
+
+    fn parameters_schema(&self) -> &serde_json::Value {
+        MOVE_NOTEBOOK_ITEM_SCHEMA.get_or_init(|| {
+            json!({
+                "type": "object",
+                "properties": {
+                    "entry_id": { "type": "string" },
+                    "expected_revision": { "type": "string" },
+                    "path": { "type": "string" }
+                },
+                "required": ["entry_id", "expected_revision", "path"],
+                "additionalProperties": false
+            })
+        })
+    }
+
+    fn execute<'a>(
+        &'a self,
+        args: serde_json::Value,
+        _ctx: &'a ToolContext,
+    ) -> BoxFuture<'a, Result<ToolResult, ToolFailure>> {
+        Box::pin(async move {
+            let entry_id = required_text(&args, "entry_id")?;
+            let expected_revision = required_text(&args, "expected_revision")?;
+            let path = required_text(&args, "path")?;
+            let outcome = self
+                .notebook
+                .move_exact(&entry_id, &expected_revision, &path)
+                .map_err(|error| notebook_failure("notebook_move_failed", error.to_string()))?;
+            mutation_result("Moved", outcome)
         })
     }
 }
@@ -668,6 +943,66 @@ fn mention_from_args(args: serde_json::Value) -> Result<SpaceMention, ToolFailur
     })
 }
 
+fn required_text(args: &serde_json::Value, key: &str) -> Result<String, ToolFailure> {
+    optional_text(args, key)
+        .ok_or_else(|| ToolFailure::invalid_arguments(format!("{key} is required")))
+}
+
+fn optional_text(args: &serde_json::Value, key: &str) -> Option<String> {
+    args.get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn required_content(args: &serde_json::Value, key: &str) -> Result<String, ToolFailure> {
+    optional_content(args, key)
+        .ok_or_else(|| ToolFailure::invalid_arguments(format!("{key} is required")))
+}
+
+fn optional_content(args: &serde_json::Value, key: &str) -> Option<String> {
+    args.get(key)
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+}
+
+fn mutation_result(
+    action: &str,
+    outcome: ExactNotebookMutationOutcome,
+) -> Result<ToolResult, ToolFailure> {
+    match outcome {
+        ExactNotebookMutationOutcome::Updated(entry) => {
+            let revision = notebook_entry_revision(&entry);
+            let content = vec![DataBlock::text(format!(
+                "{action} Notebook item `{}`.",
+                entry.title
+            ))];
+            Ok(ToolResult::projected(
+                content.clone(),
+                content,
+                json!({ "entry": entry, "revision": revision }),
+                false,
+            ))
+        }
+        ExactNotebookMutationOutcome::NotFound => Err(notebook_failure(
+            "notebook_not_found",
+            "Notebook item not found.",
+        )),
+        ExactNotebookMutationOutcome::Stale { latest_revision } => Err(notebook_failure(
+            "notebook_stale_revision",
+            format!(
+                "Notebook item changed after it was read. Read it again before writing. Latest revision: {latest_revision}"
+            ),
+        )),
+    }
+}
+
+fn notebook_failure(code: impl Into<String>, message: impl Into<String>) -> ToolFailure {
+    ToolFailure::new(code, message)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -739,6 +1074,126 @@ mod tests {
             DataBlock::Text { text, .. } => assert!(text.contains("Alignment marks")),
             _ => panic!("expected text content"),
         }
+    }
+
+    #[tokio::test]
+    async fn notebook_tools_require_exact_revisions_and_confine_moves() {
+        let dir = tempfile::tempdir().unwrap();
+        let notebook_root = dir.path().join("notebook");
+        let notebook = Arc::new(NotebookStore::new_with_path(notebook_root.clone()));
+        let ctx = make_ctx();
+
+        let created = CreateNotebookItemTool::new(notebook.clone())
+            .execute(
+                json!({
+                    "title": "Mask notes",
+                    "path": "concepts/Mask.md",
+                    "markdown": "# Mask\n\nOriginal.\n",
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        let entry_id = created.details["entry"]["id"].as_str().unwrap().to_string();
+        let original_revision = created.details["revision"].as_str().unwrap().to_string();
+        assert_eq!(
+            notebook.get(&entry_id).unwrap().markdown,
+            "# Mask\n\nOriginal.\n"
+        );
+        let duplicate = CreateNotebookItemTool::new(notebook.clone())
+            .execute(
+                json!({
+                    "title": "Duplicate",
+                    "path": "concepts/Mask.md",
+                    "markdown": "Must not be silently renamed.",
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(duplicate.code, "notebook_write_failed");
+        assert_eq!(notebook.list(None).len(), 1);
+
+        let read = ReadNotebookItemTool::new(notebook.clone())
+            .execute(json!({ "entry_id": entry_id }), &ctx)
+            .await
+            .unwrap();
+        assert_eq!(read.details["revision"], original_revision);
+
+        let updated = UpdateNotebookItemTool::new(notebook.clone())
+            .execute(
+                json!({
+                    "entry_id": entry_id,
+                    "expected_revision": original_revision,
+                    "title": "Mask alignment",
+                    "markdown": "# Mask alignment\n\nUpdated.\n",
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        let updated_revision = updated.details["revision"].as_str().unwrap().to_string();
+        assert_ne!(updated_revision, original_revision);
+
+        let stale = UpdateNotebookItemTool::new(notebook.clone())
+            .execute(
+                json!({
+                    "entry_id": entry_id,
+                    "expected_revision": original_revision,
+                    "markdown": "This stale write must not win.",
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(stale.code, "notebook_stale_revision");
+        assert_eq!(
+            notebook.get(&entry_id).unwrap().markdown,
+            "# Mask alignment\n\nUpdated.\n"
+        );
+
+        let escaped = MoveNotebookItemTool::new(notebook.clone())
+            .execute(
+                json!({
+                    "entry_id": entry_id,
+                    "expected_revision": updated_revision,
+                    "path": "../outside.md",
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(escaped.code, "notebook_move_failed");
+
+        let moved = MoveNotebookItemTool::new(notebook.clone())
+            .execute(
+                json!({
+                    "entry_id": entry_id,
+                    "expected_revision": updated_revision,
+                    "path": "lithography/Mask alignment.md",
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            moved.details["entry"]["path"],
+            "lithography/Mask alignment.md"
+        );
+        assert!(
+            notebook_root
+                .join("vault")
+                .join("lithography")
+                .join("Mask alignment.md")
+                .is_file()
+        );
+        assert!(
+            !notebook_root
+                .join("vault")
+                .join("concepts")
+                .join("Mask.md")
+                .exists()
+        );
     }
 
     #[tokio::test]
