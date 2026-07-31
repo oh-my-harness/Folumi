@@ -5,6 +5,10 @@ checklists.
 
 ## Current Plans
 
+- `2026-07-31-personal-knowledge-assistant-product-contraction-plan.md`: proposed
+  contraction of `llm-tutor` into a local-first personal knowledge assistant,
+  including the target information architecture, feature removals, migration,
+  naming, and five-phase delivery plan.
 - `2026-06-26-next-product-slice-plan.md`: active execution plan for the next
   product slice after the first desktop alpha.
 - `2026-06-20-ai-tutor-product-roadmap.md`: high-level product roadmap and
