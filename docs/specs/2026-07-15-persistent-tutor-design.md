@@ -98,6 +98,38 @@ Entries require stable IDs, timestamps, source references, lifecycle state, and
 optional expiry. Completed commitments and resolved open loops are closed
 rather than kept forever as active context.
 
+### 3.1 Actionable-memory lifecycle
+
+An active record is not useful continuity unless it participates in the
+conversation lifecycle:
+
+```text
+remember_for_later
+  -> active Tutor Memory
+  -> new bound-tutor session opens
+  -> runtime Knowledge search + exact read
+  -> tutor performs the due next action
+  -> resolve_tutor_memory
+  -> resolved Tutor Memory
+```
+
+For the first assistant response in a newly created conversation, the product
+must deterministically query the exact `llm-tutor.tutor-memory` runtime
+Knowledge source for active `commitment`, `open_loop`, and `lesson_plan`
+records. This is not left to model discretion: a greeting such as “你好” carries
+no lexical clue that would otherwise cause the model to search for a prior
+promise. Search hits remain metadata-only and every selected item is exact-read
+at its current revision before its body is supplied as ephemeral, run-local
+context. The context is not appended to the durable runtime Session.
+
+The tutor must perform a next-encounter action naturally in that first response,
+without announcing a memory lookup or waiting for the learner to ask what it
+forgot. When that response completes a one-time commitment or follow-up, the
+tutor calls `resolve_tutor_memory` in the same tool loop before producing the
+final answer. Learner acknowledgement is not part of completion: “remind me
+next time” is complete when the reminder is delivered. Recurring strategies and
+work not actually completed remain active.
+
 Tutors may autonomously write low-risk operational memory when it directly
 improves continuity. They may not store credentials, sensitive personal data,
 external factual claims, or unsupported personality judgments. Tutor Memory is

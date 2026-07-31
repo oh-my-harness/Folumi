@@ -16,6 +16,22 @@ use tutor_tools::WebSearchConfig;
 
 pub(crate) const NATURAL_MEMORY_INTERACTION_POLICY: &str = "Treat memory reads as silent internal context loading. Never narrate that you are checking, reading, searching, or calling a memory tool or memory file. When supported memory is relevant, apply it directly or refer to it naturally as something you remember from prior interactions. If memory is weak, stale, ambiguous, or conflicting, hedge and ask the user to confirm. Never claim to remember content when no successful memory read supports it. If the user explicitly asks how you know, explain the relevant prior interaction or memory category truthfully; tool calls remain visible in trace. Never announce or imply that a memory write, update, resolution, or deletion succeeded before its tool result confirms success; a request can be rejected, denied, or cancelled.";
 
+/// Exact runtime Knowledge reads selected by the product for a new session.
+///
+/// This typed extension is run-local: runtime does not persist or expose it
+/// unless the Tutor Agent explicitly converts it into trusted prompt context.
+#[derive(Debug, Clone, Default)]
+pub struct TutorMemoryBriefing {
+    pub items: Vec<TutorMemoryBriefingItem>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TutorMemoryBriefingItem {
+    pub entry_id: String,
+    pub revision: String,
+    pub body: String,
+}
+
 /// Supported teaching modes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Capability {
@@ -390,12 +406,12 @@ pub(crate) fn memory_routing_policy(
     if tutor_memory_mode.can_read() {
         let mut tutor_rule = "Tutor Memory is private continuity for this tutor relationship and is exposed through knowledge_search and knowledge_read. Search it when this tutor's commitments, unresolved follow-ups, lesson plans, reflections, or teaching strategies would materially improve the response. For every Tutor Memory search, set source_id to exactly `llm-tutor.tutor-memory`; this is the trusted source catalog identifier. A search hit is only a candidate: copy its complete revisioned reference unchanged into knowledge_read before using it. Do not treat Tutor Memory as a learner profile or external factual source.".to_string();
         if can_write_tutor_memory {
-            tutor_rule.push_str(" Use remember_for_later only for a low-risk tutor commitment, open loop, lesson plan, teaching reflection, or concrete future teaching strategy. Never store learner profile facts, credentials, sensitive personal data, external claims, or unsupported judgments there.");
+            tutor_rule.push_str(" Use remember_for_later only for a low-risk tutor commitment, open loop, lesson plan, teaching reflection, or concrete future teaching strategy. Preserve temporal meaning exactly: `next time` is one-time and must never be rewritten as `every time`. Never store learner profile facts, credentials, sensitive personal data, external claims, or unsupported judgments there.");
         } else {
             tutor_rule.push_str(" No Tutor Memory write tool is available in this run. Never promise to persist private tutor continuity for later.");
         }
         if can_resolve_tutor_memory {
-            tutor_rule.push_str(" Use resolve_tutor_memory when a recorded tutor commitment, follow-up, or plan is actually complete.");
+            tutor_rule.push_str(" When your current response will fulfill a one-time recorded commitment, follow-up, or plan, call resolve_tutor_memory in the same tool loop before the final answer. Then still perform the promised action naturally in the final answer. Do not leave an item active merely because the learner has not acknowledged the completed action.");
         }
         rules.push(tutor_rule);
     }

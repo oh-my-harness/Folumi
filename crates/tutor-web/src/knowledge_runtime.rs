@@ -332,7 +332,7 @@ mod tests {
         JsonlSessionRepo, Session, SessionRepo, session::CreateSessionOptions,
     };
     use llm_harness_loop::test_utils::{MockLlmClient, MockResponse, NoOpEnv};
-    use llm_harness_runtime_knowledge::{KnowledgeRef, KnowledgeScope, PrincipalRef};
+    use llm_harness_runtime_knowledge::{FilterExpr, KnowledgeRef, KnowledgeScope, PrincipalRef};
     use llm_harness_runtime_memory::MemorySessionId;
     use llm_harness_types::RunRequest;
     use tokio_util::sync::CancellationToken;
@@ -546,6 +546,100 @@ mod tests {
 
         let answer = router.run_request(Capability::Chat, request).await.unwrap();
         assert_eq!(answer, "We will continue the attention exercise.");
+    }
+
+    #[tokio::test]
+    async fn opening_briefing_collects_only_active_actionable_tutor_memory() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(TutorMemoryStore::new_with_root(temp.path().join("tutors")));
+        let commitment = store
+            .create(
+                "tutor-a",
+                CreateTutorMemoryEntry {
+                    kind: TutorMemoryKind::Commitment,
+                    text: "Remind the learner to eat next time".into(),
+                    next_action: Some("At the next conversation, remind them to eat".into()),
+                    due_at: None,
+                    source_session_id: Some("session-a".into()),
+                    source_message_id: None,
+                },
+            )
+            .unwrap();
+        store
+            .create(
+                "tutor-a",
+                CreateTutorMemoryEntry {
+                    kind: TutorMemoryKind::Reflection,
+                    text: "Visual explanations worked well".into(),
+                    next_action: None,
+                    due_at: None,
+                    source_session_id: Some("session-a".into()),
+                    source_message_id: None,
+                },
+            )
+            .unwrap();
+        let resolved = store
+            .create(
+                "tutor-a",
+                CreateTutorMemoryEntry {
+                    kind: TutorMemoryKind::OpenLoop,
+                    text: "Old completed follow-up".into(),
+                    next_action: Some("Already done".into()),
+                    due_at: None,
+                    source_session_id: Some("session-a".into()),
+                    source_message_id: None,
+                },
+            )
+            .unwrap();
+        store
+            .resolve("tutor-a", &resolved.id, Some("done".into()))
+            .unwrap();
+
+        let router = install_agent_knowledge_and_memory(
+            router(vec![]),
+            None,
+            None,
+            Some(TutorMemoryRuntimeInput {
+                source: Arc::new(TutorMemoryKnowledgeSource::new(store, "tutor-a")),
+                mode: TutorMemoryMode::Autonomous,
+            }),
+            &AgentRuntimeSecurity::generate(),
+        )
+        .unwrap();
+        let chunks = router
+            .knowledge_runtime
+            .as_ref()
+            .unwrap()
+            .collect_verified_chunks_scoped(
+                tutor_access("tutor-a", "autonomous"),
+                "*",
+                Some(TUTOR_MEMORY_SOURCE_ID.into()),
+                vec![
+                    FilterExpr::Eq {
+                        field: "status".into(),
+                        value: serde_json::json!("active"),
+                    },
+                    FilterExpr::In {
+                        field: "kind".into(),
+                        values: vec![
+                            serde_json::json!("commitment"),
+                            serde_json::json!("open_loop"),
+                            serde_json::json!("lesson_plan"),
+                        ],
+                    },
+                ],
+                20,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(
+            chunks[0].reference.item_id,
+            format!("entry/{}", commitment.id)
+        );
+        assert!(chunks[0].text.contains("remind them to eat"));
     }
 
     #[tokio::test]

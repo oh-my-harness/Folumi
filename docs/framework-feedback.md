@@ -348,6 +348,24 @@
     or provide a registry-level structured selector that maps only to
     descriptor-allowlisted fields.
 
+- **Runtime has no pre-first-turn ephemeral context provider**
+  - Expected: an application can declare that selected runtime Knowledge must
+    be searched and exact-read before the first provider call, then expose the
+    verified result to that call without writing it into the durable Session.
+    This is needed for event-triggered continuity such as “remind me the next
+    time we meet,” because the new greeting itself contains no semantic search
+    cue.
+  - Actual: `RunRequest` typed extensions are correctly run-local and invisible
+    to the model, while the available turn hooks begin after a provider
+    response. The product therefore performs a scoped runtime Knowledge
+    collection before `AgentHarness::run`, stores the exact-read result in a
+    typed extension, and converts that one extension into bounded system
+    context while assembling the harness.
+  - Suggestion: add an async before-first-provider-call context hook/provider
+    whose output is explicitly ephemeral, auditable, and excluded from Session
+    persistence. It should be able to reuse the current `RunContext` so
+    Knowledge evidence and cancellation remain in the same run.
+
 - **Resolved: workflow steps use runtime structured final output**
   - Runtime commit `8ab2a377` removed the synthetic
     `submit_step_result` Tool contract.

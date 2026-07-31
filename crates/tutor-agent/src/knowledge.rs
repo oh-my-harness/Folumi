@@ -3,11 +3,12 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use llm_harness_agent::Plugin;
 use llm_harness_runtime_knowledge::{
-    AuthorizationDecision, ContentSelector, EvidenceAuthority, EvidenceProviderId,
+    AuthorizationDecision, ContentSelector, EvidenceAuthority, EvidenceProviderId, FilterExpr,
     KnowledgeAccessContext, KnowledgeAccessControl, KnowledgeAction, KnowledgeAuthorizer,
     KnowledgeCitationPolicy, KnowledgeCitationRequirement, KnowledgePlugin, KnowledgePluginConfig,
     KnowledgeReadRequest, KnowledgeRef, KnowledgeRegistry, KnowledgeResourceRef,
     KnowledgeSearchRequest, KnowledgeSource, KnowledgeToolConfig, PersistedKnowledgeEvidence,
+    SourceFilter,
 };
 use llm_harness_types::{DataBlock, RunContext, RunRequest};
 use serde_json::Value;
@@ -67,6 +68,35 @@ impl KnowledgeRuntime {
         limit: usize,
         abort: CancellationToken,
     ) -> Result<Vec<VerifiedKnowledgeChunk>> {
+        self.collect_verified_chunks_scoped(access, query, None, vec![], limit, abort)
+            .await
+    }
+
+    /// Search and exact-read a bounded set from explicitly selected runtime
+    /// Knowledge sources. This is intended for trusted product orchestration
+    /// that must not rely on the model to select the right source or filters.
+    pub async fn collect_verified_chunks_scoped(
+        &self,
+        access: KnowledgeAccessContext,
+        query: impl Into<String>,
+        source_id: Option<String>,
+        filters: Vec<FilterExpr>,
+        limit: usize,
+        abort: CancellationToken,
+    ) -> Result<Vec<VerifiedKnowledgeChunk>> {
+        let filters = source_id
+            .as_ref()
+            .map(|source_id| {
+                filters
+                    .into_iter()
+                    .map(|expression| SourceFilter {
+                        source_id: source_id.clone(),
+                        expression,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let source_ids = source_id.into_iter().collect();
         let run = RunContext::new(RunRequest::default().with_extension(access));
         let access = run
             .extension::<KnowledgeAccessContext>()
@@ -79,8 +109,8 @@ impl KnowledgeRuntime {
                 KnowledgeSearchRequest {
                     query: query.into(),
                     domains: vec![],
-                    source_ids: vec![],
-                    filters: vec![],
+                    source_ids,
+                    filters,
                     limit: limit.min(self.tool_config.max_search_results),
                     cursor: None,
                 },

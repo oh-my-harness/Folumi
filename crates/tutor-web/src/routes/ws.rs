@@ -14,7 +14,7 @@ use axum::{
 use futures::{SinkExt, StreamExt, future::BoxFuture};
 use llm_harness_runtime_audit_jsonl::JsonlAuditSink;
 use llm_harness_runtime_knowledge::{
-    KnowledgeAccessContext, KnowledgeScope, KnowledgeSource, PrincipalRef,
+    FilterExpr, KnowledgeAccessContext, KnowledgeScope, KnowledgeSource, PrincipalRef,
 };
 use llm_harness_runtime_memory::MemorySessionId;
 use llm_harness_runtime_sandbox_os::OsEnv;
@@ -24,7 +24,8 @@ use tokio_util::sync::CancellationToken;
 use tutor_agent::event_sink::{EventSink, SharedEventSink};
 use tutor_agent::governance::GovernanceConfig;
 use tutor_agent::{
-    Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, LlmProviderKind, TutorMemoryMode,
+    Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, LlmProviderKind,
+    TutorMemoryBriefing, TutorMemoryBriefingItem, TutorMemoryMode,
 };
 
 use crate::knowledge_store::KnowledgeStore;
@@ -51,7 +52,8 @@ use crate::space_tool::{
 };
 use crate::stream::StreamEvent;
 use crate::tutor_memory_source::{
-    TUTOR_MEMORY_MODE_ATTRIBUTE, TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE, TutorMemoryKnowledgeSource,
+    TUTOR_MEMORY_MODE_ATTRIBUTE, TUTOR_MEMORY_SOURCE_ID, TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE,
+    TutorMemoryKnowledgeSource,
 };
 use crate::tutor_memory_store::TutorMemoryStore;
 use crate::tutor_memory_tool::{RememberForLaterTool, ResolveTutorMemoryTool};
@@ -928,13 +930,69 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                 )
                 .await;
         }
-        let request = agent_run_request(
+        let mut request = agent_run_request(
             resolved_content.content,
             &entry.id,
             entry.kb.as_deref(),
             learner_memory_mode,
             bound_tutor.as_ref(),
         )?;
+        if assistant_message_index == 1
+            && bound_tutor.is_some()
+            && let Some(knowledge_runtime) = router.knowledge_runtime.as_ref()
+        {
+            let access = agent_knowledge_access_context(
+                &entry.id,
+                entry.kb.as_deref(),
+                learner_memory_mode,
+                bound_tutor.as_ref(),
+            );
+            let chunks = knowledge_runtime
+                .collect_verified_chunks_scoped(
+                    access,
+                    "*",
+                    Some(TUTOR_MEMORY_SOURCE_ID.into()),
+                    vec![
+                        FilterExpr::Eq {
+                            field: "status".into(),
+                            value: serde_json::json!("active"),
+                        },
+                        FilterExpr::In {
+                            field: "kind".into(),
+                            values: vec![
+                                serde_json::json!("commitment"),
+                                serde_json::json!("open_loop"),
+                                serde_json::json!("lesson_plan"),
+                            ],
+                        },
+                    ],
+                    20,
+                    cancel.clone(),
+                )
+                .await?;
+            let items = chunks
+                .into_iter()
+                .filter_map(|chunk| {
+                    let entry_id = chunk.reference.item_id.strip_prefix("entry/")?.to_string();
+                    let revision = chunk.reference.revision?;
+                    Some(TutorMemoryBriefingItem {
+                        entry_id,
+                        revision,
+                        body: chunk.text,
+                    })
+                })
+                .collect::<Vec<_>>();
+            if !items.is_empty() {
+                let _ = entry
+                    .stream
+                    .status(
+                        "tutor_memory_recalled",
+                        serde_json::json!({ "count": items.len() }),
+                    )
+                    .await;
+                request = request.with_extension(TutorMemoryBriefing { items });
+            }
+        }
         let answer = router
             .run_request_with_session_cancel(
                 capability,

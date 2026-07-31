@@ -54,7 +54,7 @@ impl Tool for RememberForLaterTool {
     }
 
     fn description(&self) -> &str {
-        "Save low-risk private continuity memory for this tutor: a promise the tutor made, an unresolved follow-up, a lesson plan, a reflection on teaching, or a concrete future teaching strategy. Never store learner profile facts, credentials, sensitive personal data, external factual claims, or unsupported judgments here."
+        "Save low-risk private continuity memory for this tutor: a promise the tutor made, an unresolved follow-up, a lesson plan, a reflection on teaching, or a concrete future teaching strategy. Preserve timing and frequency exactly: never rewrite a one-time request such as `next time` as recurring behavior such as `every time`. Never store learner profile facts, credentials, sensitive personal data, external factual claims, or unsupported judgments here."
     }
 
     fn parameters_schema(&self) -> &serde_json::Value {
