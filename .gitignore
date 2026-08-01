@@ -5,3 +5,4 @@ web-ui/dist
 src-tauri/gen/
 src-tauri/binaries/*
 !src-tauri/binaries/README.md
+.codex-cargo-*.log

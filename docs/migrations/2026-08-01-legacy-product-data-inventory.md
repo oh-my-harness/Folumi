@@ -1,6 +1,6 @@
 # Folumi Legacy Product Data Inventory
 
-> Status: Phase 1 migration contract | Date: 2026-08-01
+> Status: implemented Phase 5 migration boundary | Date: 2026-08-01
 
 This document records the user data that exists before the Folumi product
 contraction. It defines what must be preserved, transformed, or exported before
@@ -10,9 +10,9 @@ contract, not a compatibility-layer design.
 ## Principles
 
 - Never delete user data merely because its feature is no longer in the target product.
-- Keep the current `.llm-tutor` directory, Tauri identifier, environment variables, and storage keys unchanged during Phase 1.
-- Perform one versioned migration after the target information architecture is stable; do not dual-write old and new models.
-- Make migration idempotent, previewable, backed up, and reversible until the user accepts the result.
+- Keep the current `.llm-tutor` directory, Tauri identifier, environment variables, and storage keys unchanged for this contraction so existing user data remains discoverable.
+- Expose an explicit, one-time migration action; do not dual-write old and new models.
+- Make continuity import idempotent and previewable. It is reversible because legacy data is never modified or deleted.
 - Separate source material, user-authored notes, and assistant memory throughout migration.
 - Derived indexes may be rebuilt, but their source documents and configuration must survive.
 
@@ -25,9 +25,9 @@ contract, not a compatibility-layer design.
 | Knowledge-base definitions and source documents | `knowledge-bases.json` and RAG source storage | Preserve as Sources | Keep original files and metadata; verify citations after rebuilding indexes. |
 | Vector indexes and chunks | `rag/` | Rebuildable derivative | Back up, then rebuild from preserved Sources when schema or embedding configuration changes. |
 | Notebook and external Vault configuration | `notebook/` and settings | Preserve as Notes | Keep Markdown, frontmatter, wiki links, backlinks, filenames, and external paths. |
-| Learner memory | `memory/` | Review and transform | Present candidate User Memory items with provenance; import only accepted items. |
-| Tutor profiles, Soul, and private continuity | `tutors/` and tutor memory | Export; optionally transform one selected profile | Let the user export every Tutor. A selected profile may seed the single Assistant configuration and accepted continuity memory. |
-| Quizzes and answers | `quizzes.json` | Export, then retire | Export human-readable Markdown/JSON with questions, answers, results, and timestamps. |
+| Learner memory | `memory/` | Preserve as User Memory | The unified runtime memory backend exposes this data through user-visible review, edit, approval, and forget controls. |
+| Tutor profiles, Soul, and private continuity | `tutors/` and tutor memory | Export definitions; optionally import selected continuity | Let the user export every Tutor. Only explicitly selected active continuity items are copied into Assistant Continuity with provenance. |
+| Quizzes, answers, and Quiz-derived memory | `quizzes.json`, `memory/L1/quiz_events.jsonl`, and `memory/L2/quiz.md` | Export, then retire | Preserve the raw JSON/JSONL/Markdown in the legacy ZIP; Folumi does not create, maintain, or recall Quiz memory. |
 | Quiz workflow state | `workflow-sessions/` quiz records | Export or discard after confirmation | Preserve completed outputs; incomplete execution state need not remain executable. |
 | Research reports and source lists | sessions, workflow records, Notebook | Preserve useful reports as Notes | Retain report content and citations; retire the standalone mode and resumable workflow state. |
 | Space and Student Profile data | product stores and memory evidence | Export and review | Export authored/derived material; do not silently turn inferred profiles into Memory. |
@@ -39,15 +39,15 @@ to infer unverified on-disk layouts.
 
 ## One-Time Migration Shape
 
-1. Detect the legacy schema version and create a timestamped backup manifest.
-2. Scan data and show a dry-run summary grouped into Preserve, Review, Export, and Rebuild.
-3. Ask the user to choose any Tutor profile or memory items that should become Assistant configuration or User Memory.
-4. Write the new model into a staging directory and validate referential integrity.
-5. Atomically switch to the new data directory only after validation succeeds.
-6. Keep the backup and migration report until the user explicitly removes them.
+1. `GET /api/migration/legacy` scans legacy Tutor continuity and reports selectable active items without writing data.
+2. The user chooses the items that should become Assistant Continuity.
+3. `POST /api/migration/legacy/continuity` validates the selected identifiers and writes them through the unified memory backend; repeated imports are ignored by stable migration provenance.
+4. `GET /api/migration/legacy/export.zip` produces a read-only ZIP archive of legacy Tutor definitions and Quiz data.
+5. The legacy source files remain untouched. Folumi has no fallback read path and no dual-write path after the explicit action.
 
-The migration must not maintain a permanent adapter, fallback read path, or
-dual-write mechanism. A failed migration leaves the legacy directory untouched.
+The migration endpoints form a bounded retirement operation, not a runtime
+compatibility layer. A failed import leaves the legacy directory untouched and
+can be retried safely.
 
 ## Old Repository Archive Gate
 

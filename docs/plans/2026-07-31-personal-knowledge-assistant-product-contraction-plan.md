@@ -352,8 +352,8 @@ Memory 不再占据一级导航。用户从助手设置进入“它记住了什�
 - [x] 将多 Tutor 收缩成一个 Assistant Profile；
 - [x] 明确显示每个会话正在使用的资料范围；
 - [x] 完成 Notes 创建、更新、移动、删除确认和恢复闭环；
-- [ ] 将 Learner/Tutor Memory 迁移为 User Memory + Assistant Continuity（新会话已使用
-  User Memory；旧 Tutor 连续性须在 Phase 5 经用户确认后迁移，不能静默合并不同 Tutor 的私有数据）；
+- [x] 将 Learner/Tutor Memory 迁移为 User Memory + Assistant Continuity（新会话使用
+  User Memory；旧 Tutor 连续性由用户预览、选择后幂等迁入，不静默合并不同 Tutor 的私有数据）；
 - [x] 增加 Memory 总开关、逐项来源、编辑和遗忘；
 - [ ] 使用 ContextAttachment 支持临时资料，但不默认自动召回（runtime
   尚无一等临时附件边界，已记录到 `docs/framework-feedback.md` 和
@@ -366,13 +366,13 @@ Memory 不再占据一级导航。用户从助手设置进入“它记住了什�
 
 一句话：新闭环通过桌面验收后，直接删除教学平台遗留代码，不保留隐藏双轨。
 
-- [ ] 提供 Quiz/Student Profile 等必要数据的一次性导出；
-- [ ] 删除 Quiz workflow、UI、API、存储和恢复逻辑；
-- [ ] 删除 Space 页面和聚合模型；
-- [ ] 删除多 Tutor 管理、交接和教学专属状态；
-- [ ] 删除废弃 Capability 分支、旧事件和测试；
-- [ ] 清理文档、依赖和无引用资产；
-- [ ] 运行完整 Rust、前端和桌面 acceptance gate。
+- [x] 提供 Quiz、旧 Tutor 定义等必要数据的一次性归档导出；
+- [x] 删除 Quiz workflow、UI、API、存储和恢复逻辑；
+- [x] 删除 Space 页面和聚合模型，以 Notes 接口替代产品侧聚合入口；
+- [x] 删除多 Tutor 管理、交接和教学专属状态；
+- [x] 删除废弃 Capability 分支、旧事件和测试；
+- [x] 清理文档、依赖和无引用资产；
+- [x] 运行完整 Rust、前端和桌面 acceptance gate。
 
 验收：仓库只包含目标产品实际使用的能力，旧教学模块不再增加构建、测试和维护成本。
 

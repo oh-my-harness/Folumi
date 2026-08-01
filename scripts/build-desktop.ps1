@@ -22,7 +22,7 @@ function Invoke-Step {
 }
 
 function Get-HostTarget {
-    $hostLine = rustc -vV | Where-Object { $_ -like "host:*" } | Select-Object -First 1
+    $hostLine = rustc +stable -vV | Where-Object { $_ -like "host:*" } | Select-Object -First 1
     if (-not $hostLine) {
         throw "Unable to determine Rust host target from rustc -vV."
     }
@@ -54,7 +54,7 @@ Write-Host "Target: $Target"
 Invoke-Step "Build tutor-web sidecar" {
     Push-Location $root
     try {
-        cargo build --release -p tutor-web --target $Target
+        cargo +stable build --release -p tutor-web --target $Target
     }
     finally {
         Pop-Location
@@ -82,7 +82,7 @@ Invoke-Step "Build Tauri desktop bundle" {
             $tauriArgs += "--bundles"
             $tauriArgs += ($Bundles -join ",")
         }
-        cargo @tauriArgs
+        cargo +stable @tauriArgs
     }
     finally {
         Pop-Location

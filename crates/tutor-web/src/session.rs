@@ -64,11 +64,10 @@ pub struct SessionCreateConfig {
     pub assistant: AssistantSessionConfig,
 }
 
-/// Product metadata for an active tutor session.
+/// Product metadata for an active Assistant session.
 #[derive(Clone)]
 pub struct SessionEntry {
     pub id: String,
-    pub tutor_id: Option<String>,
     pub capability: String,
     pub kb: Option<String>,
     pub notebook_enabled: bool,
@@ -152,8 +151,6 @@ pub struct SessionPool {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ProductSessionMetadata {
-    #[serde(default)]
-    tutor_id: Option<String>,
     capability: String,
     #[serde(default)]
     kb: Option<String>,
@@ -204,24 +201,20 @@ impl SessionPool {
         search: Option<SearchSessionConfig>,
         embedding: Option<tutor_rag::EmbeddingConfig>,
     ) -> Result<String, llm_harness_types::SessionError> {
-        self.create_with_tutor(
-            None,
-            SessionCreateConfig {
-                capability: capability.to_string(),
-                kb,
-                notebook_enabled,
-                llm,
-                search,
-                embedding,
-                assistant: AssistantSessionConfig::default(),
-            },
-        )
+        self.create_with_config(SessionCreateConfig {
+            capability: capability.to_string(),
+            kb,
+            notebook_enabled,
+            llm,
+            search,
+            embedding,
+            assistant: AssistantSessionConfig::default(),
+        })
         .await
     }
 
-    pub async fn create_with_tutor(
+    pub async fn create_with_config(
         &self,
-        tutor_id: Option<String>,
         config: SessionCreateConfig,
     ) -> Result<String, llm_harness_types::SessionError> {
         let SessionCreateConfig {
@@ -246,7 +239,6 @@ impl SessionPool {
         let id = meta.id.clone();
         let entry = SessionEntry {
             id: id.clone(),
-            tutor_id: tutor_id.clone(),
             capability: capability.clone(),
             kb: kb.clone(),
             notebook_enabled,
@@ -260,7 +252,6 @@ impl SessionPool {
         self.upsert_product_metadata(
             &id,
             ProductSessionMetadata {
-                tutor_id,
                 capability,
                 kb,
                 notebook_enabled,
@@ -287,7 +278,6 @@ impl SessionPool {
         let product = self.product_metadata.lock().unwrap().get(id).cloned();
         let entry = SessionEntry {
             id: meta.id.clone(),
-            tutor_id: product.as_ref().and_then(|value| value.tutor_id.clone()),
             capability: product
                 .as_ref()
                 .map(|value| value.capability.clone())
@@ -1007,7 +997,6 @@ impl SessionPool {
         let entry = metadata
             .entry(id.to_string())
             .or_insert_with(|| ProductSessionMetadata {
-                tutor_id: None,
                 capability: "chat".into(),
                 kb: None,
                 notebook_enabled: false,
@@ -1419,7 +1408,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("llm-tutor-test-{}", uuid::Uuid::new_v4()));
         let pool = SessionPool::new_with_root(&root);
         let id = pool
-            .create("quiz", None, false, None, None, None)
+            .create("research", None, false, None, None, None)
             .await
             .unwrap();
 
@@ -1427,8 +1416,8 @@ mod tests {
             &id,
             1,
             vec![serde_json::json!({
-                "type": "quiz_session",
-                "quiz_id": "quiz-123",
+                "type": "research_report",
+                "artifact_id": "run-123",
             })],
         )
         .await
@@ -1440,8 +1429,8 @@ mod tests {
 
         assert_eq!(artifacts.len(), 1);
         assert_eq!(artifacts[0].assistant_message_index, 1);
-        assert_eq!(artifacts[0].artifacts[0]["type"], "quiz_session");
-        assert_eq!(artifacts[0].artifacts[0]["quiz_id"], "quiz-123");
+        assert_eq!(artifacts[0].artifacts[0]["type"], "research_report");
+        assert_eq!(artifacts[0].artifacts[0]["artifact_id"], "run-123");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1766,22 +1755,19 @@ mod tests {
         let root = std::env::temp_dir().join(format!("folumi-test-{}", uuid::Uuid::new_v4()));
         let pool = SessionPool::new_with_root(&root);
         let id = pool
-            .create_with_tutor(
-                None,
-                SessionCreateConfig {
-                    capability: "chat".into(),
-                    kb: None,
-                    notebook_enabled: false,
-                    llm: None,
-                    search: None,
-                    embedding: None,
-                    assistant: AssistantSessionConfig {
-                        name: "My Folumi".into(),
-                        instructions: "Prefer short, practical answers.".into(),
-                        memory_enabled: false,
-                    },
+            .create_with_config(SessionCreateConfig {
+                capability: "chat".into(),
+                kb: None,
+                notebook_enabled: false,
+                llm: None,
+                search: None,
+                embedding: None,
+                assistant: AssistantSessionConfig {
+                    name: "My Folumi".into(),
+                    instructions: "Prefer short, practical answers.".into(),
+                    memory_enabled: false,
                 },
-            )
+            })
             .await
             .unwrap();
 
@@ -1814,34 +1800,6 @@ mod tests {
         assert_eq!(entry.capability, "organize");
         assert!(entry.notebook_enabled);
         assert!(entry.kb.is_none());
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[tokio::test]
-    async fn tutor_binding_survives_pool_reopen() {
-        let root = std::env::temp_dir().join(format!("llm-tutor-test-{}", uuid::Uuid::new_v4()));
-        let pool = SessionPool::new_with_root(&root);
-        let id = pool
-            .create_with_tutor(
-                Some("general-tutor".into()),
-                SessionCreateConfig {
-                    capability: "chat".into(),
-                    kb: None,
-                    notebook_enabled: false,
-                    llm: None,
-                    search: None,
-                    embedding: None,
-                    assistant: AssistantSessionConfig::default(),
-                },
-            )
-            .await
-            .unwrap();
-
-        drop(pool);
-        let reopened = SessionPool::new_with_root(&root);
-        let entry = reopened.ensure_entry(&id).await.unwrap();
-
-        assert_eq!(entry.tutor_id.as_deref(), Some("general-tutor"));
         let _ = std::fs::remove_dir_all(root);
     }
 

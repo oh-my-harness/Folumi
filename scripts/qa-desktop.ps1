@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
 function Get-HostTarget {
-    $hostLine = rustc -vV | Where-Object { $_ -like "host:*" } | Select-Object -First 1
+    $hostLine = rustc +stable -vV | Where-Object { $_ -like "host:*" } | Select-Object -First 1
     if (-not $hostLine) {
         throw "Unable to determine Rust host target from rustc -vV."
     }

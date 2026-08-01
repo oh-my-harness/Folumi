@@ -17,7 +17,7 @@ checklists.
 - `2026-07-13-background-session-resilience-plan.md`: durable background runs,
   session rejoin, and restorable interactive Chat attachments.
 - `2026-07-17-product-onboarding-plan.md`: first-run setup, interface-faithful
-  guidance and contextual help; Tutor-specific portions are frozen.
+  guidance and contextual help; Tutor-specific portions are historical.
 - `2026-07-23-runtime-knowledge-a6-migration-plan.md`: migration from the
   product-owned RAG Tool protocol to runtime Knowledge, trusted run-scoped
   access, evidence receipts, and safe Session Projection.
@@ -36,7 +36,7 @@ checklists.
 - `2026-06-23-quiz-mode-plan.md`: quiz generation and review workflow.
 - `2026-06-25-research-mode-plan.md`: research workflow and report handling.
 - `2026-06-23-deep-solve-ux-plan.md`: retired Deep Solve UX history; complex
-  solving now belongs to Chat/Tutor.
+  solving now belongs to Assistant chat.
 
 ## Historical Plans
 

@@ -487,17 +487,6 @@ impl NotebookStore {
         Ok(entries)
     }
 
-    pub fn update(&self, id: &str, input: NotebookEntryUpdate) -> Result<NotebookEntry> {
-        let mut items = self.items.lock().unwrap();
-        let Some(entry_index) = items.iter().position(|item| item.id == id) else {
-            return Err(anyhow!("notebook entry not found"));
-        };
-        let updated = apply_notebook_entry_update(&mut items, entry_index, input)?;
-        let folders = self.folders.lock().unwrap();
-        self.save_locked(&items, &folders)?;
-        Ok(updated)
-    }
-
     pub fn update_exact(
         &self,
         id: &str,
@@ -1591,8 +1580,9 @@ mod tests {
         assert_eq!(store.list(Some("default")).len(), 1);
 
         let updated = store
-            .update(
+            .update_exact(
                 &entry.id,
+                &notebook_entry_revision(&entry),
                 NotebookEntryUpdate {
                     title: Some("Updated".into()),
                     markdown: Some("# Updated".into()),
@@ -1602,6 +1592,9 @@ mod tests {
                 },
             )
             .unwrap();
+        let ExactNotebookMutationOutcome::Updated(updated) = updated else {
+            panic!("fresh revision should update the note");
+        };
         assert_eq!(updated.title, "Updated");
         assert!(store.delete(&entry.id));
         assert!(store.list(Some("default")).is_empty());
@@ -1636,9 +1629,10 @@ mod tests {
         assert!(index_path.exists());
         assert_eq!(std::fs::read_to_string(&note_path).unwrap(), "# TCC");
 
-        store
-            .update(
+        let updated = store
+            .update_exact(
                 &entry.id,
+                &notebook_entry_revision(&entry),
                 NotebookEntryUpdate {
                     title: None,
                     markdown: Some("# TCC\n\nUpdated".into()),
@@ -1648,6 +1642,7 @@ mod tests {
                 },
             )
             .unwrap();
+        assert!(matches!(updated, ExactNotebookMutationOutcome::Updated(_)));
         assert!(
             std::fs::read_to_string(&note_path)
                 .unwrap()
@@ -1734,11 +1729,12 @@ mod tests {
         std::fs::write(vault_root.join("Watched.md"), "# Watched").unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
-            if store
+            let note_is_indexed = store
                 .list(Some("default"))
                 .iter()
-                .any(|entry| entry.title == "Watched")
-            {
+                .any(|entry| entry.title == "Watched");
+            let watch = store.watch_info();
+            if note_is_indexed && watch.last_result.is_some() {
                 break;
             }
             assert!(
@@ -1747,8 +1743,6 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(100));
         }
-        let watch = store.watch_info();
-        assert!(watch.last_result.is_some());
     }
 
     #[test]

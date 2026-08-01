@@ -98,15 +98,13 @@ impl LearnerMemoryKnowledgeSource {
             semantic_embedder: None,
             descriptor: KnowledgeSourceDescriptor {
                 id: LEARNER_MEMORY_SOURCE_ID.into(),
-                name: "Learner memory".into(),
-                description: "Durable learner events, summaries, and profile entries.".into(),
+                name: "User memory".into(),
+                description: "Durable user events, preferences, and Assistant continuity.".into(),
                 domains: [
                     "learner-memory.event.chat",
-                    "learner-memory.event.quiz",
                     "learner-memory.event.notebook",
                     "learner-memory.event.knowledge",
                     "learner-memory.summary.chat",
-                    "learner-memory.summary.quiz",
                     "learner-memory.summary.notebook",
                     "learner-memory.summary.knowledge",
                     "learner-memory.profile.recent",
@@ -114,6 +112,7 @@ impl LearnerMemoryKnowledgeSource {
                     "learner-memory.profile.scope",
                     "learner-memory.profile.preferences",
                     "learner-memory.profile.teaching_strategy",
+                    "learner-memory.profile.continuity",
                 ]
                 .into_iter()
                 .map(str::to_string)
@@ -179,11 +178,16 @@ impl LearnerMemoryKnowledgeSource {
             .all(|value| matches!(value.as_str(), "l1" | "l2" | "l3"))
             || !surfaces
                 .iter()
-                .all(|value| matches!(value.as_str(), "chat" | "quiz" | "notebook" | "knowledge"))
+                .all(|value| matches!(value.as_str(), "chat" | "notebook" | "knowledge"))
             || !kinds.iter().all(|value| {
                 matches!(
                     value.as_str(),
-                    "recent" | "profile" | "scope" | "preferences" | "teaching_strategy"
+                    "recent"
+                        | "profile"
+                        | "scope"
+                        | "preferences"
+                        | "teaching_strategy"
+                        | "continuity"
                 )
             })
         {
@@ -434,6 +438,7 @@ enum MemoryQueryIntent {
     General,
     Profile,
     Preference,
+    Continuity,
 }
 
 impl MemoryQueryIntent {
@@ -454,6 +459,7 @@ impl MemoryQueryIntent {
             Self::Profile if item.kind.as_deref() == Some("profile") => 100,
             Self::Profile if identity_profile_text(&item.body) => 90,
             Self::Preference if item.kind.as_deref() == Some("preferences") => 100,
+            Self::Continuity if item.kind.as_deref() == Some("continuity") => 100,
             _ => structured_baseline,
         }
     }
@@ -488,6 +494,21 @@ fn memory_query_intent(query: &str) -> MemoryQueryIntent {
     .any(|pattern| query.contains(pattern))
     {
         MemoryQueryIntent::Preference
+    } else if [
+        "提醒",
+        "下次",
+        "待办",
+        "承诺",
+        "继续",
+        "follow up",
+        "next time",
+        "remind",
+        "commitment",
+    ]
+    .iter()
+    .any(|pattern| query.contains(pattern))
+    {
+        MemoryQueryIntent::Continuity
     } else {
         MemoryQueryIntent::General
     }
@@ -684,7 +705,6 @@ fn file_category(path: &str) -> Option<(&'static str, &str)> {
 fn event_surface(category: MemoryEventCategory) -> &'static str {
     match category {
         MemoryEventCategory::Chat => "chat",
-        MemoryEventCategory::Quiz => "quiz",
         MemoryEventCategory::Notebook => "notebook",
         MemoryEventCategory::Knowledge => "knowledge",
     }
@@ -717,10 +737,10 @@ fn validate_filter_value(field: &str, value: &serde_json::Value) -> Result<(), K
     };
     let valid = match field {
         "layer" => matches!(value, "l1" | "l2" | "l3"),
-        "surface" => matches!(value, "chat" | "quiz" | "notebook" | "knowledge"),
+        "surface" => matches!(value, "chat" | "notebook" | "knowledge"),
         "kind" => matches!(
             value,
-            "recent" | "profile" | "scope" | "preferences" | "teaching_strategy"
+            "recent" | "profile" | "scope" | "preferences" | "teaching_strategy" | "continuity"
         ),
         _ => false,
     };

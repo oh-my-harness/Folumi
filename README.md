@@ -4,11 +4,11 @@
 [`llm-harness-runtime`](https://github.com/oh-my-harness/llm-harness-runtime)
 构建的本地优先个人知识助手。它围绕知识来源、Markdown 笔记和用户可控记忆，帮助用户与自己的长期资料持续对话。
 
-当前代码由 `llm-tutor` 演进而来，仍保留 Tutor、Quiz、Space、Research 等旧界面和数据。它们已经冻结，不再作为产品方向继续扩展；后续阶段会在提供明确导出和迁移路径后移除，而不是长期维护两套产品模型。
+当前代码由 `llm-tutor` 演进而来，产品界面和运行路径已经收缩为单一助手、知识来源、Markdown 笔记与用户可控记忆。旧 Tutor 连续性可经用户预览后迁入 Assistant Continuity，Quiz 与旧 Tutor 定义则通过一次性归档导出保留。
 
 > 当前版本：`0.3.5`
 >
-> 当前阶段：Folumi 产品收缩 Phase 1；建立新产品基线，现有数据格式暂时保持不变。
+> 当前阶段：Folumi 产品收缩基线已完成；后续迭代聚焦知识库管理与个人助手体验。
 >
 > 文档状态：已按 2026-08-01 的产品范围决策更新。
 
@@ -120,8 +120,8 @@ Folumi desktop
           -> REST + WebSocket
           -> runtime sessions
           -> tutor-agent
-              -> chat / code execution
-              -> quiz / research / memory workflows
+              -> assistant chat / code execution
+              -> research task / memory maintenance workflows
               -> runtime Knowledge search / read / evidence validation
               -> runtime Memory write / forget / approval
               -> llm-harness-runtime / llm-harness-agent
@@ -131,13 +131,13 @@ Folumi desktop
           -> tutor-rag
               -> LanceDB + embedding retrieval
           -> local product stores
-              -> Notebook / Quiz / Learner Memory / Tutors / Settings / Knowledge
+               -> Sources / Notes / User Memory / Sessions / Settings
 ```
 
 ### 工作区结构
 
 ```text
-crates/tutor-agent   Agent 能力路由、提示词及 Quiz/Research/Memory workflow。
+crates/tutor-agent   Agent 对话、提示词及 Research/Memory workflow。
 crates/tutor-tools   Web 搜索、抓取和代码执行工具。
 crates/tutor-rag     LanceDB 入库、runtime Knowledge source 和 embedding 集成。
 crates/tutor-web     Axum API、WebSocket、session 映射和产品数据存储。
@@ -155,7 +155,7 @@ scripts              开发、版本、桌面构建和 QA 脚本。
 <repo>/.llm-tutor/
 ```
 
-Phase 1 不改目录名、应用标识符或持久化键，避免已有用户的数据被操作系统视为另一套应用数据。迁移会采用一次性、可预览、可回滚的方式完成，详见[旧产品数据迁移清单](./docs/migrations/2026-08-01-legacy-product-data-inventory.md)。
+当前版本暂不改目录名、应用标识符或持久化键，避免已有用户的数据被操作系统视为另一套应用数据。旧产品数据通过显式的一次性迁移或归档导出处理，详见[旧产品数据迁移清单](./docs/migrations/2026-08-01-legacy-product-data-inventory.md)。
 
 可通过环境变量或后端参数覆盖：
 
@@ -248,12 +248,12 @@ GitHub 发布工作流在 `v*` 标签和手动 `workflow_dispatch` 下构建 Win
 ## 当前限制
 
 - 单用户、本地优先；没有账号、权限、云同步或协作。
-- 辅导机器人已支持持久身份、Soul、默认模型、服务端资料权限和私有 Tutor Memory；Tutor 页面中的会话集合、汇总运行状态、导师交接和自主记忆硬校验尚未完成。
+- 临时资料仍等待 runtime 提供一等 `ContextAttachment` 契约；当前不建设平行注入系统。
 - 运行中的 workflow 在应用进程重启后尚不能保证从中断点续跑。
 - API Key 暂存于本地 JSON，系统钥匙串尚未实现。
 - Linux 安装包和自动更新尚未实现。
 - RAG 切分、引用验证和桌面安装包 QA 仍需持续完善。
-- Memory 已按 `L1 -> L2 -> L3` 分层读取证据，但 L2 新鲜度提示、应用时来源版本校验，以及 `teaching_strategy.md` 的完整依赖顺序仍在完善。
+- 旧 Tutor 连续性需要用户显式选择后迁入 Assistant Continuity；Quiz 与 Tutor 定义只提供归档导出，不再参与运行。
 
 更多用户侧说明见 [使用手册](./MANUAL.md)。
 

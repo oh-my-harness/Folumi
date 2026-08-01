@@ -5,79 +5,8 @@ use llm_harness_types::SPAWN_AGENT_TOOL_NAME;
 
 use crate::error::{Result, TutorError};
 
-pub const QUIZ_GENERATION_WORKFLOW_ID: &str = "tutor.quiz_generation";
 pub const MEMORY_WORKFLOW_ID: &str = "tutor.memory";
 pub const RESEARCH_WORKFLOW_ID: &str = "tutor.research";
-
-pub fn quiz_generation_workflow() -> Workflow {
-    Workflow {
-        entry_step: "collect_sources".into(),
-        steps: vec![
-            Step::executor(
-                "collect_sources",
-                "Collect quiz sources",
-                "tutor.quiz.collect_sources",
-                None,
-            ),
-            Step::llm(
-                "generate_questions",
-                "Generate grounded questions",
-                "Read the workflow Context. The `quiz_generation_prompt` variable contains the full source-grounded quiz generation instruction. \
-                 Generate grounded single-choice quiz questions from those sources. If prior step history includes verifier repair feedback, repair the draft. \
-                 End the step with only the JSON object {\"questions\":[...]} using the exact question schema requested in Context. \
-                 Do not wrap the JSON in Markdown fences or add prose before or after it.",
-                vec![],
-            )
-            .with_structured(Some(true)),
-            Step::llm(
-                "verify_questions",
-                "Verify generated questions",
-                "Read the workflow Context and prior generate_questions structured result. Strictly verify every question against its cited source chunks. \
-                 End the step with only {\"verdict\":\"pass\",\"issues\":[]} if all questions are grounded. \
-                 If any question is unsupported, contradictory, or wrongly cited, end with only \
-                 {\"verdict\":\"fail\",\"action\":\"repair\",\"issues\":[\"...\"]}. Do not use Markdown fences.",
-                vec![],
-            )
-            .with_structured(Some(true)),
-            Step::executor(
-                "publish_questions",
-                "Publish verified questions",
-                "tutor.quiz.publish_questions",
-                None,
-            ),
-        ],
-        edges: vec![
-            Edge {
-                from: "collect_sources".into(),
-                to: "generate_questions".into(),
-                condition: None,
-            },
-            Edge {
-                from: "generate_questions".into(),
-                to: "verify_questions".into(),
-                condition: None,
-            },
-            Edge {
-                from: "verify_questions".into(),
-                to: "publish_questions".into(),
-                condition: Some(verdict_condition("pass")),
-            },
-            Edge {
-                from: "verify_questions".into(),
-                to: "generate_questions".into(),
-                condition: Some(action_condition("repair")),
-            },
-        ],
-    }
-}
-
-pub fn validate_quiz_generation_workflow() -> Result<()> {
-    validate_workflow(&quiz_generation_workflow()).map_err(|err| {
-        TutorError::Internal(format!(
-            "runtime workflow validation failed for {QUIZ_GENERATION_WORKFLOW_ID}: {err}"
-        ))
-    })
-}
 
 pub fn memory_workflow() -> Workflow {
     memory_workflow_with_allowed_tools(vec![
@@ -227,13 +156,6 @@ fn verdict_condition(verdict: &str) -> EdgeCondition {
     })
 }
 
-fn action_condition(action: &str) -> EdgeCondition {
-    EdgeCondition::Expr(ConditionExpr::Eq {
-        pointer: "/action".into(),
-        value: serde_json::json!(action),
-    })
-}
-
 fn repair_condition(repair: &str) -> EdgeCondition {
     EdgeCondition::Expr(ConditionExpr::Eq {
         pointer: "/repair".into(),
@@ -253,11 +175,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn quiz_generation_workflow_is_valid_runtime_workflow() {
-        validate_quiz_generation_workflow().unwrap();
-    }
-
-    #[test]
     fn memory_workflow_is_valid_runtime_workflow() {
         validate_memory_workflow().unwrap();
     }
@@ -269,11 +186,7 @@ mod tests {
 
     #[test]
     fn workflows_use_runtime_evaluable_edge_conditions() {
-        for workflow in [
-            quiz_generation_workflow(),
-            memory_workflow(),
-            research_workflow(),
-        ] {
+        for workflow in [memory_workflow(), research_workflow()] {
             for edge in workflow.edges {
                 assert!(
                     !matches!(edge.condition, Some(EdgeCondition::Label(_))),
@@ -283,32 +196,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn quiz_workflow_routes_on_verifier_structured_fields() {
-        let workflow = quiz_generation_workflow();
-        let conditions = workflow
-            .edges
-            .iter()
-            .filter(|edge| edge.from == "verify_questions")
-            .map(|edge| (&edge.to, edge.condition.as_ref().unwrap()))
-            .collect::<Vec<_>>();
-
-        assert!(conditions.contains(&(
-            &"publish_questions".to_string(),
-            &EdgeCondition::Expr(ConditionExpr::Eq {
-                pointer: "/verdict".into(),
-                value: serde_json::json!("pass"),
-            })
-        )));
-        assert!(conditions.contains(&(
-            &"generate_questions".to_string(),
-            &EdgeCondition::Expr(ConditionExpr::Eq {
-                pointer: "/action".into(),
-                value: serde_json::json!("repair"),
-            })
-        )));
     }
 
     #[test]

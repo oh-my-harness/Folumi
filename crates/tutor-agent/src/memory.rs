@@ -324,7 +324,7 @@ fn memory_prompt(input: &MemoryWorkflowInput) -> String {
     };
     let action_rules = match input.action {
         MemoryWorkflowAction::Update => {
-            "- Return insert or evidence-backed replace changes.\n- Prefer durable learning-relevant observations over one-off chatter.\n- Use only sections listed in target.allowedSections."
+            "- Return insert or evidence-backed replace changes.\n- Prefer durable user-relevant observations over one-off chatter.\n- Use only sections listed in target.allowedSections."
         }
         MemoryWorkflowAction::Check => {
             "- Resolve existing evidence with knowledge_read before judging supported claims.\n- Return compact findings for contradictions, stale facts, missing evidence, duplicates, unclear wording, and risky overgeneralizations.\n- If useful, include stable-entry-id changes.\n- Every change must include a short reason."
@@ -350,9 +350,9 @@ fn memory_prompt(input: &MemoryWorkflowInput) -> String {
         MemoryOutputLanguage::EnUs => (
             "- Write summary, finding.message, change.text, and change.reason in English.\n- Preserve code, API names, model names, paper titles, and other proper nouns when translation would reduce precision.\n- Do not translate or rewrite existing memory merely to change its language.\n- Keep schema values and section keys exactly as specified.",
             if is_l3 {
-                r#"{"summary":"One reviewable update found","findings":[{"id":"finding_1","entry_id":"m_existing","severity":"warning","kind":"unsupported","message":"This memory lacks sufficient evidence","refs":["memory:L2/chat.md#m_example"]}],"changes":[{"id":"change_1","op":"insert","section":"one allowed section key","entry_id":null,"after_entry_id":null,"text":"A concise learner memory","refs":["memory:L2/chat.md#m_example"],"reason":"This change supports future personalization"}]}"#
+                r#"{"summary":"One reviewable update found","findings":[{"id":"finding_1","entry_id":"m_existing","severity":"warning","kind":"unsupported","message":"This memory lacks sufficient evidence","refs":["memory:L2/chat.md#m_example"]}],"changes":[{"id":"change_1","op":"insert","section":"one allowed section key","entry_id":null,"after_entry_id":null,"text":"A concise user memory","refs":["memory:L2/chat.md#m_example"],"reason":"This change supports future personalization"}]}"#
             } else {
-                r#"{"summary":"One reviewable update found","findings":[{"id":"finding_1","entry_id":"m_existing","severity":"warning","kind":"unsupported","message":"This memory lacks sufficient evidence","refs":["chat:event-id"]}],"changes":[{"id":"change_1","op":"insert","section":"one allowed section key","entry_id":null,"after_entry_id":null,"text":"A concise learner memory","refs":["chat:event-id"],"reason":"This change supports future personalization"}]}"#
+                r#"{"summary":"One reviewable update found","findings":[{"id":"finding_1","entry_id":"m_existing","severity":"warning","kind":"unsupported","message":"This memory lacks sufficient evidence","refs":["chat:event-id"]}],"changes":[{"id":"change_1","op":"insert","section":"one allowed section key","entry_id":null,"after_entry_id":null,"text":"A concise user memory","refs":["chat:event-id"],"reason":"This change supports future personalization"}]}"#
             },
         ),
     };
@@ -460,9 +460,9 @@ mod tests {
             "summary": "Too long.",
             "findings": [],
             "changes": [{
-                "id": "change_1", "op": "insert", "section": "Weak topics",
+                "id": "change_1", "op": "insert", "section": "Topics",
                 "entry_id": null, "after_entry_id": null, "text": text,
-                "refs": ["quiz:event-1"], "reason": "durable evidence"
+                "refs": ["chat:event-1"], "reason": "durable evidence"
             }]
         });
         let output =
@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn rejects_dedupe_insert() {
         let err = parse_memory_workflow_output(
-            r##"{"summary":"Bad dedupe.","findings":[],"changes":[{"id":"change_1","op":"insert","section":"Weak topics","entry_id":null,"after_entry_id":null,"text":"New fact","refs":["quiz:event-1"],"reason":"not allowed"}]}"##,
+            r##"{"summary":"Bad dedupe.","findings":[],"changes":[{"id":"change_1","op":"insert","section":"Topics","entry_id":null,"after_entry_id":null,"text":"New fact","refs":["chat:event-1"],"reason":"not allowed"}]}"##,
             MemoryWorkflowAction::Dedupe,
         )
         .unwrap_err();
@@ -486,15 +486,15 @@ mod tests {
     async fn runtime_workflow_runs_memory_llm_step() {
         let dir = tempfile::TempDir::new().unwrap();
         let client = Arc::new(MockLlmClient::new(vec![MockResponse::text(
-            r##"{"summary":"One update ready.","findings":[],"changes":[{"id":"change_1","op":"insert","section":"Weak topics","entry_id":null,"after_entry_id":null,"text":"Learner should review OPC distractors.","refs":["quiz:event-1"],"reason":"Repeated quiz error"}]}"##,
+            r##"{"summary":"One update ready.","findings":[],"changes":[{"id":"change_1","op":"insert","section":"Topics","entry_id":null,"after_entry_id":null,"text":"User prefers concise OPC explanations.","refs":["chat:event-1"],"reason":"Repeated chat request"}]}"##,
         )]));
         let input = MemoryWorkflowInput {
-            target_path: "L2/quiz.md".into(),
+            target_path: "L2/chat.md".into(),
             action: MemoryWorkflowAction::Update,
             output_language: MemoryOutputLanguage::EnUs,
-            current_markdown: "# Quiz memory\n\n".into(),
+            current_markdown: "# Chat memory\n\n".into(),
             consolidation_input_json:
-                r#"{"chunk":{"citeableRefs":["quiz:q1"]},"target":{"allowedSections":["Weak topics"]}}"#
+                r#"{"chunk":{"citeableRefs":["chat:q1"]},"target":{"allowedSections":["Topics"]}}"#
                     .into(),
         };
         let engine_config = build_workflow_engine_config(
@@ -513,7 +513,7 @@ mod tests {
         );
         assert_eq!(run.cost.total_input_tokens, 0);
         let output = run.output;
-        assert_eq!(output.changes[0].refs, vec!["quiz:event-1"]);
+        assert_eq!(output.changes[0].refs, vec!["chat:event-1"]);
     }
 
     #[tokio::test]
@@ -521,10 +521,10 @@ mod tests {
     async fn b3_maintenance_workflow_latency_baseline() {
         let dir = tempfile::TempDir::new().unwrap();
         let input = MemoryWorkflowInput {
-            target_path: "L2/quiz.md".into(),
+            target_path: "L2/chat.md".into(),
             action: MemoryWorkflowAction::Check,
             output_language: MemoryOutputLanguage::EnUs,
-            current_markdown: "# Quiz memory\n\n".into(),
+            current_markdown: "# Chat memory\n\n".into(),
             consolidation_input_json: "{}".into(),
         };
         let mut samples = Vec::new();

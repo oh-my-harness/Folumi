@@ -96,7 +96,7 @@ Update-TextFile -Path (Join-Path $root "docs\qa\desktop-release.md") -Updater {
 
 Push-Location $root
 try {
-    & cargo metadata --no-deps --format-version 1 | Out-Null
+    & cargo +stable metadata --no-deps --format-version 1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "cargo metadata failed while refreshing Cargo.lock."
     }

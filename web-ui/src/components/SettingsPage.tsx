@@ -114,7 +114,7 @@ const settingsTabs: Array<{
     | 'settings.tabs.search'
     | 'settings.tabs.governance'
     | 'settings.tabs.help'
-    | 'space.tabs.notebook'
+    | 'settings.tabs.notebook'
   icon: LucideIcon
 }> = [
   { key: 'assistant', labelKey: 'settings.tabs.assistant', icon: Brain },
@@ -122,7 +122,7 @@ const settingsTabs: Array<{
   { key: 'llm', labelKey: 'settings.tabs.llm', icon: Brain },
   { key: 'embedding', labelKey: 'settings.tabs.embedding', icon: Database },
   { key: 'search', labelKey: 'settings.tabs.search', icon: Globe2 },
-  { key: 'notebook', labelKey: 'space.tabs.notebook', icon: BookMarked },
+  { key: 'notebook', labelKey: 'settings.tabs.notebook', icon: BookMarked },
   { key: 'governance', labelKey: 'settings.tabs.governance', icon: SlidersHorizontal },
   { key: 'help', labelKey: 'settings.tabs.help', icon: CircleHelp },
 ]
@@ -1366,7 +1366,7 @@ function tabDescription(tab: SettingsTab, t: (key: TranslationKey) => string) {
     llm: 'settings.llm.description',
     embedding: 'settings.embedding.description',
     search: 'settings.search.description',
-    notebook: 'space.tabs.notebook.description',
+    notebook: 'settings.notebook.description',
     governance: 'settings.governance.description',
     help: 'settings.help.description',
   }

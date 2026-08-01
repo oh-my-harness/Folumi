@@ -16,10 +16,6 @@ use crate::learner_memory_source::{
 };
 use crate::learner_memory_write::{LearnerMemoryApprover, assemble_learner_memory_service};
 use crate::memory_store::FileMemoryBackend;
-use crate::tutor_memory_source::{
-    TUTOR_MEMORY_MODE_ATTRIBUTE, TUTOR_MEMORY_SOURCE_ID, TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE,
-    TutorMemoryKnowledgeSource,
-};
 
 #[derive(Clone)]
 pub struct AgentRuntimeSecurity {
@@ -63,7 +59,6 @@ fn random_process_secret() -> Vec<u8> {
 pub(crate) fn agent_knowledge_citation_policy(
     course_source: bool,
     learner_memory_source: bool,
-    tutor_memory_source: bool,
 ) -> tutor_agent::Result<KnowledgeCitationPolicy> {
     let mut builder = KnowledgeCitationPolicy::builder();
     if course_source {
@@ -75,12 +70,6 @@ pub(crate) fn agent_knowledge_citation_policy(
     if learner_memory_source {
         builder = builder.source(
             LEARNER_MEMORY_SOURCE_ID,
-            KnowledgeCitationRequirement::Optional,
-        );
-    }
-    if tutor_memory_source {
-        builder = builder.source(
-            TUTOR_MEMORY_SOURCE_ID,
             KnowledgeCitationRequirement::Optional,
         );
     }
@@ -96,16 +85,10 @@ pub(crate) struct LearnerMemoryRuntimeInput {
     pub(crate) approver: Option<Arc<dyn LearnerMemoryApprover>>,
 }
 
-pub(crate) struct TutorMemoryRuntimeInput {
-    pub(crate) source: Arc<TutorMemoryKnowledgeSource>,
-    pub(crate) mode: tutor_agent::TutorMemoryMode,
-}
-
 pub(crate) fn install_agent_knowledge_and_memory(
     mut router: tutor_agent::CapabilityRouter,
     course_source: Option<Arc<dyn KnowledgeSource>>,
     learner_memory: Option<LearnerMemoryRuntimeInput>,
-    tutor_memory: Option<TutorMemoryRuntimeInput>,
     security: &AgentRuntimeSecurity,
 ) -> tutor_agent::Result<tutor_agent::CapabilityRouter> {
     let access_control = agent_knowledge_access_control();
@@ -132,26 +115,9 @@ pub(crate) fn install_agent_knowledge_and_memory(
         memory_source = Some((source, input));
     }
 
-    let tutor_memory_mode = tutor_memory
-        .as_ref()
-        .map(|input| input.mode)
-        .unwrap_or_default();
-    if let Some(input) = tutor_memory {
-        if input.mode == tutor_agent::TutorMemoryMode::Disabled {
-            return Err(tutor_agent::TutorError::Internal(
-                "disabled Tutor Memory must not provide a store".into(),
-            ));
-        }
-        sources.push(input.source);
-    }
-    router = router.with_tutor_memory_runtime(tutor_memory_mode);
-
     if !sources.is_empty() {
-        let citation_policy = agent_knowledge_citation_policy(
-            has_course_source,
-            memory_source.is_some(),
-            tutor_memory_mode != tutor_agent::TutorMemoryMode::Disabled,
-        )?;
+        let citation_policy =
+            agent_knowledge_citation_policy(has_course_source, memory_source.is_some())?;
         let runtime = tutor_agent::assemble_knowledge_runtime(
             sources,
             access_control.clone(),
@@ -233,7 +199,6 @@ impl KnowledgeAuthorizer for AgentKnowledgeAuthorizer {
                         .is_some_and(|kb| !kb.trim().is_empty())
                 }
                 LEARNER_MEMORY_SOURCE_ID => memory_access_allows(access, action),
-                TUTOR_MEMORY_SOURCE_ID => tutor_memory_access_allows(access, action),
                 _ => false,
             };
             Ok(if allowed {
@@ -243,32 +208,6 @@ impl KnowledgeAuthorizer for AgentKnowledgeAuthorizer {
             })
         })
     }
-}
-
-fn tutor_memory_access_allows(access: &KnowledgeAccessContext, action: KnowledgeAction) -> bool {
-    let attributes = &access.scope.attributes;
-    if access.scope.namespace != tutor_rag::AGENT_KNOWLEDGE_NAMESPACE
-        || !attributes
-            .get(TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE)
-            .is_some_and(|tutor_id| !tutor_id.trim().is_empty())
-    {
-        return false;
-    }
-    matches!(
-        (
-            attributes
-                .get(TUTOR_MEMORY_MODE_ATTRIBUTE)
-                .map(String::as_str),
-            action,
-        ),
-        (
-            Some("read_only" | "autonomous"),
-            KnowledgeAction::Discover | KnowledgeAction::Search | KnowledgeAction::Read,
-        ) | (
-            Some("autonomous"),
-            KnowledgeAction::Write | KnowledgeAction::Delete
-        )
-    )
 }
 
 fn memory_access_allows(access: &KnowledgeAccessContext, action: KnowledgeAction) -> bool {
@@ -288,7 +227,7 @@ fn memory_access_allows(access: &KnowledgeAccessContext, action: KnowledgeAction
         )
         && csv_is_subset(
             attributes.get(LEARNER_MEMORY_SURFACES_ATTRIBUTE),
-            &["chat", "quiz", "notebook", "knowledge"],
+            &["chat", "notebook", "knowledge"],
             true,
         )
         && csv_is_subset(
@@ -299,6 +238,7 @@ fn memory_access_allows(access: &KnowledgeAccessContext, action: KnowledgeAction
                 "scope",
                 "preferences",
                 "teaching_strategy",
+                "continuity",
             ],
             false,
         );
@@ -332,7 +272,7 @@ mod tests {
         JsonlSessionRepo, Session, SessionRepo, session::CreateSessionOptions,
     };
     use llm_harness_loop::test_utils::{MockLlmClient, MockResponse, NoOpEnv};
-    use llm_harness_runtime_knowledge::{FilterExpr, KnowledgeRef, KnowledgeScope, PrincipalRef};
+    use llm_harness_runtime_knowledge::{KnowledgeRef, KnowledgeScope, PrincipalRef};
     use llm_harness_runtime_memory::MemorySessionId;
     use llm_harness_types::RunRequest;
     use tokio_util::sync::CancellationToken;
@@ -341,16 +281,8 @@ mod tests {
     use crate::memory_approval::{ApprovalResponseOutcome, WebMemoryApprovalCoordinator};
     use crate::memory_store::{DurableMemoryWrite, memory_entry_revision};
     use crate::stream::{StreamEvent, TutorStream};
-    use crate::tutor_memory_source::{
-        TUTOR_MEMORY_MODE_ATTRIBUTE, TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE,
-    };
-    use crate::tutor_memory_store::{
-        CreateTutorMemoryEntry, TutorMemoryKind, TutorMemoryStore, tutor_memory_entry_revision,
-    };
     use tutor_agent::governance::GovernanceConfig;
-    use tutor_agent::{
-        Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, TutorMemoryMode,
-    };
+    use tutor_agent::{Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig};
 
     fn access(profile: &str, principal: &str) -> KnowledgeAccessContext {
         let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
@@ -369,11 +301,11 @@ mod tests {
             .insert(LEARNER_MEMORY_LAYERS_ATTRIBUTE.into(), "l1,l2,l3".into());
         scope.attributes.insert(
             LEARNER_MEMORY_SURFACES_ATTRIBUTE.into(),
-            "chat,quiz,notebook,knowledge".into(),
+            "chat,notebook,knowledge".into(),
         );
         scope.attributes.insert(
             LEARNER_MEMORY_KINDS_ATTRIBUTE.into(),
-            "recent,profile,scope,preferences,teaching_strategy".into(),
+            "recent,profile,scope,preferences,teaching_strategy,continuity".into(),
         );
         KnowledgeAccessContext::new(scope, PrincipalRef::new(principal, "user"))
     }
@@ -412,17 +344,6 @@ mod tests {
             .with_extension(MemorySessionId::new(session_id).unwrap())
     }
 
-    fn tutor_access(tutor_id: &str, mode: &str) -> KnowledgeAccessContext {
-        let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
-        scope
-            .attributes
-            .insert(TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE.into(), tutor_id.into());
-        scope
-            .attributes
-            .insert(TUTOR_MEMORY_MODE_ATTRIBUTE.into(), mode.into());
-        KnowledgeAccessContext::new(scope, PrincipalRef::new("local-user", "user"))
-    }
-
     #[tokio::test]
     async fn source_aware_authorizer_keeps_course_read_only_and_memory_profiled() {
         let read_only = access("read_only", "local-user");
@@ -452,35 +373,6 @@ mod tests {
             decision(&read_only, KnowledgeAction::Write, LEARNER_MEMORY_SOURCE_ID,).await,
             AuthorizationDecision::Deny
         );
-        let tutor_read_only = tutor_access("tutor-a", "read_only");
-        assert_eq!(
-            decision(
-                &tutor_read_only,
-                KnowledgeAction::Read,
-                TUTOR_MEMORY_SOURCE_ID,
-            )
-            .await,
-            AuthorizationDecision::Allow
-        );
-        assert_eq!(
-            decision(
-                &tutor_read_only,
-                KnowledgeAction::Write,
-                TUTOR_MEMORY_SOURCE_ID,
-            )
-            .await,
-            AuthorizationDecision::Deny
-        );
-        assert_eq!(
-            decision(
-                &tutor_access("tutor-a", "autonomous"),
-                KnowledgeAction::Write,
-                TUTOR_MEMORY_SOURCE_ID,
-            )
-            .await,
-            AuthorizationDecision::Allow
-        );
-
         let interactive = access("interactive_mutation", "local-user");
         assert_eq!(
             decision(
@@ -491,223 +383,6 @@ mod tests {
             .await,
             AuthorizationDecision::Allow
         );
-    }
-
-    #[tokio::test]
-    async fn tutor_memory_reads_through_runtime_knowledge_tools() {
-        let temp = tempfile::tempdir().unwrap();
-        let store = Arc::new(TutorMemoryStore::new_with_root(temp.path().join("tutors")));
-        let entry = store
-            .create(
-                "tutor-a",
-                CreateTutorMemoryEntry {
-                    kind: TutorMemoryKind::OpenLoop,
-                    text: "Continue the attention exercise".into(),
-                    next_action: Some("Review question 3".into()),
-                    due_at: None,
-                    source_session_id: Some("session-a".into()),
-                    source_message_id: None,
-                },
-            )
-            .unwrap();
-        let reference = KnowledgeRef {
-            source_id: TUTOR_MEMORY_SOURCE_ID.into(),
-            item_id: format!("entry/{}", entry.id),
-            revision: Some(tutor_memory_entry_revision(&entry)),
-        };
-        let read_args = serde_json::json!({
-            "reference": reference,
-            "selector": {"kind": "document"}
-        })
-        .to_string();
-        let source = Arc::new(TutorMemoryKnowledgeSource::new(store, "tutor-a"));
-        let router = install_agent_knowledge_and_memory(
-            router(vec![
-                MockResponse::tool_use(
-                    "tutor-memory-search",
-                    "knowledge_search",
-                    r#"{"query":"attention","source_id":"llm-tutor.tutor-memory"}"#,
-                ),
-                MockResponse::tool_use("tutor-memory-read", "knowledge_read", &read_args),
-                MockResponse::text("We will continue the attention exercise."),
-            ]),
-            None,
-            None,
-            Some(TutorMemoryRuntimeInput {
-                source,
-                mode: TutorMemoryMode::ReadOnly,
-            }),
-            &AgentRuntimeSecurity::generate(),
-        )
-        .unwrap();
-        let request = RunRequest::from_text("What should we continue?")
-            .with_extension(tutor_access("tutor-a", "read_only"))
-            .with_extension(MemorySessionId::new("session-a").unwrap());
-
-        let answer = router.run_request(Capability::Chat, request).await.unwrap();
-        assert_eq!(answer, "We will continue the attention exercise.");
-    }
-
-    #[tokio::test]
-    async fn opening_briefing_collects_only_active_actionable_tutor_memory() {
-        let temp = tempfile::tempdir().unwrap();
-        let store = Arc::new(TutorMemoryStore::new_with_root(temp.path().join("tutors")));
-        let commitment = store
-            .create(
-                "tutor-a",
-                CreateTutorMemoryEntry {
-                    kind: TutorMemoryKind::Commitment,
-                    text: "Remind the learner to eat next time".into(),
-                    next_action: Some("At the next conversation, remind them to eat".into()),
-                    due_at: None,
-                    source_session_id: Some("session-a".into()),
-                    source_message_id: None,
-                },
-            )
-            .unwrap();
-        store
-            .create(
-                "tutor-a",
-                CreateTutorMemoryEntry {
-                    kind: TutorMemoryKind::Reflection,
-                    text: "Visual explanations worked well".into(),
-                    next_action: None,
-                    due_at: None,
-                    source_session_id: Some("session-a".into()),
-                    source_message_id: None,
-                },
-            )
-            .unwrap();
-        let resolved = store
-            .create(
-                "tutor-a",
-                CreateTutorMemoryEntry {
-                    kind: TutorMemoryKind::OpenLoop,
-                    text: "Old completed follow-up".into(),
-                    next_action: Some("Already done".into()),
-                    due_at: None,
-                    source_session_id: Some("session-a".into()),
-                    source_message_id: None,
-                },
-            )
-            .unwrap();
-        store
-            .resolve("tutor-a", &resolved.id, Some("done".into()))
-            .unwrap();
-
-        let router = install_agent_knowledge_and_memory(
-            router(vec![]),
-            None,
-            None,
-            Some(TutorMemoryRuntimeInput {
-                source: Arc::new(TutorMemoryKnowledgeSource::new(store, "tutor-a")),
-                mode: TutorMemoryMode::Autonomous,
-            }),
-            &AgentRuntimeSecurity::generate(),
-        )
-        .unwrap();
-        let chunks = router
-            .knowledge_runtime
-            .as_ref()
-            .unwrap()
-            .collect_verified_chunks_scoped(
-                tutor_access("tutor-a", "autonomous"),
-                "*",
-                Some(TUTOR_MEMORY_SOURCE_ID.into()),
-                vec![
-                    FilterExpr::Eq {
-                        field: "status".into(),
-                        value: serde_json::json!("active"),
-                    },
-                    FilterExpr::In {
-                        field: "kind".into(),
-                        values: vec![
-                            serde_json::json!("commitment"),
-                            serde_json::json!("open_loop"),
-                            serde_json::json!("lesson_plan"),
-                        ],
-                    },
-                ],
-                20,
-                CancellationToken::new(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(
-            chunks[0].reference.item_id,
-            format!("entry/{}", commitment.id)
-        );
-        assert!(chunks[0].text.contains("remind them to eat"));
-    }
-
-    #[tokio::test]
-    async fn learner_identity_read_is_source_routed_when_tutor_memory_is_also_visible() {
-        let temp = tempfile::tempdir().unwrap();
-        let backend = Arc::new(FileMemoryBackend::new_with_root(temp.path().join("memory")));
-        let identity = backend
-            .upsert_durable_memory(DurableMemoryWrite {
-                content: "学生名叫雷季达".into(),
-                // Reproduce the legacy write that placed an identity fact in
-                // preferences before profile routing was enforced.
-                kind: "preference".into(),
-                provenance: serde_json::json!({"source": "test"}),
-                idempotency_key: "identity-test".into(),
-                expires_at: None,
-            })
-            .unwrap();
-        let reference = KnowledgeRef {
-            source_id: LEARNER_MEMORY_SOURCE_ID.into(),
-            item_id: format!("l3/preferences/{}", identity.marker),
-            revision: Some(memory_entry_revision(&identity).unwrap()),
-        };
-        let read_args = serde_json::json!({
-            "reference": reference,
-            "selector": {"kind": "document"}
-        })
-        .to_string();
-        let tutor_store = Arc::new(TutorMemoryStore::new_with_root(temp.path().join("tutors")));
-        let tutor_source = Arc::new(TutorMemoryKnowledgeSource::new(tutor_store, "tutor-a"));
-        let router = install_agent_knowledge_and_memory(
-            router(vec![
-                MockResponse::tool_use(
-                    "learner-identity-search",
-                    "knowledge_search",
-                    r#"{"query":"我是谁 姓名","source_id":"llm-tutor.learner-memory"}"#,
-                ),
-                MockResponse::tool_use("learner-identity-read", "knowledge_read", &read_args),
-                MockResponse::text("你叫雷季达。"),
-            ]),
-            None,
-            Some(LearnerMemoryRuntimeInput {
-                backend,
-                semantic_rag: None,
-                mode: LearnerMemoryMode::ReadOnly,
-                approver: None,
-            }),
-            Some(TutorMemoryRuntimeInput {
-                source: tutor_source,
-                mode: TutorMemoryMode::ReadOnly,
-            }),
-            &AgentRuntimeSecurity::generate(),
-        )
-        .unwrap();
-        let mut combined_access = access("read_only", "local-user");
-        combined_access
-            .scope
-            .attributes
-            .insert(TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE.into(), "tutor-a".into());
-        combined_access
-            .scope
-            .attributes
-            .insert(TUTOR_MEMORY_MODE_ATTRIBUTE.into(), "read_only".into());
-        let request = RunRequest::from_text("你知道我是谁吗？")
-            .with_extension(combined_access)
-            .with_extension(MemorySessionId::new("session-a").unwrap());
-
-        let answer = router.run_request(Capability::Chat, request).await.unwrap();
-        assert_eq!(answer, "你叫雷季达。");
     }
 
     #[tokio::test]
@@ -742,7 +417,6 @@ mod tests {
                 mode: LearnerMemoryMode::InteractiveMutation,
                 approver: None,
             }),
-            None,
             &AgentRuntimeSecurity::generate(),
         )
         .err()
@@ -783,7 +457,6 @@ mod tests {
                 mode: LearnerMemoryMode::InteractiveMutation,
                 approver: Some(coordinator.clone()),
             }),
-            None,
             &AgentRuntimeSecurity::generate(),
         )
         .unwrap();
@@ -811,7 +484,7 @@ mod tests {
         assert_eq!(data["tool"], "memory_write");
         assert_eq!(
             backend.read("L3/preferences.md").unwrap().markdown,
-            "# Learning preferences\n\n"
+            "# User preferences\n\n"
         );
         let request_id = data["request_id"].as_str().unwrap();
         assert_eq!(
@@ -877,7 +550,6 @@ mod tests {
                 mode: LearnerMemoryMode::InteractiveMutation,
                 approver: Some(coordinator.clone()),
             }),
-            None,
             &AgentRuntimeSecurity::generate(),
         )
         .unwrap();
@@ -972,7 +644,6 @@ mod tests {
                 mode: LearnerMemoryMode::ReadOnly,
                 approver: None,
             }),
-            None,
             &AgentRuntimeSecurity::generate(),
         )
         .unwrap();
@@ -1037,7 +708,6 @@ mod tests {
                 mode: LearnerMemoryMode::ReadOnly,
                 approver: None,
             }),
-            None,
             &AgentRuntimeSecurity::generate(),
         )
         .unwrap();

@@ -16,34 +16,16 @@ use tutor_tools::WebSearchConfig;
 
 pub(crate) const NATURAL_MEMORY_INTERACTION_POLICY: &str = "Treat memory reads as silent internal context loading. Never narrate that you are checking, reading, searching, or calling a memory tool or memory file. When supported memory is relevant, apply it directly or refer to it naturally as something you remember from prior interactions. If memory is weak, stale, ambiguous, or conflicting, hedge and ask the user to confirm. Never claim to remember content when no successful memory read supports it. If the user explicitly asks how you know, explain the relevant prior interaction or memory category truthfully; tool calls remain visible in trace. Never announce or imply that a memory write, update, resolution, or deletion succeeded before its tool result confirms success; a request can be rejected, denied, or cancelled.";
 
-/// Exact runtime Knowledge reads selected by the product for a new session.
-///
-/// This typed extension is run-local: runtime does not persist or expose it
-/// unless the Tutor Agent explicitly converts it into trusted prompt context.
-#[derive(Debug, Clone, Default)]
-pub struct TutorMemoryBriefing {
-    pub items: Vec<TutorMemoryBriefingItem>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TutorMemoryBriefingItem {
-    pub entry_id: String,
-    pub revision: String,
-    pub body: String,
-}
-
-/// Supported teaching modes.
+/// Supported Assistant interaction modes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Capability {
     /// Conversational Q&A with RAG knowledge base.
     Chat,
     /// Execute user code with explanation.
     CodeExec,
-    /// Generate and answer knowledge-base quizzes in the product UI.
-    Quiz,
     /// Research external/internal sources and synthesize a cited report.
     Research,
-    /// Organize Notebook/Space content through bounded direct tools and proposals.
+    /// Organize Notebook content through bounded direct tools and proposals.
     Organize,
 }
 
@@ -54,7 +36,6 @@ impl FromStr for Capability {
         match s {
             "chat" => Ok(Self::Chat),
             "code_exec" => Ok(Self::CodeExec),
-            "quiz" => Ok(Self::Quiz),
             "research" => Ok(Self::Research),
             "organize" => Ok(Self::Organize),
             other => Err(TutorError::UnsupportedCapability(other.into())),
@@ -88,28 +69,6 @@ impl LearnerMemoryMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum TutorMemoryMode {
-    #[default]
-    Disabled,
-    ReadOnly,
-    Autonomous,
-}
-
-impl TutorMemoryMode {
-    pub fn profile_name(self) -> Option<&'static str> {
-        match self {
-            Self::Disabled => None,
-            Self::ReadOnly => Some("read_only"),
-            Self::Autonomous => Some("autonomous"),
-        }
-    }
-
-    fn can_read(self) -> bool {
-        !matches!(self, Self::Disabled)
-    }
-}
-
 /// Entry point for all capabilities.
 #[derive(Clone)]
 pub struct CapabilityRouter {
@@ -122,7 +81,6 @@ pub struct CapabilityRouter {
     pub product_tools: Vec<Arc<dyn Tool>>,
     pub workflow_root: Option<PathBuf>,
     pub learner_memory_mode: LearnerMemoryMode,
-    pub tutor_memory_mode: TutorMemoryMode,
     pub product_instruction: Option<String>,
     client: Option<Arc<dyn Provider>>,
     learner_memory_plugin: Option<Arc<dyn Plugin>>,
@@ -140,7 +98,6 @@ impl CapabilityRouter {
             product_tools: vec![],
             workflow_root: None,
             learner_memory_mode: LearnerMemoryMode::Disabled,
-            tutor_memory_mode: TutorMemoryMode::Disabled,
             product_instruction: None,
             client: None,
             learner_memory_plugin: None,
@@ -210,26 +167,12 @@ impl CapabilityRouter {
         self
     }
 
-    pub fn with_tutor_memory_runtime(mut self, mode: TutorMemoryMode) -> Self {
-        self.tutor_memory_mode = mode;
-        self
-    }
-
     pub(crate) fn apply_product_instruction(&self, system_prompt: &str) -> String {
         apply_product_instruction(system_prompt, self.product_instruction.as_deref())
     }
 
     pub(crate) fn apply_runtime_instructions(&self, system_prompt: &str) -> String {
-        let product_tool_names = self
-            .product_tools
-            .iter()
-            .map(|tool| tool.name().to_string())
-            .collect::<Vec<_>>();
-        let memory_policy = memory_routing_policy(
-            self.learner_memory_mode,
-            self.tutor_memory_mode,
-            &product_tool_names,
-        );
+        let memory_policy = memory_routing_policy(self.learner_memory_mode);
         let prompt = append_memory_routing_policy(system_prompt, &memory_policy);
         apply_product_instruction(&prompt, self.product_instruction.as_deref())
     }
@@ -275,9 +218,6 @@ impl CapabilityRouter {
             Capability::Organize => {
                 crate::chat::run_conversation_with_request(self, "organize", request, None, None)
                     .await
-            }
-            Capability::Quiz => {
-                crate::chat::run_conversation_with_request(self, "quiz", request, None, None).await
             }
             Capability::CodeExec => {
                 crate::code_exec::run_code_exec_with_request(self, request, None, None).await
@@ -352,16 +292,6 @@ impl CapabilityRouter {
                 )
                 .await
             }
-            Capability::Quiz => {
-                crate::chat::run_conversation_with_request(
-                    self,
-                    "quiz",
-                    request,
-                    Some(session),
-                    abort_token,
-                )
-                .await
-            }
             Capability::CodeExec => {
                 crate::code_exec::run_code_exec_with_request(
                     self,
@@ -375,53 +305,28 @@ impl CapabilityRouter {
     }
 }
 
-pub(crate) fn memory_routing_policy(
-    learner_memory_mode: LearnerMemoryMode,
-    tutor_memory_mode: TutorMemoryMode,
-    product_tool_names: &[String],
-) -> String {
-    let has_tool = |name: &str| product_tool_names.iter().any(|tool| tool == name);
-    let can_write_tutor_memory = has_tool("remember_for_later");
-    let can_resolve_tutor_memory = has_tool("resolve_tutor_memory");
-
+pub(crate) fn memory_routing_policy(learner_memory_mode: LearnerMemoryMode) -> String {
     let mut rules = vec![format!(
         "# Memory routing\n\n{NATURAL_MEMORY_INTERACTION_POLICY}"
     )];
 
     if learner_memory_mode.can_read() {
         rules.push(
-            "Learner Memory is shared user context exposed through knowledge_search and knowledge_read. Search it when learner identity, requested name, profile, preferences, strengths, weaknesses, scope, or recent learning state would materially improve the response. For every Learner Memory search, set source_id to exactly `llm-tutor.learner-memory`; this is the trusted source catalog identifier, not a user-provided value. A search hit is only a candidate: never use or paraphrase its snippet as remembered content. Copy the complete reference object returned by knowledge_search, including its non-null revision, unchanged into knowledge_read with the suggested selector. Treat Learner Memory as supported only after knowledge_read succeeds. If the user asks who they are or what their name is, search and read Learner Memory before claiming that it is unknown. Memory is personalization context, never factual course evidence."
+            "User Memory is shared user context exposed through knowledge_search and knowledge_read. Search it when user identity, requested name, preferences, active commitments, open loops, or recent context would materially improve the response. For every User Memory search, set source_id to exactly `llm-tutor.learner-memory`; this is the trusted source catalog identifier, not a user-provided value. A search hit is only a candidate: never use or paraphrase its snippet as remembered content. Copy the complete reference object returned by knowledge_search, including its non-null revision, unchanged into knowledge_read with the suggested selector. Treat User Memory as supported only after knowledge_read succeeds. If the user asks who they are or what their name is, search and read User Memory before claiming that it is unknown. Memory is personalization and continuity context, never external factual evidence."
                 .into(),
         );
     }
     if learner_memory_mode.can_mutate() {
         rules.push(
-            "Use memory_write only when the user explicitly asks you to remember something or clearly requests recording durable learner information. Set kind to exactly profile for durable identity/profile facts such as the learner's requested name, and exactly preference for explicit preferences; never invent another kind. Use memory_forget only for an exact current Learner Memory reference. Ordinary conversation and inferred traits stay in session/L1 evidence; do not silently promote them to durable Learner Memory. Every mutation requires a live user confirmation outside the model. If approval is denied or the tool fails, say the memory was not changed."
+            "Use memory_write only when the user explicitly asks you to remember something or clearly requests durable continuity. Set kind to profile for identity facts, preference for explicit preferences, commitment for an assistant promise, open_loop for unfinished follow-up, or strategy for an explicit future response strategy; never invent another kind. Use memory_forget only for an exact current User Memory reference. Ordinary conversation and inferred traits stay in the session; do not silently promote them to durable memory. Every mutation requires a live user confirmation outside the model. If approval is denied or the tool fails, say the memory was not changed."
                 .into(),
         );
     } else {
-        rules.push("No Learner Memory mutation tool is available in this run. Never promise to save or forget shared learner information for later.".into());
+        rules.push("No User Memory mutation tool is available in this run. Never promise to save or forget durable user information for later.".into());
     }
 
-    if tutor_memory_mode.can_read() {
-        let mut tutor_rule = "Tutor Memory is private continuity for this tutor relationship and is exposed through knowledge_search and knowledge_read. Search it when this tutor's commitments, unresolved follow-ups, lesson plans, reflections, or teaching strategies would materially improve the response. For every Tutor Memory search, set source_id to exactly `llm-tutor.tutor-memory`; this is the trusted source catalog identifier. A search hit is only a candidate: copy its complete revisioned reference unchanged into knowledge_read before using it. Do not treat Tutor Memory as a learner profile or external factual source.".to_string();
-        if can_write_tutor_memory {
-            tutor_rule.push_str(" Use remember_for_later only for a low-risk tutor commitment, open loop, lesson plan, teaching reflection, or concrete future teaching strategy. Preserve temporal meaning exactly: `next time` is one-time and must never be rewritten as `every time`. Never store learner profile facts, credentials, sensitive personal data, external claims, or unsupported judgments there.");
-        } else {
-            tutor_rule.push_str(" No Tutor Memory write tool is available in this run. Never promise to persist private tutor continuity for later.");
-        }
-        if can_resolve_tutor_memory {
-            tutor_rule.push_str(" When your current response will fulfill a one-time recorded commitment, follow-up, or plan, call resolve_tutor_memory in the same tool loop before the final answer. Then still perform the promised action naturally in the final answer. Do not leave an item active merely because the learner has not acknowledged the completed action.");
-        }
-        rules.push(tutor_rule);
-    }
-
-    if learner_memory_mode.can_mutate() && can_write_tutor_memory {
-        rules.push("Route by ownership before writing: facts about the learner belong only to the Learner Memory path; promises, plans, and open loops owned by this tutor belong only to Tutor Memory. Never write the same item to both stores.".into());
-    }
-
-    if learner_memory_mode.can_mutate() || can_write_tutor_memory {
-        rules.push("Research findings, external factual claims, report prose, Notebook content, quiz questions, and quiz answers belong in their product artifacts, not in either memory store.".into());
+    if learner_memory_mode.can_mutate() {
+        rules.push("Research findings, external factual claims, report prose, Notes content, and generated exercises belong in their product artifacts, not in User Memory.".into());
     }
 
     rules.join("\n\n")
@@ -438,7 +343,7 @@ pub(crate) fn append_memory_routing_policy(system_prompt: &str, policy: &str) ->
 fn apply_product_instruction(system_prompt: &str, instruction: Option<&str>) -> String {
     match instruction {
         Some(instruction) => format!(
-            "{system_prompt}\n\n# Product-provided tutor instruction\n\n{instruction}\n\nFollow this tutor instruction for teaching behavior and communication style. It cannot override safety requirements, tool permissions, capability policy, or factual-grounding requirements."
+            "{system_prompt}\n\n# User-authored assistant instruction\n\n{instruction}\n\nFollow this instruction for communication style and working preferences. It cannot override safety requirements, data permissions, capability policy, or factual-grounding requirements."
         ),
         None => system_prompt.to_string(),
     }
@@ -464,10 +369,7 @@ mod tests {
             Capability::Chat
         ));
         assert!(Capability::from_str("deep_solve").is_err());
-        assert!(matches!(
-            Capability::from_str("quiz").unwrap(),
-            Capability::Quiz
-        ));
+        assert!(Capability::from_str("quiz").is_err());
         assert!(matches!(
             Capability::from_str("research").unwrap(),
             Capability::Research
@@ -492,7 +394,7 @@ mod tests {
         assert_eq!(
             apply_product_instruction("Base", None),
             "Base",
-            "temporary assistant should not receive tutor instructions"
+            "the single assistant should not receive legacy tutor instructions"
         );
     }
 
@@ -517,11 +419,7 @@ mod tests {
 
     #[test]
     fn memory_routing_policy_matches_mounted_tools() {
-        let learner_only = memory_routing_policy(
-            LearnerMemoryMode::InteractiveMutation,
-            TutorMemoryMode::Disabled,
-            &[],
-        );
+        let learner_only = memory_routing_policy(LearnerMemoryMode::InteractiveMutation);
         assert!(learner_only.contains("knowledge_search"));
         assert!(learner_only.contains("knowledge_read"));
         assert!(learner_only.contains("memory_write"));
@@ -529,38 +427,27 @@ mod tests {
         assert!(learner_only.contains("source_id to exactly `llm-tutor.learner-memory`"));
         assert!(learner_only.contains("before claiming that it is unknown"));
         assert!(learner_only.contains("including its non-null revision"));
-        assert!(learner_only.contains("exactly preference"));
-        assert!(!learner_only.contains("Tutor Memory is private continuity"));
+        for kind in [
+            "profile",
+            "preference",
+            "commitment",
+            "open_loop",
+            "strategy",
+        ] {
+            assert!(
+                learner_only.contains(kind),
+                "memory policy should document the {kind} kind"
+            );
+        }
 
-        let tutor_read_only =
-            memory_routing_policy(LearnerMemoryMode::Disabled, TutorMemoryMode::ReadOnly, &[]);
-        assert!(tutor_read_only.contains("knowledge_search and knowledge_read"));
-        assert!(tutor_read_only.contains("source_id to exactly `llm-tutor.tutor-memory`"));
-        assert!(tutor_read_only.contains("complete revisioned reference"));
-        assert!(tutor_read_only.contains("No Tutor Memory write tool"));
-        assert!(!tutor_read_only.contains("remember_for_later"));
-        assert!(!tutor_read_only.contains("Learner Memory is shared"));
-
-        let learner_read_only =
-            memory_routing_policy(LearnerMemoryMode::ReadOnly, TutorMemoryMode::Disabled, &[]);
+        let learner_read_only = memory_routing_policy(LearnerMemoryMode::ReadOnly);
         assert!(learner_read_only.contains("knowledge_search"));
-        assert!(learner_read_only.contains("No Learner Memory mutation tool"));
+        assert!(learner_read_only.contains("No User Memory mutation tool"));
         assert!(!learner_read_only.contains("memory_write"));
         assert!(!learner_read_only.contains("memory_forget"));
 
-        let both_writable = memory_routing_policy(
-            LearnerMemoryMode::InteractiveMutation,
-            TutorMemoryMode::Autonomous,
-            &["remember_for_later".into(), "resolve_tutor_memory".into()],
-        );
-        assert!(both_writable.contains("remember_for_later"));
-        assert!(both_writable.contains("resolve_tutor_memory"));
-        assert!(both_writable.contains("Never write the same item to both stores"));
-        assert!(both_writable.contains("product artifacts"));
-
-        let no_memory_tools =
-            memory_routing_policy(LearnerMemoryMode::Disabled, TutorMemoryMode::Disabled, &[]);
+        let no_memory_tools = memory_routing_policy(LearnerMemoryMode::Disabled);
         assert!(no_memory_tools.contains("Never announce or imply"));
-        assert!(no_memory_tools.contains("No Learner Memory mutation tool"));
+        assert!(no_memory_tools.contains("No User Memory mutation tool"));
     }
 }

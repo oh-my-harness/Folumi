@@ -636,7 +636,7 @@ fn maintenance_knowledge_runtime(
         agent_knowledge_access_control(),
         runtime_security.evidence_authority(),
         tutor_agent::agent_knowledge_evidence_provider_id(),
-        agent_knowledge_citation_policy(false, true, false).map_err(|error| error.to_string())?,
+        agent_knowledge_citation_policy(false, true).map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())?;
     let access = maintenance_access_context(target_path, run_id)?;
@@ -656,7 +656,7 @@ fn maintenance_access_context(
         .strip_prefix("L2/")
         .and_then(|path| path.strip_suffix(".md"))
     {
-        if !matches!(surface, "chat" | "quiz" | "notebook" | "knowledge") {
+        if !matches!(surface, "chat" | "notebook" | "knowledge") {
             return Err(format!("unsupported L2 maintenance target `{target_path}`"));
         }
         ("l1".to_string(), surface.to_string(), "recent".to_string())
@@ -717,12 +717,9 @@ fn maintenance_access_context(
 fn l3_source_paths(target_path: &str) -> Vec<String> {
     let paths = match target_path {
         "L3/preferences.md" => vec!["L2/chat.md", "L2/notebook.md"],
-        "L3/profile.md" | "L3/scope.md" | "L3/recent.md" | "L3/teaching_strategy.md" => vec![
-            "L2/chat.md",
-            "L2/quiz.md",
-            "L2/notebook.md",
-            "L2/knowledge.md",
-        ],
+        "L3/profile.md" | "L3/scope.md" | "L3/recent.md" | "L3/teaching_strategy.md" => {
+            vec!["L2/chat.md", "L2/notebook.md", "L2/knowledge.md"]
+        }
         _ => Vec::new(),
     };
     paths.into_iter().map(str::to_string).collect()
@@ -1150,7 +1147,7 @@ mod tests {
         );
         assert_eq!(
             profile.scope.attributes[LEARNER_MEMORY_SURFACES_ATTRIBUTE],
-            "chat,quiz,notebook,knowledge"
+            "chat,notebook,knowledge"
         );
 
         let recent = maintenance_access_context("L3/recent.md", "run-recent").unwrap();
@@ -1162,6 +1159,10 @@ mod tests {
             maintenance_access_context("L2/../../secret.md", "forged").is_err(),
             "raw paths must never expand the maintenance scope"
         );
+        assert!(
+            maintenance_access_context("L2/quiz.md", "retired").is_err(),
+            "retired Quiz memory must not remain an active maintenance target"
+        );
     }
 
     #[tokio::test]
@@ -1170,18 +1171,18 @@ mod tests {
         let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let event = store
             .record_event(
-                crate::memory_store::MemoryEventCategory::Quiz,
-                "answered",
-                "Learner repeatedly confused vector direction.",
-                Some("quiz-session".into()),
+                crate::memory_store::MemoryEventCategory::Chat,
+                "message",
+                "User repeatedly asked for visual vector explanations.",
+                Some("chat-session".into()),
                 serde_json::json!({"topic": "vectors"}),
             )
             .unwrap();
-        let file = store.read("L2/quiz.md").unwrap();
-        let canonical_reference = format!("quiz:{}", event.id);
+        let file = store.read("L2/chat.md").unwrap();
+        let canonical_reference = format!("chat:{}", event.id);
         let reference = llm_harness_runtime_knowledge::KnowledgeRef {
             source_id: crate::learner_memory_source::LEARNER_MEMORY_SOURCE_ID.into(),
-            item_id: format!("l1/quiz/{}", event.id),
+            item_id: format!("l1/chat/{}", event.id),
             revision: Some(crate::memory_store::memory_revision(
                 &serde_json::to_string(&event).unwrap(),
             )),
@@ -1197,12 +1198,12 @@ mod tests {
             "changes": [{
                 "id": "change_1",
                 "op": "insert",
-                "section": "Weak topics",
+                "section": "Topics",
                 "entry_id": null,
                 "after_entry_id": null,
-                "text": "Needs more practice with vector direction.",
+                "text": "Prefers visual explanations for vector direction.",
                 "refs": [canonical_reference],
-                "reason": "Repeated quiz evidence"
+                "reason": "Repeated chat evidence"
             }]
         })
         .to_string();
@@ -1252,7 +1253,7 @@ mod tests {
         assert_eq!(change_set.changes.len(), 1);
         assert_eq!(
             change_set.changes[0].refs,
-            vec![format!("quiz:{}", event.id)]
+            vec![format!("chat:{}", event.id)]
         );
     }
 
@@ -1320,7 +1321,7 @@ mod tests {
     #[test]
     fn collects_unread_workflow_refs_once_for_evidence_repair() {
         let tracker = MemoryEvidenceTracker::default();
-        tracker.record_test_reference("quiz:read");
+        tracker.record_test_reference("chat:read");
         let output = serde_json::from_value::<tutor_agent::memory::MemoryWorkflowOutput>(
             serde_json::json!({
                 "summary": "draft",
@@ -1331,7 +1332,7 @@ mod tests {
                     "entry_id": null,
                     "after_entry_id": null,
                     "text": "RAG",
-                    "refs": ["quiz:read", "quiz:unread"],
+                    "refs": ["chat:read", "chat:unread"],
                     "reason": "test"
                 }],
                 "findings": [{
@@ -1340,34 +1341,34 @@ mod tests {
                     "severity": "warning",
                     "kind": "evidence",
                     "message": "needs repair",
-                    "refs": ["quiz:unread"]
+                    "refs": ["chat:unread"]
                 }]
             }),
         )
         .unwrap();
 
-        assert_eq!(unread_workflow_refs(&output, &tracker), vec!["quiz:unread"]);
+        assert_eq!(unread_workflow_refs(&output, &tracker), vec!["chat:unread"]);
     }
 
     #[test]
     fn repair_input_requires_missing_refs_to_be_read_or_removed() {
         let input = tutor_agent::memory::MemoryWorkflowInput {
-            target_path: "L2/quiz.md".into(),
+            target_path: "L2/chat.md".into(),
             action: tutor_agent::memory::MemoryWorkflowAction::Update,
             output_language: MemoryOutputLanguage::ZhCn,
-            current_markdown: "# Quiz memory".into(),
-            consolidation_input_json: serde_json::json!({ "target": { "path": "L2/quiz.md" } })
+            current_markdown: "# Chat memory".into(),
+            consolidation_input_json: serde_json::json!({ "target": { "path": "L2/chat.md" } })
                 .to_string(),
         };
 
-        let repaired = evidence_repair_input(&input, &["quiz:unread".into()]).unwrap();
+        let repaired = evidence_repair_input(&input, &["chat:unread".into()]).unwrap();
         let context =
             serde_json::from_str::<serde_json::Value>(&repaired.consolidation_input_json).unwrap();
 
         assert_eq!(context["validationFeedback"]["repairAttempt"], 1);
         assert_eq!(
             context["validationFeedback"]["unreadRefs"],
-            serde_json::json!(["quiz:unread"])
+            serde_json::json!(["chat:unread"])
         );
         assert!(
             context["validationFeedback"]["requiredAction"]
@@ -1643,11 +1644,11 @@ mod tests {
         let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         store
             .record_event(
-                crate::memory_store::MemoryEventCategory::Quiz,
-                "answered",
-                "Answered OPC question correctly",
-                Some("quiz-1".into()),
-                serde_json::json!({ "question_id": "q1" }),
+                crate::memory_store::MemoryEventCategory::Chat,
+                "message",
+                "Asked for a concise OPC explanation",
+                Some("chat-1".into()),
+                serde_json::json!({ "topic": "opc" }),
             )
             .unwrap();
         let app = memory_router(
@@ -1660,7 +1661,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri("/api/memory/source?reference=quiz%3Aquiz-1")
+                    .uri("/api/memory/source?reference=chat%3Achat-1")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1669,10 +1670,10 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["source"]["reference"], "quiz:quiz-1");
+        assert_eq!(body["source"]["reference"], "chat:chat-1");
         assert_eq!(
             body["source"]["event"]["summary"],
-            "Answered OPC question correctly"
+            "Asked for a concise OPC explanation"
         );
     }
 

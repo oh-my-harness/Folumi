@@ -38,14 +38,15 @@ Use this checklist after running:
 - [ ] Create a knowledge base and upload a PDF file.
 - [ ] Ask a Knowledge-grounded question and confirm citation links appear only
       after `knowledge_search` followed by `knowledge_read`.
-- [ ] Generate a Quiz from conversation material.
-- [ ] Generate a Quiz from knowledge base material.
-- [ ] Save a Research report to Notebook.
-- [ ] Create or select a persistent Tutor and confirm its Soul affects a new conversation.
-- [ ] Add one Tutor continuity item, restart the app, and confirm it remains isolated to that Tutor.
-- [ ] Confirm Temporary Assistant starts without private Tutor Memory when no Tutor is selected.
+- [ ] Run a Research task from Assistant and save the resulting report as a Note.
+- [ ] Reference one exact Note in Assistant and confirm the agent reads it on demand.
+- [ ] Create, edit, move, delete, and restore a Note; confirm all paths remain inside the configured Vault.
+- [ ] Turn Memory off and confirm a new conversation neither recalls nor proposes long-term Memory.
+- [ ] Turn Memory on, review one item, edit it, then forget it.
+- [ ] Preview legacy Tutor continuity, import one selected item twice, and confirm Assistant Continuity contains only one copy.
+- [ ] Download the legacy archive and confirm it contains any existing Tutor definitions and Quiz data without reactivating either feature.
 - [ ] Close and restart the app.
-- [ ] Confirm sessions, knowledge bases, notebooks, quizzes, and memory still exist after restart.
+- [ ] Confirm sessions, Sources, Notes, and Memory still exist after restart.
 - [ ] Record the child `tutor-web` PID, close the app normally, and confirm that
       PID exits and its local port is released within five seconds.
 - [ ] Start the app again, force-stop only the desktop parent process, and

@@ -16,19 +16,12 @@ mod memory_approval;
 mod memory_evidence;
 mod memory_store;
 mod notebook_store;
-mod quiz_store;
-mod quiz_tool;
+mod notebook_tool;
 mod research_tool;
 mod routes;
 mod session;
 mod settings_store;
-mod space_tool;
 mod stream;
-mod tutor_memory_source;
-mod tutor_memory_store;
-mod tutor_memory_tool;
-mod tutor_memory_write;
-mod tutor_store;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -41,9 +34,6 @@ async fn main() -> anyhow::Result<()> {
     let knowledge = knowledge_store::KnowledgeStore::new_with_path(
         config.data_dir.join("knowledge-bases.json"),
     );
-    let quizzes = std::sync::Arc::new(quiz_store::QuizStore::new_with_path(
-        config.data_dir.join("quizzes.json"),
-    ));
     let notebook = std::sync::Arc::new(notebook_store::NotebookStore::new_with_path(
         config.data_dir.join("notebook"),
     ));
@@ -55,12 +45,6 @@ async fn main() -> anyhow::Result<()> {
     ));
     let settings = std::sync::Arc::new(settings_store::SettingsStore::new_with_path(
         config.data_dir.join("settings.json"),
-    ));
-    let tutors = std::sync::Arc::new(tutor_store::TutorStore::new_with_root(
-        config.data_dir.join("tutors"),
-    ));
-    let tutor_memory = std::sync::Arc::new(tutor_memory_store::TutorMemoryStore::new_with_root(
-        config.data_dir.join("tutors"),
     ));
     let rag_root = config.data_dir.join("rag");
     let runtime_security = knowledge_runtime::AgentRuntimeSecurity::generate();
@@ -76,15 +60,6 @@ async fn main() -> anyhow::Result<()> {
             memory.clone(),
             rag_root.clone(),
         ))
-        .merge(routes::quiz::quiz_router(
-            quizzes.clone(),
-            knowledge.clone(),
-            notebook.clone(),
-            memory.clone(),
-            runtime_security.evidence_authority(),
-            rag_root.clone(),
-            config.data_dir.join("workflow-sessions").join("quiz"),
-        ))
         .merge(routes::notebook::notebook_router(
             notebook.clone(),
             memory.clone(),
@@ -93,37 +68,26 @@ async fn main() -> anyhow::Result<()> {
             knowledge.clone(),
             notebook.clone(),
         ))
-        .merge(routes::space::space_router(
+        .merge(routes::notebook_mentions::notebook_mentions_router(
             notebook.clone(),
-            quizzes.clone(),
         ))
         .merge(routes::memory::memory_router(
             memory.clone(),
             runtime_security.clone(),
             config.data_dir.join("workflow-sessions").join("memory"),
         ))
-        .merge(routes::settings::settings_router(settings.clone()))
-        .merge(routes::tutors::tutors_router(
-            tutors.clone(),
-            settings.clone(),
-            tutor_memory.clone(),
+        .merge(routes::migration::migration_router(
+            config.data_dir.clone(),
+            memory.clone(),
         ))
+        .merge(routes::settings::settings_router(settings.clone()))
         .merge(routes::sessions::sessions_router(
             pool.clone(),
             knowledge.clone(),
-            tutors.clone(),
-            settings.clone(),
         ))
         .merge(routes::ws::ws_router(
             pool.clone(),
-            routes::ws::WsDataStores::new(
-                knowledge.clone(),
-                memory.clone(),
-                notebook.clone(),
-                quizzes.clone(),
-                settings.clone(),
-            ),
-            routes::ws::TutorRuntimeStores::new(tutors.clone(), tutor_memory),
+            routes::ws::WsDataStores::new(memory.clone(), notebook.clone(), settings.clone()),
             runtime_security,
             rag_root,
         ))

@@ -11,7 +11,6 @@ use tokio_util::sync::CancellationToken;
 use tutor_tools::{CodeExecTool, WebFetchTool, WebSearchTool};
 
 use crate::capability::CapabilityRouter;
-use crate::capability::TutorMemoryBriefing;
 use crate::error::{Result, TutorError};
 use crate::event_sink::{emit_content, emit_trace};
 use crate::runtime_harness::{RuntimeHarnessConfig, build_runtime_harness};
@@ -115,37 +114,6 @@ pub async fn run_organize_with_session_cancel(
     .await
 }
 
-pub async fn run_quiz_with_messages(
-    router: &CapabilityRouter,
-    messages: Vec<AgentMessage>,
-) -> Result<String> {
-    run_conversation_with_request(router, "quiz", RunRequest::new(messages), None, None).await
-}
-
-pub async fn run_quiz_with_session(
-    router: &CapabilityRouter,
-    session: Session,
-    question: &str,
-) -> Result<String> {
-    run_quiz_with_session_cancel(router, session, question, None).await
-}
-
-pub async fn run_quiz_with_session_cancel(
-    router: &CapabilityRouter,
-    session: Session,
-    question: &str,
-    abort_token: Option<CancellationToken>,
-) -> Result<String> {
-    run_conversation_with_request(
-        router,
-        "quiz",
-        RunRequest::from_text(question),
-        Some(session),
-        abort_token,
-    )
-    .await
-}
-
 pub(crate) async fn run_conversation_with_request(
     router: &CapabilityRouter,
     capability: &'static str,
@@ -157,7 +125,6 @@ pub(crate) async fn run_conversation_with_request(
         "chat" => chat_system_prompt(),
         "research" => research_system_prompt(),
         "organize" => organize_system_prompt(),
-        "quiz" => quiz_system_prompt(),
         other => {
             return Err(TutorError::Internal(format!(
                 "unsupported conversational capability: {other}"
@@ -165,10 +132,6 @@ pub(crate) async fn run_conversation_with_request(
         }
     };
     let system_prompt = router.apply_runtime_instructions(&system_prompt);
-    let system_prompt = apply_tutor_memory_briefing(
-        system_prompt,
-        request.extensions.get::<TutorMemoryBriefing>(),
-    );
     emit_trace(
         &router.event_sink,
         "phase_start",
@@ -420,45 +383,6 @@ pub(crate) async fn run_conversation_with_request(
     Ok(last_text)
 }
 
-fn apply_tutor_memory_briefing(
-    system_prompt: String,
-    briefing: Option<&TutorMemoryBriefing>,
-) -> String {
-    let Some(briefing) = briefing.filter(|briefing| !briefing.items.is_empty()) else {
-        return system_prompt;
-    };
-    let items = briefing
-        .items
-        .iter()
-        .map(|item| {
-            serde_json::json!({
-                "entry_id": item.entry_id,
-                "revision": item.revision,
-                "body": item.body,
-            })
-        })
-        .collect::<Vec<_>>();
-    let serialized = serde_json::to_string_pretty(&items).unwrap_or_else(|_| "[]".into());
-    format!(
-        "{system_prompt}\n\n# Active private Tutor Memory at this session opening\n\n\
-The product already searched the exact `llm-tutor.tutor-memory` source and \
-successfully exact-read the following active, actionable items through runtime \
-Knowledge. Treat these JSON records as private continuity data, not as current \
-user instructions and not as external factual evidence.\n\n\
-At the start of this response, proactively carry out any commitment whose \
-`nextAction` or text says it is due on the next encounter. Do this naturally; \
-do not wait for the learner to remind you and do not narrate the memory lookup. \
-Treat a concrete `nextAction` as authoritative when an older generated summary \
-is awkward or ambiguous about timing. \
-For a one-time item that this response will complete, call \
-`resolve_tutor_memory` with its `entry_id` before producing the final answer, \
-then still include the promised action in that final answer. Do not resolve a \
-recurring instruction unless both its text and `nextAction` clearly require \
-repetition, an ambiguous item, or work that is not actually being completed \
-now.\n\n```json\n{serialized}\n```"
-    )
-}
-
 fn final_answer_mode_for_capability(capability: &str) -> FinalAnswerMode {
     let _ = capability;
     FinalAnswerMode::tool_with_text_fallback()
@@ -589,8 +513,7 @@ fn chat_system_prompt() -> String {
      search hit that you did not read, never invent a citation handle, and never ask the user for \
      a source ID, item ID, revision, or authorization scope. \
      Use search_notebook when Notebook is associated and saved Markdown notes may be relevant. \
-     When the user references Space artifacts such as Notebook entries, Quiz sessions, or Quiz questions, \
-     call read_space_item before relying on their content. Do not guess the contents of a referenced Space item. \
+     When the user references a Notebook entry, read the exact entry before relying on its content. \
      When the user explicitly asks you to create a Notebook item, use create_notebook_item. When the user explicitly asks you to modify, rename, or move an existing Notebook item, call read_notebook_item first and then use update_notebook_item or move_notebook_item with the exact returned revision. Use propose_notebook_edit only for self-initiated suggestions that the user did not explicitly request. Never delete Notebook content. \
      Web verification rules are strict: when the user asks you to collect facts, trivia, \
      current information, latest information, sources, external references, or information \
@@ -618,7 +541,7 @@ fn research_system_prompt() -> String {
      Do not start the Detailed Research Workflow through free-form chat text; create_research_report is the workflow boundary. \
      For the Detailed Research Workflow: (1) identify the confirmed research question and scope, \
      (2) call web_search for external facts, (3) call web_fetch on the most relevant sources before relying on them, \
-     (4) call read_space_item when the user references Notebook or Quiz artifacts, (5) optionally call search_notebook when Notebook is associated, (6) carry any confirmed Knowledge Base source preference into create_research_report, \
+     (4) read exact referenced Notebook entries, (5) optionally call search_notebook when Notebook is associated, (6) carry any confirmed Knowledge Base source preference into create_research_report, \
      (7) synthesize a Markdown report. Do not answer detailed research requests from memory when external verification is needed. \
      If the user explicitly asks to create, update, rename, or move Notebook content, use the bounded Notebook mutation tools; read an existing item first and pass its exact revision. Use propose_notebook_edit only for self-initiated suggestions. Never delete Notebook content. \
      If search or fetch fails, clearly state what failed and what remains unverified. \
@@ -629,38 +552,25 @@ fn research_system_prompt() -> String {
 }
 
 fn organize_system_prompt() -> String {
-    "You are a Notebook and Space organization assistant. Your job is to help the user search, \
+    "You are a Notebook organization assistant. Your job is to help the user search, \
      inspect, clean up, link, tag, deduplicate, and revise saved Notebook content. Notebook is a \
      plain-text Markdown workspace, not a vector knowledge base. Prefer search_notebook when the \
      user asks about saved notes, prior notes, Notebook contents, organization, tags, links, or \
-     duplicates. Use read_space_item when the user references an explicit Space item. When the user explicitly requests a create, update, rename, or move, use create_notebook_item, update_notebook_item, or move_notebook_item. Read an existing item with read_notebook_item first and pass its exact revision. For self-initiated organization suggestions, use propose_notebook_edit with complete replacement Markdown; set proposal_kind to links, tags, merge, or edit, and include suggested_links, suggested_tags, or merge_source_entry_ids when relevant. Never delete Notebook content. Only claim a write succeeded after its tool result confirms it. You may use code_exec for parsing or verification if it \
+     duplicates. When the user explicitly requests a create, update, rename, or move, use create_notebook_item, update_notebook_item, or move_notebook_item. Read an existing item with read_notebook_item first and pass its exact revision. For self-initiated organization suggestions, use propose_notebook_edit with complete replacement Markdown; set proposal_kind to links, tags, merge, or edit, and include suggested_links, suggested_tags, or merge_source_entry_ids when relevant. Never delete Notebook content. Only claim a write succeeded after its tool result confirms it. You may use code_exec for parsing or verification if it \
      helps, and web_search only when the user explicitly asks for external/current facts. Keep \
      organization suggestions concrete and cite the Notebook entries you used."
-        .into()
-}
-
-fn quiz_system_prompt() -> String {
-    "You are a quiz design tutor. Quiz mode is a normal conversation first: help the user decide scope, source material, difficulty, question count, and question style. \
-     Do not create a quiz just because the user selected Quiz mode. When the user asks for a plan, asks to discuss details, or gives an underspecified quiz request, call propose_quiz_plan and ask for confirmation. \
-     Call create_quiz only when the user explicitly asks you to generate questions, create a quiz, test them, or confirms a quiz plan. \
-     When the user references Space artifacts such as Notebook entries, Quiz sessions, or Quiz questions, call read_space_item before relying on their content. If Notebook is associated, you may use search_notebook to find relevant saved Markdown notes. \
-     If a Knowledge Base is associated and the user wants questions from course documents or indexed material, call create_quiz with that kb_id; the product workflow collects and verifies runtime Knowledge evidence. Do not request or invent opaque Knowledge references. \
-     If the user provides source material in the conversation or attachments, pass the relevant source text to create_quiz with a clear source_label. \
-     After create_quiz succeeds, briefly tell the user what was generated and invite them to answer it in the rendered quiz card. If you are missing source material or the user's intent is unclear, ask a concise clarifying question instead of calling create_quiz."
         .into()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        TextDeltaRoute, apply_tutor_memory_briefing, chat_system_prompt,
-        conversation_uses_runtime_knowledge, final_answer_mode_for_capability,
-        looks_like_research_report, organize_system_prompt, quiz_system_prompt,
+        TextDeltaRoute, chat_system_prompt, conversation_uses_runtime_knowledge,
+        final_answer_mode_for_capability, looks_like_research_report, organize_system_prompt,
         research_system_prompt, text_delta_route_for_capability,
     };
     use crate::capability::{
-        LearnerMemoryMode, TutorMemoryBriefing, TutorMemoryBriefingItem, TutorMemoryMode,
-        append_memory_routing_policy, memory_routing_policy,
+        LearnerMemoryMode, append_memory_routing_policy, memory_routing_policy,
     };
     use llm_harness_loop::{FinalAnswerMissingBehavior, FinalAnswerMode};
 
@@ -674,7 +584,7 @@ mod tests {
         assert!(prompt.contains("Search first"));
         assert!(prompt.contains("cite only the citation handles"));
         assert!(prompt.contains("never invent a citation handle"));
-        assert!(prompt.contains("call read_space_item"));
+        assert!(prompt.contains("read the exact entry"));
         assert!(prompt.contains("propose_notebook_edit"));
         assert!(prompt.contains("collect facts"));
         assert!(prompt.contains("trivia"));
@@ -688,15 +598,10 @@ mod tests {
             chat_system_prompt(),
             research_system_prompt(),
             organize_system_prompt(),
-            quiz_system_prompt(),
         ] {
             let prompt = append_memory_routing_policy(
                 &prompt,
-                &memory_routing_policy(
-                    LearnerMemoryMode::InteractiveMutation,
-                    TutorMemoryMode::Disabled,
-                    &[],
-                ),
+                &memory_routing_policy(LearnerMemoryMode::InteractiveMutation),
             );
             assert!(prompt.contains("silent internal context loading"));
             assert!(prompt.contains("Never narrate that you are checking"));
@@ -705,26 +610,6 @@ mod tests {
             assert!(prompt.contains("Never claim to remember content"));
             assert!(prompt.contains("If the user explicitly asks how you know"));
         }
-    }
-
-    #[test]
-    fn opening_tutor_memory_briefing_requires_proactive_fulfillment_and_resolution() {
-        let prompt = apply_tutor_memory_briefing(
-            chat_system_prompt(),
-            Some(&TutorMemoryBriefing {
-                items: vec![TutorMemoryBriefingItem {
-                    entry_id: "commitment-1".into(),
-                    revision: "revision-1".into(),
-                    body: r#"{"kind":"commitment","status":"active","text":"下次见面提醒吃饭","nextAction":"下次对话提醒吃饭"}"#.into(),
-                }],
-            }),
-        );
-
-        assert!(prompt.contains("successfully exact-read"));
-        assert!(prompt.contains("do not wait for the learner to remind you"));
-        assert!(prompt.contains("call `resolve_tutor_memory`"));
-        assert!(prompt.contains("commitment-1"));
-        assert!(prompt.contains("下次对话提醒吃饭"));
     }
 
     #[test]
@@ -745,7 +630,7 @@ mod tests {
         assert!(prompt.contains("explicitly asks to begin"));
         assert!(prompt.contains("call web_search"));
         assert!(prompt.contains("call web_fetch"));
-        assert!(prompt.contains("read_space_item"));
+        assert!(prompt.contains("read exact referenced Notebook entries"));
         assert!(prompt.contains("propose_notebook_edit"));
         assert!(prompt.contains("Markdown report"));
         assert!(prompt.contains("Sources"));
@@ -820,18 +705,5 @@ mod tests {
         assert!(prompt.contains("merge_source_entry_ids"));
         assert!(prompt.contains("self-initiated organization suggestions"));
         assert!(prompt.contains("Never delete Notebook content"));
-    }
-
-    #[test]
-    fn quiz_prompt_requires_explicit_generation_before_tool_call() {
-        let prompt = quiz_system_prompt();
-        assert!(prompt.contains("normal conversation first"));
-        assert!(prompt.contains("Do not create a quiz just because"));
-        assert!(prompt.contains("propose_quiz_plan"));
-        assert!(prompt.contains("Call create_quiz only when"));
-        assert!(prompt.contains("read_space_item"));
-        assert!(prompt.contains("runtime Knowledge evidence"));
-        assert!(!prompt.contains("rag_search"));
-        assert!(prompt.contains("source_label"));
     }
 }

@@ -14,21 +14,16 @@ use crate::session::{
     AssistantSessionConfig, LlmSessionConfig, SearchSessionConfig, SessionCreateConfig,
     SessionPool, message_role, message_text,
 };
-use crate::settings_store::SettingsStore;
-use crate::tutor_store::{TutorProfile, TutorStore};
 
 #[derive(Clone)]
 pub struct SessionsState {
     pool: Arc<SessionPool>,
     knowledge: Arc<KnowledgeStore>,
-    tutors: Arc<TutorStore>,
-    settings: Arc<SettingsStore>,
 }
 
 #[derive(Deserialize)]
 struct CreateSessionRequest {
     capability: Option<String>,
-    tutor_id: Option<String>,
     kb: Option<String>,
     notebook_enabled: Option<bool>,
     llm: Option<CreateLlmConfig>,
@@ -72,7 +67,6 @@ struct CreateAssistantConfig {
 
 #[derive(Deserialize)]
 struct UpdateSessionRequest {
-    tutor_id: Option<String>,
     capability: Option<String>,
     name: Option<String>,
     kb: Option<String>,
@@ -85,7 +79,6 @@ struct UpdateSessionRequest {
 struct AppendMessageRequest {
     user: Option<String>,
     assistant: Option<String>,
-    quiz_id: Option<String>,
     assistant_citations: Option<Vec<serde_json::Value>>,
 }
 
@@ -107,43 +100,11 @@ async fn create_session(
     let pool = &state.pool;
     let search = req.search.and_then(search_config_from_request);
     let notebook_enabled = req.notebook_enabled.unwrap_or(false);
-    let tutor = match req.tutor_id.as_deref() {
-        Some(id) => match state.tutors.get_available(id) {
-            Some(tutor) => Some(tutor),
-            None => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": "tutor not found or archived" })),
-                )
-                    .into_response();
-            }
-        },
-        None => None,
-    };
     let capability = req
         .capability
         .filter(|value| !value.trim().is_empty())
-        .or_else(|| tutor.as_ref().map(|item| item.default_capability.clone()))
         .unwrap_or_else(|| "chat".into());
-    let llm = match req.llm {
-        Some(config) => Some(llm_config_from_request(config)),
-        None => match tutor
-            .as_ref()
-            .and_then(|item| item.default_model_config_id.as_deref())
-        {
-            Some(config_id) => match llm_config_from_settings(&state.settings, config_id) {
-                Ok(config) => Some(config),
-                Err(message) => {
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        Json(serde_json::json!({ "error": message })),
-                    )
-                        .into_response();
-                }
-            },
-            None => None,
-        },
-    };
+    let llm = req.llm.map(llm_config_from_request);
     if capability
         .parse::<tutor_agent::capability::Capability>()
         .is_err()
@@ -153,32 +114,6 @@ async fn create_session(
             Json(serde_json::json!({ "error": "unsupported capability" })),
         )
             .into_response();
-    }
-    if let Some(tutor) = &tutor
-        && !tutor.allowed_capabilities.contains(&capability)
-    {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "capability is not allowed for this tutor" })),
-        )
-            .into_response();
-    }
-    if let Some(tutor) = &tutor {
-        if notebook_enabled && !tutor.resource_permissions.notebook {
-            return tutor_permission_error("Notebook access is not allowed for this tutor");
-        }
-        if capability == "organize" && !tutor.resource_permissions.notebook {
-            return tutor_permission_error("Organize requires Notebook access for this tutor");
-        }
-        if let Some(kb) = req.kb.as_deref().filter(|value| !value.trim().is_empty())
-            && !tutor
-                .resource_permissions
-                .knowledge_base_ids
-                .iter()
-                .any(|allowed| allowed == kb)
-        {
-            return tutor_permission_error("Knowledge Base access is not allowed for this tutor");
-        }
     }
     let (kb, embedding) = match knowledge_binding(&state.knowledge, req.kb, notebook_enabled) {
         Ok(binding) => binding,
@@ -191,21 +126,18 @@ async fn create_session(
         }
     };
     match pool
-        .create_with_tutor(
-            tutor.as_ref().map(|item| item.id.clone()),
-            SessionCreateConfig {
-                capability,
-                kb,
-                notebook_enabled,
-                llm,
-                search,
-                embedding,
-                assistant: req
-                    .assistant
-                    .map(assistant_config_from_request)
-                    .unwrap_or_default(),
-            },
-        )
+        .create_with_config(SessionCreateConfig {
+            capability,
+            kb,
+            notebook_enabled,
+            llm,
+            search,
+            embedding,
+            assistant: req
+                .assistant
+                .map(assistant_config_from_request)
+                .unwrap_or_default(),
+        })
         .await
     {
         Ok(id) => (StatusCode::CREATED, Json(CreateSessionResponse { id })).into_response(),
@@ -229,25 +161,12 @@ fn assistant_config_from_request(config: CreateAssistantConfig) -> AssistantSess
     }
 }
 
-fn tutor_permission_error(message: &str) -> axum::response::Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(serde_json::json!({ "error": message })),
-    )
-        .into_response()
-}
-
 async fn list_sessions(State(state): State<Arc<SessionsState>>) -> impl IntoResponse {
     let pool = &state.pool;
     match pool.list(Some(50)).await {
         Ok(sessions) => {
             let mut items = Vec::with_capacity(sessions.len());
             for session in sessions {
-                let entry = pool.ensure_entry(&session.id).await;
-                let tutor = entry
-                    .as_ref()
-                    .and_then(|item| item.tutor_id.as_deref())
-                    .and_then(|id| state.tutors.get(id));
                 let title = match session.name.clone() {
                     Some(name) if !name.trim().is_empty() => name,
                     _ => pool
@@ -265,8 +184,6 @@ async fn list_sessions(State(state): State<Arc<SessionsState>>) -> impl IntoResp
                     "created_at": session.created_at,
                     "updated_at": session.updated_at,
                     "model": session.model,
-                    "tutor_id": entry.as_ref().and_then(|item| item.tutor_id.clone()),
-                    "tutor": tutor.as_ref().map(tutor_summary),
                     "active_run": active_run.map(|run| serde_json::json!({
                         "run_id": run.run_id,
                         "session_id": run.session_id,
@@ -418,11 +335,10 @@ async fn get_session(
         StatusCode::OK,
         Json(serde_json::json!({
             "id": entry.id,
-            "tutor_id": entry.tutor_id,
-            "tutor": entry.tutor_id.as_deref().and_then(|id| state.tutors.get(id)).as_ref().map(tutor_summary),
             "capability": entry.capability,
             "kb": entry.kb,
             "notebook_enabled": entry.notebook_enabled,
+            "assistant": entry.assistant,
             "history_len": history_len,
             "metadata": {
                 "name": meta.name,
@@ -538,15 +454,6 @@ async fn update_session(
     Json(req): Json<UpdateSessionRequest>,
 ) -> impl IntoResponse {
     let pool = &state.pool;
-    if req.tutor_id.is_some() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": "tutor identity is immutable; create a new session" }),
-            ),
-        )
-            .into_response();
-    }
     if let Some(capability) = req.capability {
         if capability
             .parse::<tutor_agent::capability::Capability>()
@@ -559,34 +466,6 @@ async fn update_session(
                 .into_response();
         }
 
-        let Some(entry) = pool.ensure_entry(&id).await else {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({ "error": "session not found" })),
-            )
-                .into_response();
-        };
-        if let Some(tutor_id) = entry.tutor_id.as_deref() {
-            let Some(tutor) = state.tutors.get_available(tutor_id) else {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": "bound tutor not found or archived" })),
-                )
-                    .into_response();
-            };
-            if !tutor.allowed_capabilities.contains(&capability) {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(
-                        serde_json::json!({ "error": "capability is not allowed for this tutor" }),
-                    ),
-                )
-                    .into_response();
-            }
-            if capability == "organize" && !tutor.resource_permissions.notebook {
-                return tutor_permission_error("Organize requires Notebook access for this tutor");
-            }
-        }
         if !pool.set_capability(&id, &capability) {
             return (
                 StatusCode::NOT_FOUND,
@@ -597,16 +476,9 @@ async fn update_session(
     }
 
     if let Some(notebook_enabled) = req.notebook_enabled {
-        let Some(entry) = pool.ensure_entry(&id).await else {
+        let Some(_entry) = pool.ensure_entry(&id).await else {
             return session_not_found();
         };
-        if notebook_enabled
-            && let Some(tutor_id) = entry.tutor_id.as_deref()
-            && let Some(tutor) = state.tutors.get_available(tutor_id)
-            && !tutor.resource_permissions.notebook
-        {
-            return tutor_permission_error("Notebook access is not allowed for this tutor");
-        }
         if notebook_enabled {
             if !pool.set_knowledge(&id, None, None) || !pool.set_notebook_enabled(&id, true) {
                 return (
@@ -626,20 +498,9 @@ async fn update_session(
 
     if let Some(kb) = req.kb {
         let normalized_kb = kb.trim().to_string();
-        let Some(entry) = pool.ensure_entry(&id).await else {
+        let Some(_entry) = pool.ensure_entry(&id).await else {
             return session_not_found();
         };
-        if !normalized_kb.is_empty()
-            && let Some(tutor_id) = entry.tutor_id.as_deref()
-            && let Some(tutor) = state.tutors.get_available(tutor_id)
-            && !tutor
-                .resource_permissions
-                .knowledge_base_ids
-                .iter()
-                .any(|allowed| allowed == &normalized_kb)
-        {
-            return tutor_permission_error("Knowledge Base access is not allowed for this tutor");
-        }
         let (kb, embedding) = if normalized_kb.is_empty() {
             (None, None)
         } else {
@@ -760,26 +621,6 @@ async fn append_session_messages(
     if let Some(assistant) = req.assistant.filter(|value| !value.trim().is_empty())
         && let Err(err) = session
             .append_message(tutor_agent::chat::assistant_message(&assistant))
-            .await
-    {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": err.to_string() })),
-        )
-            .into_response();
-    }
-
-    if let Some(quiz_id) = req.quiz_id.filter(|value| !value.trim().is_empty())
-        && let Err(err) = state
-            .pool
-            .append_trace(
-                &id,
-                "quiz_created",
-                serde_json::json!({
-                    "capability": "quiz",
-                    "quiz_id": quiz_id,
-                }),
-            )
             .await
     {
         return (
@@ -965,18 +806,8 @@ async fn delete_session(
     }
 }
 
-pub fn sessions_router(
-    pool: Arc<SessionPool>,
-    knowledge: Arc<KnowledgeStore>,
-    tutors: Arc<TutorStore>,
-    settings: Arc<SettingsStore>,
-) -> Router {
-    let state = Arc::new(SessionsState {
-        pool,
-        knowledge,
-        tutors,
-        settings,
-    });
+pub fn sessions_router(pool: Arc<SessionPool>, knowledge: Arc<KnowledgeStore>) -> Router {
+    let state = Arc::new(SessionsState { pool, knowledge });
     Router::new()
         .route("/api/sessions", get(list_sessions).post(create_session))
         .route(
@@ -995,66 +826,6 @@ pub fn sessions_router(
             post(append_message_citations),
         )
         .with_state(state)
-}
-
-fn llm_config_from_settings(
-    settings: &SettingsStore,
-    config_id: &str,
-) -> Result<LlmSessionConfig, String> {
-    let value = settings.get();
-    let config = value
-        .get("llmConfigs")
-        .and_then(serde_json::Value::as_array)
-        .and_then(|configs| {
-            configs.iter().find(|config| {
-                config.get("id").and_then(serde_json::Value::as_str) == Some(config_id)
-            })
-        })
-        .ok_or_else(|| "tutor default model configuration does not exist".to_string())?;
-    let text = |key: &str| {
-        config
-            .get(key)
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .trim()
-            .to_string()
-    };
-    let model = text("model");
-    if model.is_empty() {
-        return Err("tutor default model configuration has no model ID".into());
-    }
-    Ok(LlmSessionConfig {
-        provider: text("provider"),
-        model,
-        api_key: non_empty_option(text("apiKey")),
-        base_url: non_empty_option(text("baseUrl")),
-        chat_path: non_empty_option(text("chatPath")),
-        context_window_tokens: config
-            .get("contextWindowTokens")
-            .and_then(serde_json::Value::as_u64)
-            .and_then(|value| u32::try_from(value).ok()),
-        budget_limit_usd: value
-            .get("budgetLimitUsd")
-            .and_then(serde_json::Value::as_f64),
-        require_approval: value
-            .get("requireApproval")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false),
-    })
-}
-
-fn non_empty_option(value: String) -> Option<String> {
-    (!value.is_empty()).then_some(value)
-}
-
-fn tutor_summary(tutor: &TutorProfile) -> serde_json::Value {
-    serde_json::json!({
-        "id": tutor.id,
-        "name": tutor.name,
-        "avatar": tutor.avatar,
-        "built_in": tutor.built_in,
-        "archived": tutor.archived,
-    })
 }
 
 fn knowledge_binding(
@@ -1102,22 +873,18 @@ fn session_title_from_message(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tutor_store::{GENERAL_TUTOR_ID, TutorResourcePermissions, UpdateTutorProfile};
     use axum::{body::Body, http::Request};
-    use serde_json::json;
     use tower::ServiceExt;
 
     fn test_app(root: &std::path::Path) -> Router {
         sessions_router(
             SessionPool::new_with_root(root.join("sessions")),
             KnowledgeStore::new_with_path(root.join("knowledge.json")),
-            Arc::new(TutorStore::new_with_root(root.join("tutors"))),
-            Arc::new(SettingsStore::new_with_path(root.join("settings.json"))),
         )
     }
 
     #[tokio::test]
-    async fn creates_tutor_bound_session_and_rejects_identity_change() {
+    async fn creates_session_with_single_assistant_profile() {
         let dir = tempfile::tempdir().unwrap();
         let app = test_app(dir.path());
         let created = app
@@ -1125,9 +892,7 @@ mod tests {
             .oneshot(
                 Request::post("/api/sessions")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"tutor_id":"general-tutor","capability":"chat"}"#,
-                    ))
+                    .body(Body::from(r#"{"capability":"chat","assistant":{"name":"Folumi","instructions":"Be concise","memory_enabled":false}}"#))
                     .unwrap(),
             )
             .await
@@ -1153,134 +918,23 @@ mod tests {
             .await
             .unwrap();
         let detail: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(detail["tutor_id"], "general-tutor");
-        assert_eq!(detail["tutor"]["name"], "Folumi 使用指南");
-
-        let update = app
-            .oneshot(
-                Request::patch(format!("/api/sessions/{id}"))
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"tutor_id":"another-tutor"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(update.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(detail["assistant"]["name"], "Folumi");
+        assert_eq!(detail["assistant"]["instructions"], "Be concise");
+        assert_eq!(detail["assistant"]["memory_enabled"], false);
     }
 
     #[tokio::test]
-    async fn rejects_unknown_tutor_without_creating_session() {
+    async fn rejects_unknown_knowledge_base_without_creating_session() {
         let dir = tempfile::tempdir().unwrap();
         let response = test_app(dir.path())
             .oneshot(
                 Request::post("/api/sessions")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"tutor_id":"missing","capability":"chat"}"#))
+                    .body(Body::from(r#"{"kb":"missing","capability":"chat"}"#))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn applies_tutor_default_model_and_denies_unapproved_resources() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let pool = SessionPool::new_with_root(root.join("sessions"));
-        let knowledge = KnowledgeStore::new_with_path(root.join("knowledge.json"));
-        let tutors = Arc::new(TutorStore::new_with_root(root.join("tutors")));
-        let settings = Arc::new(SettingsStore::new_with_path(root.join("settings.json")));
-        settings
-            .replace(json!({
-                "llmConfigs": [{
-                    "id": "model-1",
-                    "name": "Test",
-                    "provider": "openai",
-                    "model": "test-model",
-                    "apiKey": "test-key",
-                    "baseUrl": "https://example.invalid",
-                    "chatPath": "/chat/completions",
-                    "contextWindowTokens": 4096
-                }],
-                "budgetLimitUsd": 3.0,
-                "requireApproval": true
-            }))
-            .unwrap();
-        tutors
-            .update(
-                GENERAL_TUTOR_ID,
-                UpdateTutorProfile {
-                    default_model_config_id: Some(Some("model-1".into())),
-                    resource_permissions: Some(TutorResourcePermissions {
-                        knowledge_base_ids: vec![],
-                        notebook: false,
-                        space: false,
-                    }),
-                    learner_memory_access: Some(false),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        let app = sessions_router(pool, knowledge, tutors, settings);
-
-        let created = app
-            .clone()
-            .oneshot(
-                Request::post("/api/sessions")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"tutor_id":"general-tutor"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(created.status(), StatusCode::CREATED);
-        let body = axum::body::to_bytes(created.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let id = created["id"].as_str().unwrap();
-        let detail = app
-            .clone()
-            .oneshot(
-                Request::get(format!("/api/sessions/{id}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = axum::body::to_bytes(detail.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let detail: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(detail["llm"]["model"], "test-model");
-        assert_eq!(detail["llm"]["require_approval"], true);
-
-        let notebook = app
-            .clone()
-            .oneshot(
-                Request::post("/api/sessions")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"tutor_id":"general-tutor","notebook_enabled":true}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(notebook.status(), StatusCode::FORBIDDEN);
-
-        let knowledge = app
-            .oneshot(
-                Request::post("/api/sessions")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"tutor_id":"general-tutor","kb":"forbidden-kb"}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(knowledge.status(), StatusCode::FORBIDDEN);
     }
 }

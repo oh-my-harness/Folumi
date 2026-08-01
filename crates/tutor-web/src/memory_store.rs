@@ -11,19 +11,22 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_FILES: &[(&str, &str)] = &[
     ("L2/chat.md", "# Chat memory\n\n"),
-    ("L2/quiz.md", "# Quiz memory\n\n"),
     ("L2/notebook.md", "# Notebook memory\n\n"),
     ("L2/knowledge.md", "# Knowledge memory\n\n"),
-    ("L3/recent.md", "# Recent learning context\n\n"),
+    ("L3/recent.md", "# Recent context\n\n"),
     (
         "L3/profile.md",
-        "# Student profile\n\n## Strengths\n\n## Weaknesses\n\n",
+        "# User profile\n\n## Identity\n\n## Preferences\n\n",
     ),
-    ("L3/scope.md", "# Learning scope\n\n"),
-    ("L3/preferences.md", "# Learning preferences\n\n"),
+    ("L3/scope.md", "# Working scope\n\n"),
+    ("L3/preferences.md", "# User preferences\n\n"),
+    (
+        "L3/continuity.md",
+        "# Assistant continuity\n\n## Commitments\n\n## Open loops\n\n## Strategies\n\n",
+    ),
     (
         "L3/teaching_strategy.md",
-        "# Teaching strategy\n\n## Preferred approach\n\n",
+        "# Assistant strategy\n\n## Preferred approach\n\n",
     ),
 ];
 
@@ -102,7 +105,6 @@ pub struct MemoryEventCatalogItem {
 #[serde(rename_all = "snake_case")]
 pub enum MemoryEventCategory {
     Chat,
-    Quiz,
     Notebook,
     Knowledge,
 }
@@ -162,8 +164,11 @@ pub enum ExactMemoryDeleteOutcome {
 
 fn durable_memory_spec(kind: &str) -> Result<(&'static str, &'static str, &'static str)> {
     match kind {
-        "profile" => Ok(("L3/profile.md", "Identity", "Student profile")),
-        "preference" => Ok(("L3/preferences.md", "Preferences", "Learning preferences")),
+        "profile" => Ok(("L3/profile.md", "Identity", "User profile")),
+        "preference" => Ok(("L3/preferences.md", "Preferences", "User preferences")),
+        "commitment" => Ok(("L3/continuity.md", "Commitments", "Assistant continuity")),
+        "open_loop" => Ok(("L3/continuity.md", "Open loops", "Assistant continuity")),
+        "strategy" => Ok(("L3/continuity.md", "Strategies", "Assistant continuity")),
         _ => Err(anyhow!("unsupported durable memory kind")),
     }
 }
@@ -432,8 +437,7 @@ impl FileMemoryBackend {
         if removed == 0 {
             return Ok(0);
         }
-        let title =
-            memory_title(&current.markdown).unwrap_or_else(|| "Learning preferences".into());
+        let title = memory_title(&current.markdown).unwrap_or_else(|| "User preferences".into());
         let markdown = serialize_memory_entries(&title, &entries)?;
         self.write_normalized(&path, markdown)?;
         Ok(removed)
@@ -1546,16 +1550,14 @@ fn replace_footnote_indices(
 fn event_file(category: MemoryEventCategory) -> &'static str {
     match category {
         MemoryEventCategory::Chat => "L1/chat_events.jsonl",
-        MemoryEventCategory::Quiz => "L1/quiz_events.jsonl",
         MemoryEventCategory::Notebook => "L1/notebook_events.jsonl",
         MemoryEventCategory::Knowledge => "L1/knowledge_events.jsonl",
     }
 }
 
-fn all_event_categories() -> [MemoryEventCategory; 4] {
+fn all_event_categories() -> [MemoryEventCategory; 3] {
     [
         MemoryEventCategory::Chat,
-        MemoryEventCategory::Quiz,
         MemoryEventCategory::Notebook,
         MemoryEventCategory::Knowledge,
     ]
@@ -1564,7 +1566,6 @@ fn all_event_categories() -> [MemoryEventCategory; 4] {
 fn event_surface(category: MemoryEventCategory) -> &'static str {
     match category {
         MemoryEventCategory::Chat => "chat",
-        MemoryEventCategory::Quiz => "quiz",
         MemoryEventCategory::Notebook => "notebook",
         MemoryEventCategory::Knowledge => "knowledge",
     }
@@ -1573,7 +1574,6 @@ fn event_surface(category: MemoryEventCategory) -> &'static str {
 fn category_for_surface(surface: &str) -> Option<MemoryEventCategory> {
     match surface {
         "chat" => Some(MemoryEventCategory::Chat),
-        "quiz" => Some(MemoryEventCategory::Quiz),
         "notebook" => Some(MemoryEventCategory::Notebook),
         "knowledge" => Some(MemoryEventCategory::Knowledge),
         _ => None,
@@ -1697,11 +1697,13 @@ fn memory_entry_from_change(change: &MemoryChange) -> Result<MemoryEntry> {
 fn target_surface(target_path: &str) -> Option<&'static str> {
     if target_path.contains("chat") {
         Some("chat")
-    } else if target_path.contains("quiz")
-        || target_path.contains("profile")
+    } else if target_path.contains("profile")
+        || target_path.contains("preferences")
+        || target_path.contains("recent")
         || target_path.contains("teaching_strategy")
+        || target_path.contains("continuity")
     {
-        Some("quiz")
+        Some("chat")
     } else if target_path.contains("notebook") || target_path.contains("scope") {
         Some("notebook")
     } else if target_path.contains("knowledge") {
@@ -1713,19 +1715,12 @@ fn target_surface(target_path: &str) -> Option<&'static str> {
 
 fn l3_source_paths(target_path: &str) -> Vec<&'static str> {
     match target_path {
-        "L3/profile.md" | "L3/scope.md" | "L3/recent.md" => vec![
-            "L2/chat.md",
-            "L2/quiz.md",
-            "L2/notebook.md",
-            "L2/knowledge.md",
-        ],
+        "L3/profile.md" | "L3/scope.md" | "L3/recent.md" => {
+            vec!["L2/chat.md", "L2/notebook.md", "L2/knowledge.md"]
+        }
         "L3/preferences.md" => vec!["L2/chat.md", "L2/notebook.md"],
-        "L3/teaching_strategy.md" => vec![
-            "L2/chat.md",
-            "L2/quiz.md",
-            "L2/notebook.md",
-            "L2/knowledge.md",
-        ],
+        "L3/continuity.md" => vec!["L2/chat.md", "L2/notebook.md"],
+        "L3/teaching_strategy.md" => vec!["L2/chat.md", "L2/notebook.md", "L2/knowledge.md"],
         _ => Vec::new(),
     }
 }
@@ -1736,11 +1731,6 @@ fn target_catalog(target_path: &str, existing_markdown: String) -> MemoryTargetC
             "Chat memory",
             "Stable misconceptions, demonstrated mastery, and recurring topics.",
             vec!["Misconceptions", "Mastery", "Topics"],
-        ),
-        "L2/quiz.md" => (
-            "Quiz memory",
-            "Error patterns, strong topics, weak topics, and question types.",
-            vec!["Error patterns", "Strong topics", "Weak topics"],
         ),
         "L2/notebook.md" => (
             "Notebook memory",
@@ -1759,31 +1749,40 @@ fn target_catalog(target_path: &str, existing_markdown: String) -> MemoryTargetC
             vec!["Interests", "Frequent queries", "Gaps"],
         ),
         "L3/recent.md" => (
-            "Recent learning context",
-            "Rolling timeline of recent learning activity.",
+            "Recent context",
+            "Rolling timeline of recent user activity relevant to future work.",
             vec!["This week", "Earlier"],
         ),
         "L3/profile.md" => (
-            "Student profile",
-            "Durable learner identity, learning style, strengths, and weaknesses.",
-            vec!["Identity", "Learning style", "Strengths", "Weaknesses"],
+            "User profile",
+            "Durable user identity and explicitly supported profile facts.",
+            vec!["Identity", "Preferences"],
         ),
         "L3/scope.md" => (
-            "Learning scope",
-            "Concepts the learner has engaged with and confidence labels.",
-            vec!["Familiar", "Practicing", "Unsure"],
+            "Working scope",
+            "Topics, projects, and domains the user is actively working with.",
+            vec!["Active", "Background", "Open questions"],
         ),
         "L3/preferences.md" => (
-            "Learning preferences",
+            "User preferences",
             "Explicit user-stated long-term preferences.",
             vec!["Preferences"],
         ),
-        "L3/teaching_strategy.md" => (
-            "Teaching strategy",
-            "How the tutor should adapt examples, difficulty, hints, and reviews.",
-            vec!["Explanation style", "Practice strategy", "Review strategy"],
+        "L3/continuity.md" => (
+            "Assistant continuity",
+            "User-approved commitments, open loops, and future response strategies.",
+            vec!["Commitments", "Open loops", "Strategies"],
         ),
-        _ => ("Memory", "Durable learner memory.", vec!["Notes"]),
+        "L3/teaching_strategy.md" => (
+            "Assistant strategy",
+            "How the assistant should adapt explanations, structure, and follow-up.",
+            vec![
+                "Explanation style",
+                "Working strategy",
+                "Follow-up strategy",
+            ],
+        ),
+        _ => ("Memory", "Durable user memory.", vec!["Notes"]),
     };
     MemoryTargetCatalog {
         title: title.into(),
@@ -1886,18 +1885,18 @@ mod tests {
 
         assert!(!root.join("L1/research_events.jsonl").exists());
         assert!(!root.join("L2/research.md").exists());
-        assert_eq!(store.event_catalog().unwrap().len(), 4);
+        assert_eq!(store.event_catalog().unwrap().len(), 3);
     }
 
     #[test]
     fn memory_parser_extracts_markers_and_refs() {
-        let markdown = "- Weak on vectors. [^1] <!--m_01ABC-->\n\n[^1]: quiz:session:q1";
+        let markdown = "- Prefers diagrams. [^1] <!--m_01ABC-->\n\n[^1]: chat:session:turn-1";
         assert_eq!(parse_memory_entries(markdown)[0].marker, "m_01ABC");
         assert_eq!(
             parse_source_refs(markdown),
             vec![MemorySourceRef {
                 index: 1,
-                target: "quiz:session:q1".into()
+                target: "chat:session:turn-1".into()
             }]
         );
         assert_eq!(
@@ -1907,10 +1906,10 @@ mod tests {
         assert_eq!(
             serialize_source_ref(&MemorySourceRef {
                 index: 1,
-                target: "quiz:session:q1".into()
+                target: "chat:session:turn-1".into()
             })
             .unwrap(),
-            "[^1]: quiz:session:q1"
+            "[^1]: chat:session:turn-1"
         );
     }
 
@@ -2320,14 +2319,14 @@ mod tests {
         let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
 
         let profile = store
-            .agent_context("L3/profile.md", "# Student profile")
+            .agent_context("L3/profile.md", "# User profile")
             .unwrap();
         assert!(profile.get("l1Catalog").is_none());
         assert_eq!(profile["instructions"]["evidenceLayer"], "L2");
-        assert_eq!(profile["l2Catalog"].as_array().unwrap().len(), 4);
+        assert_eq!(profile["l2Catalog"].as_array().unwrap().len(), 3);
 
         let preferences = store
-            .agent_context("L3/preferences.md", "# Learning preferences")
+            .agent_context("L3/preferences.md", "# User preferences")
             .unwrap();
         let paths = preferences["l2Catalog"]
             .as_array()
@@ -2338,7 +2337,7 @@ mod tests {
         assert_eq!(paths, vec!["L2/chat.md", "L2/notebook.md"]);
 
         let recent = store
-            .agent_context("L3/recent.md", "# Recent learning context")
+            .agent_context("L3/recent.md", "# Recent context")
             .unwrap();
         assert!(recent.get("l1Catalog").is_some());
         assert_eq!(recent["instructions"]["boundedL1Exception"], true);
@@ -2346,32 +2345,31 @@ mod tests {
 
     #[test]
     fn normalize_memory_markdown_dedupes_and_removes_unused_refs() {
-        let markdown = "# Quiz memory\n\n- First fact. [^2]\n- Second fact. [^3]\n- Unknown fact. [^9]\n\n[^1]: chat:unused\n[^2]: quiz:q1\n[^3]: quiz:q1\n[^4]: quiz:unused";
+        let markdown = "# Chat memory\n\n- First fact. [^2]\n- Second fact. [^3]\n- Unknown fact. [^9]\n\n[^1]: chat:unused\n[^2]: chat:q1\n[^3]: chat:q1\n[^4]: chat:unused";
 
         let normalized = normalize_memory_markdown(markdown).unwrap();
 
         assert!(normalized.contains("- First fact. [^1]"));
         assert!(normalized.contains("- Second fact. [^1]"));
         assert!(normalized.contains("- Unknown fact. [^9]"));
-        assert!(normalized.contains("[^1]: quiz:q1"));
+        assert!(normalized.contains("[^1]: chat:q1"));
         assert!(!normalized.contains("chat:unused"));
-        assert!(!normalized.contains("quiz:unused"));
         assert!(!normalized.contains("[^2]:"));
     }
 
     #[test]
     fn memory_entries_round_trip_with_shared_source_refs() {
-        let markdown = "# Quiz memory\n\n- First fact. [^2] <!--m_1-->\n- Second fact. [^3] <!--m_2-->\n\n---\n\n[^2]: quiz:q1\n[^3]: quiz:q1\n[^4]: quiz:unused";
+        let markdown = "# Chat memory\n\n- First fact. [^2] <!--m_1-->\n- Second fact. [^3] <!--m_2-->\n\n---\n\n[^2]: chat:q1\n[^3]: chat:q1\n[^4]: chat:unused";
 
         let entries = parse_memory_entries(markdown);
-        let serialized = serialize_memory_entries("Quiz memory", &entries).unwrap();
+        let serialized = serialize_memory_entries("Chat memory", &entries).unwrap();
         let reparsed = parse_memory_entries(&serialized);
 
         assert_eq!(entries, reparsed);
         assert!(serialized.contains("- First fact. [^1] <!--m_1-->"));
         assert!(serialized.contains("- Second fact. [^1] <!--m_2-->"));
-        assert!(serialized.contains("[^1]: quiz:q1"));
-        assert!(!serialized.contains("quiz:unused"));
+        assert!(serialized.contains("[^1]: chat:q1"));
+        assert!(!serialized.contains("chat:unused"));
         assert!(!serialized.contains("[^2]:"));
     }
 
@@ -2392,21 +2390,21 @@ mod tests {
 
     #[test]
     fn memory_entry_serializer_preserves_sections() {
-        let markdown = "# Quiz memory\n\n## Weak topics\n\n- Needs OPC review. [^1] <!--m_1-->\n\n## Strong topics\n\n- Understands basic lithography. [^2] <!--m_2-->\n\n---\n\n[^1]: quiz:q1\n[^2]: quiz:q2";
+        let markdown = "# Chat memory\n\n## Topics\n\n- Needs OPC review. [^1] <!--m_1-->\n\n## Mastery\n\n- Understands basic lithography. [^2] <!--m_2-->\n\n---\n\n[^1]: chat:q1\n[^2]: chat:q2";
 
         let entries = parse_memory_entries(markdown);
-        let serialized = serialize_memory_entries("Quiz memory", &entries).unwrap();
+        let serialized = serialize_memory_entries("Chat memory", &entries).unwrap();
 
-        assert_eq!(entries[0].section.as_deref(), Some("Weak topics"));
-        assert_eq!(entries[1].section.as_deref(), Some("Strong topics"));
-        assert!(serialized.contains("## Weak topics\n\n- Needs OPC review."));
-        assert!(serialized.contains("## Strong topics\n\n- Understands basic lithography."));
+        assert_eq!(entries[0].section.as_deref(), Some("Topics"));
+        assert_eq!(entries[1].section.as_deref(), Some("Mastery"));
+        assert!(serialized.contains("## Topics\n\n- Needs OPC review."));
+        assert!(serialized.contains("## Mastery\n\n- Understands basic lithography."));
         assert_eq!(
             parse_memory_entries(&serialized)
                 .iter()
                 .map(|entry| entry.section.as_deref())
                 .collect::<Vec<_>>(),
-            vec![Some("Weak topics"), Some("Strong topics")]
+            vec![Some("Topics"), Some("Mastery")]
         );
     }
 
@@ -2416,14 +2414,14 @@ mod tests {
         let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let updated = store
             .write(
-                "L2/quiz.md",
-                "# Quiz memory\n\n- Same source. [^7]\n\n[^7]: quiz:q1\n[^8]: quiz:unused".into(),
+                "L2/chat.md",
+                "# Chat memory\n\n- Same source. [^7]\n\n[^7]: chat:q1\n[^8]: chat:unused".into(),
             )
             .unwrap();
 
         assert!(updated.markdown.contains("- Same source. [^1]"));
-        assert!(updated.markdown.contains("[^1]: quiz:q1"));
-        assert!(!updated.markdown.contains("quiz:unused"));
+        assert!(updated.markdown.contains("[^1]: chat:q1"));
+        assert!(!updated.markdown.contains("chat:unused"));
     }
 
     #[test]
@@ -2502,17 +2500,17 @@ mod tests {
         let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         let event = store
             .record_event(
-                MemoryEventCategory::Quiz,
-                "answered",
-                "Answered OPC question correctly",
-                Some("quiz-1".into()),
-                json!({ "question_id": "q1" }),
+                MemoryEventCategory::Chat,
+                "message",
+                "Asked for a concise OPC explanation",
+                Some("chat-1".into()),
+                json!({ "topic": "opc" }),
             )
             .unwrap();
-        assert_eq!(event.category, MemoryEventCategory::Quiz);
+        assert_eq!(event.category, MemoryEventCategory::Chat);
         let events = store.recent_events(10).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].summary, "Answered OPC question correctly");
+        assert_eq!(events[0].summary, "Asked for a concise OPC explanation");
     }
 
     #[test]
@@ -2531,18 +2529,18 @@ mod tests {
         let store = FileMemoryBackend::new_with_root(dir.path().join("memory"));
         store
             .record_event(
-                MemoryEventCategory::Quiz,
-                "answered",
-                "Answered OPC question correctly",
-                Some("quiz-1".into()),
-                json!({ "question_id": "q1" }),
+                MemoryEventCategory::Chat,
+                "message",
+                "Asked for a concise OPC explanation",
+                Some("chat-1".into()),
+                json!({ "topic": "opc" }),
             )
             .unwrap();
 
-        let source = store.resolve_source_ref("quiz:quiz-1").unwrap();
+        let source = store.resolve_source_ref("chat:chat-1").unwrap();
 
-        assert_eq!(source.reference, "quiz:quiz-1");
-        assert_eq!(source.event.summary, "Answered OPC question correctly");
+        assert_eq!(source.reference, "chat:chat-1");
+        assert_eq!(source.event.summary, "Asked for a concise OPC explanation");
     }
 
     #[test]

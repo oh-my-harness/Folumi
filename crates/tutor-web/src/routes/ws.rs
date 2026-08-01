@@ -14,7 +14,7 @@ use axum::{
 use futures::{SinkExt, StreamExt, future::BoxFuture};
 use llm_harness_runtime_audit_jsonl::JsonlAuditSink;
 use llm_harness_runtime_knowledge::{
-    FilterExpr, KnowledgeAccessContext, KnowledgeScope, KnowledgeSource, PrincipalRef,
+    KnowledgeAccessContext, KnowledgeScope, KnowledgeSource, PrincipalRef,
 };
 use llm_harness_runtime_memory::MemorySessionId;
 use llm_harness_runtime_sandbox_os::OsEnv;
@@ -23,12 +23,8 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tutor_agent::event_sink::{EventSink, SharedEventSink};
 use tutor_agent::governance::GovernanceConfig;
-use tutor_agent::{
-    Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, LlmProviderKind,
-    TutorMemoryBriefing, TutorMemoryBriefingItem, TutorMemoryMode,
-};
+use tutor_agent::{Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, LlmProviderKind};
 
-use crate::knowledge_store::KnowledgeStore;
 use crate::learner_memory_source::{
     LEARNER_MEMORY_KINDS_ATTRIBUTE, LEARNER_MEMORY_L1_SESSION_ATTRIBUTE,
     LEARNER_MEMORY_LAYERS_ATTRIBUTE, LEARNER_MEMORY_PRINCIPAL_ATTRIBUTE,
@@ -37,77 +33,44 @@ use crate::learner_memory_source::{
 use crate::memory_approval::{ApprovalResponseOutcome, WebMemoryApprovalCoordinator};
 use crate::memory_store::{FileMemoryBackend, MemoryEventCategory};
 use crate::notebook_store::NotebookStore;
-use crate::quiz_store::QuizStore;
-use crate::quiz_tool::{CreateQuizTool, ProposeQuizPlanTool};
+use crate::notebook_tool::{
+    CreateNotebookItemTool, ListNotebookTreeTool, MoveNotebookItemTool, ProposeNotebookEditTool,
+    ReadNotebookItemTool, SearchNotebookTool, UpdateNotebookItemTool,
+};
 use crate::research_tool::{CreateResearchReportTool, ProposeResearchPlanTool};
-use crate::routes::quiz::{CreateLlmConfig, QuizState};
-use crate::routes::space::{SpaceMention, resolve_space_mention_markdown};
+use crate::routes::notebook_mentions::{NotebookMention, resolve_notebook_mention};
 use crate::session::{
     ActiveRunSummary, LlmSessionConfig, SearchSessionConfig, SessionEntry, SessionPool,
 };
 use crate::settings_store::SettingsStore;
-use crate::space_tool::{
-    CreateNotebookItemTool, ListNotebookTreeTool, MoveNotebookItemTool, ProposeNotebookEditTool,
-    ReadNotebookItemTool, ReadSpaceItemTool, SearchNotebookTool, UpdateNotebookItemTool,
-};
 use crate::stream::StreamEvent;
-use crate::tutor_memory_source::{
-    TUTOR_MEMORY_MODE_ATTRIBUTE, TUTOR_MEMORY_SOURCE_ID, TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE,
-    TutorMemoryKnowledgeSource,
-};
-use crate::tutor_memory_store::TutorMemoryStore;
-use crate::tutor_memory_tool::{RememberForLaterTool, ResolveTutorMemoryTool};
-use crate::tutor_memory_write::assemble_tutor_memory_service;
-use crate::tutor_store::{TutorProfile, TutorStore};
 
 #[derive(Clone)]
 struct WsState {
     pool: Arc<SessionPool>,
-    knowledge: Arc<KnowledgeStore>,
     memory: Arc<FileMemoryBackend>,
     notebook: Arc<NotebookStore>,
-    quizzes: Arc<QuizStore>,
     settings: Arc<SettingsStore>,
-    tutors: Arc<TutorStore>,
-    tutor_memory: Arc<TutorMemoryStore>,
     runtime_security: crate::knowledge_runtime::AgentRuntimeSecurity,
     rag_root: PathBuf,
 }
 
 #[derive(Clone)]
-pub struct TutorRuntimeStores {
-    profiles: Arc<TutorStore>,
-    memory: Arc<TutorMemoryStore>,
-}
-
-impl TutorRuntimeStores {
-    pub fn new(profiles: Arc<TutorStore>, memory: Arc<TutorMemoryStore>) -> Self {
-        Self { profiles, memory }
-    }
-}
-
-#[derive(Clone)]
 pub struct WsDataStores {
-    knowledge: Arc<KnowledgeStore>,
     memory: Arc<FileMemoryBackend>,
     notebook: Arc<NotebookStore>,
-    quizzes: Arc<QuizStore>,
     settings: Arc<SettingsStore>,
 }
 
 impl WsDataStores {
     pub fn new(
-        knowledge: Arc<KnowledgeStore>,
         memory: Arc<FileMemoryBackend>,
         notebook: Arc<NotebookStore>,
-        quizzes: Arc<QuizStore>,
         settings: Arc<SettingsStore>,
     ) -> Self {
         Self {
-            knowledge,
             memory,
             notebook,
-            quizzes,
             settings,
         }
     }
@@ -120,7 +83,6 @@ struct PersistedEventSink {
     stream: crate::stream::TutorStream,
     research_report_started: Arc<AtomicBool>,
     run_id: String,
-    tutor_id: Option<String>,
     pending_events: Arc<Mutex<Vec<PendingSessionEvent>>>,
 }
 
@@ -140,14 +102,10 @@ impl EventSink for PersistedEventSink {
         let session_id = self.session_id.clone();
         let stream = self.stream.clone();
         let run_id = self.run_id.clone();
-        let tutor_id = self.tutor_id.clone();
         let pending_events = self.pending_events.clone();
         Box::pin(async move {
             if let Some(map) = data.as_object_mut() {
                 map.insert("run_id".into(), serde_json::Value::String(run_id.clone()));
-                if let Some(tutor_id) = tutor_id {
-                    map.insert("tutor_id".into(), serde_json::Value::String(tutor_id));
-                }
             }
             let run_state = run_stage_from_trace(&kind, &data)
                 .and_then(|stage| pool.update_active_run_stage(&session_id, &run_id, &stage));
@@ -226,26 +184,7 @@ fn message_artifact_from_tool_result(
     data: &serde_json::Value,
     run_id: &str,
 ) -> Option<serde_json::Value> {
-    if let Some(artifact) = research_artifact_from_tool_result(data, run_id) {
-        return Some(artifact);
-    }
-    quiz_artifact_from_tool_result(data)
-}
-
-fn quiz_artifact_from_tool_result(data: &serde_json::Value) -> Option<serde_json::Value> {
-    if data.get("tool")?.as_str()? != "create_quiz" {
-        return None;
-    }
-    if data.get("ok").and_then(|value| value.as_bool()) == Some(false) {
-        return None;
-    }
-    let details = data.get("details")?.as_object()?;
-    let quiz = details.get("quiz")?.as_object()?;
-    let quiz_id = quiz.get("id")?.as_str()?;
-    Some(serde_json::json!({
-        "type": "quiz_session",
-        "quiz_id": quiz_id,
-    }))
+    research_artifact_from_tool_result(data, run_id)
 }
 
 fn research_artifact_from_tool_result(
@@ -278,7 +217,7 @@ enum ClientMessage {
     #[serde(rename = "message")]
     Message {
         content: String,
-        mentions: Option<Vec<SpaceMention>>,
+        mentions: Option<Vec<NotebookMention>>,
     },
     #[serde(rename = "stop")]
     Stop,
@@ -289,7 +228,7 @@ enum ClientMessage {
 struct TutorMessageInput {
     entry: SessionEntry,
     content: String,
-    mentions: Vec<SpaceMention>,
+    mentions: Vec<NotebookMention>,
     run_id: String,
     cancel: CancellationToken,
     memory_approver: Arc<WebMemoryApprovalCoordinator>,
@@ -513,7 +452,6 @@ fn agent_knowledge_access_context(
     session_id: &str,
     knowledge_base_id: Option<&str>,
     learner_memory_mode: LearnerMemoryMode,
-    tutor: Option<&TutorProfile>,
 ) -> KnowledgeAccessContext {
     let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
     scope.project = Some(session_id.to_string());
@@ -540,50 +478,19 @@ fn agent_knowledge_access_context(
         );
         scope.attributes.insert(
             LEARNER_MEMORY_KINDS_ATTRIBUTE.into(),
-            "recent,profile,scope,preferences,teaching_strategy".into(),
+            "recent,profile,scope,preferences,teaching_strategy,continuity".into(),
         );
         scope.attributes.insert(
             LEARNER_MEMORY_L1_SESSION_ATTRIBUTE.into(),
             session_id.to_string(),
         );
     }
-    if let Some(tutor) = tutor {
-        scope
-            .attributes
-            .insert(TUTOR_MEMORY_TUTOR_ID_ATTRIBUTE.into(), tutor.id.clone());
-        scope.attributes.insert(
-            TUTOR_MEMORY_MODE_ATTRIBUTE.into(),
-            if tutor.autonomous_memory {
-                "autonomous"
-            } else {
-                "read_only"
-            }
-            .into(),
-        );
-    }
     let mut access =
         KnowledgeAccessContext::new(scope, PrincipalRef::new("local-user", "local_user"));
-    access.authorization_version = Some(match tutor {
-        Some(tutor) => {
-            let mut knowledge_base_ids = tutor.resource_permissions.knowledge_base_ids.clone();
-            knowledge_base_ids.sort();
-            format!(
-                "tutor:{}:agent-knowledge:{}:learner-memory:{}:tutor-memory:{}",
-                tutor.id,
-                knowledge_base_ids.join(","),
-                learner_memory_mode.profile_name().unwrap_or("disabled"),
-                if tutor.autonomous_memory {
-                    "autonomous"
-                } else {
-                    "read_only"
-                }
-            )
-        }
-        None => format!(
-            "local-user:agent-knowledge:v1:learner-memory:{}",
-            learner_memory_mode.profile_name().unwrap_or("disabled")
-        ),
-    });
+    access.authorization_version = Some(format!(
+        "local-user:agent-knowledge:v1:user-memory:{}",
+        learner_memory_mode.profile_name().unwrap_or("disabled")
+    ));
     access
 }
 
@@ -592,18 +499,13 @@ fn agent_run_request(
     session_id: &str,
     knowledge_base_id: Option<&str>,
     learner_memory_mode: LearnerMemoryMode,
-    tutor: Option<&TutorProfile>,
 ) -> tutor_agent::Result<RunRequest> {
     let mut request = RunRequest::from_text(content);
-    if knowledge_base_id.is_some()
-        || learner_memory_mode.profile_name().is_some()
-        || tutor.is_some()
-    {
+    if knowledge_base_id.is_some() || learner_memory_mode.profile_name().is_some() {
         request = request.with_extension(agent_knowledge_access_context(
             session_id,
             knowledge_base_id,
             learner_memory_mode,
-            tutor,
         ));
     }
     let memory_session_id = MemorySessionId::new(session_id)
@@ -614,19 +516,14 @@ fn agent_run_request(
 pub fn ws_router(
     pool: Arc<SessionPool>,
     data_stores: WsDataStores,
-    tutor_runtime: TutorRuntimeStores,
     runtime_security: crate::knowledge_runtime::AgentRuntimeSecurity,
     rag_root: impl Into<PathBuf>,
 ) -> Router {
     let state = WsState {
         pool,
-        knowledge: data_stores.knowledge,
         memory: data_stores.memory,
         notebook: data_stores.notebook,
-        quizzes: data_stores.quizzes,
         settings: data_stores.settings,
-        tutors: tutor_runtime.profiles,
-        tutor_memory: tutor_runtime.memory,
         runtime_security,
         rag_root: rag_root.into(),
     };
@@ -638,13 +535,9 @@ pub fn ws_router(
 async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static str {
     let WsState {
         pool,
-        knowledge,
         memory,
         notebook,
-        quizzes,
         settings,
-        tutors,
-        tutor_memory,
         runtime_security,
         rag_root,
     } = state;
@@ -656,22 +549,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         cancel,
         memory_approver,
     } = input;
-    let evidence_authority = runtime_security.evidence_authority();
     let history_len = pool.history_len(&entry.id).await + 1;
-    let bound_tutor = match entry.tutor_id.as_deref() {
-        Some(tutor_id) => match tutors.get_available(tutor_id) {
-            Some(tutor) => Some(tutor),
-            None => {
-                let message = "bound tutor is unavailable";
-                let _ = entry
-                    .stream
-                    .status("error", serde_json::json!({ "message": message }))
-                    .await;
-                return "error";
-            }
-        },
-        None => None,
-    };
     let user_message_index = next_user_message_index(&pool, &entry.id).await;
     if !mentions.is_empty() {
         let _ = pool
@@ -693,7 +571,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                 "capability": entry.capability,
                 "run_id": run_id,
                 "history_len": history_len,
-                "tutor_id": entry.tutor_id.clone(),
             }),
         )
         .await;
@@ -745,148 +622,34 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             stream: entry.stream.clone(),
             research_report_started: research_report_started.clone(),
             run_id: run_id.clone(),
-            tutor_id: entry.tutor_id.clone(),
             pending_events: pending_events.clone(),
         });
         let mut router = CapabilityRouter::new(env, llm, governance)
             .with_event_sink(sink)
             .with_workflow_root(rag_root.join("workflow-sessions"));
-        let learner_memory_allowed = entry.assistant.memory_enabled
-            && bound_tutor
-                .as_ref()
-                .is_none_or(|tutor| tutor.learner_memory_access);
+        let learner_memory_allowed = entry.assistant.memory_enabled;
         let learner_memory_mode = if learner_memory_allowed {
             LearnerMemoryMode::InteractiveMutation
         } else {
             LearnerMemoryMode::Disabled
         };
-        let notebook_allowed = bound_tutor
-            .as_ref()
-            .is_none_or(|tutor| tutor.resource_permissions.notebook);
-        let space_allowed = bound_tutor
-            .as_ref()
-            .is_none_or(|tutor| tutor.resource_permissions.space);
-        if space_allowed {
-            router = router.with_product_tool(Arc::new(ReadSpaceItemTool::new(
-                notebook.clone(),
-                quizzes.clone(),
-            )));
-        }
-        let mut tutor_memory_runtime = None;
-        if let Some(tutor) = bound_tutor.as_ref() {
-            if !tutor
-                .allowed_capabilities
-                .iter()
-                .any(|allowed| allowed == &entry.capability)
-            {
-                return Err(tutor_agent::TutorError::UnsupportedCapability(
-                    entry.capability.clone(),
-                ));
-            }
-            router = router.with_product_instruction(tutor_product_instruction(tutor));
-            let tutor_memory_mode = if tutor.autonomous_memory {
-                TutorMemoryMode::Autonomous
-            } else {
-                TutorMemoryMode::ReadOnly
-            };
-            let tutor_memory_source = Arc::new(TutorMemoryKnowledgeSource::new(
-                tutor_memory.clone(),
-                tutor.id.clone(),
-            ));
-            if tutor.autonomous_memory {
-                let service = Arc::new(
-                    assemble_tutor_memory_service(
-                        tutor_memory_source.clone(),
-                        tutor_memory.clone(),
-                        tutor.id.clone(),
-                        crate::knowledge_runtime::agent_knowledge_access_control(),
-                        runtime_security.memory_policy_secret(),
-                    )
-                    .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?,
-                );
-                router = router
-                    .with_product_tool(Arc::new(RememberForLaterTool::new(
-                        service,
-                        tutor_memory.clone(),
-                        tutor.id.clone(),
-                    )))
-                    .with_product_tool(Arc::new(ResolveTutorMemoryTool::new(
-                        tutor_memory.clone(),
-                        tutor.id.clone(),
-                    )));
-            }
-            tutor_memory_runtime = Some(crate::knowledge_runtime::TutorMemoryRuntimeInput {
-                source: tutor_memory_source,
-                mode: tutor_memory_mode,
-            });
-        } else {
-            router =
-                router.with_product_instruction(assistant_product_instruction(&entry.assistant));
-        }
-        if entry.capability == "quiz" {
-            let quiz_tool = CreateQuizTool::new(
-                QuizState {
-                    store: quizzes.clone(),
-                    knowledge: knowledge.clone(),
-                    notebook: notebook.clone(),
-                    memory: memory.clone(),
-                    evidence_authority: evidence_authority.clone(),
-                    rag_root: rag_root.clone(),
-                    workflow_root: rag_root.join("workflow-sessions").join("quiz"),
-                },
-                entry.kb.clone(),
-                create_quiz_llm_config_for_session(entry.llm.clone()),
-            );
-            let quiz_tool = match bound_tutor.as_ref() {
-                Some(tutor) => quiz_tool.with_resource_policy(
-                    tutor.resource_permissions.knowledge_base_ids.clone(),
-                    tutor.resource_permissions.notebook,
-                ),
-                None => quiz_tool,
-            };
-            router = router
-                .with_product_tool(Arc::new(ProposeQuizPlanTool))
-                .with_product_tool(Arc::new(quiz_tool));
-        }
-        if entry.notebook_enabled && notebook_allowed {
+        router = router
+            .with_product_instruction(assistant_product_instruction(&entry.assistant))
+            .with_product_tool(Arc::new(ReadNotebookItemTool::new(notebook.clone())));
+        if entry.notebook_enabled {
             router = router
                 .with_product_tool(Arc::new(ListNotebookTreeTool::new(notebook.clone())))
                 .with_product_tool(Arc::new(SearchNotebookTool::new(notebook.clone())))
-                .with_product_tool(Arc::new(ReadNotebookItemTool::new(notebook.clone())))
                 .with_product_tool(Arc::new(CreateNotebookItemTool::new(notebook.clone())))
                 .with_product_tool(Arc::new(UpdateNotebookItemTool::new(notebook.clone())))
                 .with_product_tool(Arc::new(MoveNotebookItemTool::new(notebook.clone())));
         }
-        if entry.capability == "organize" && notebook_allowed {
+        if entry.capability == "organize" {
             router =
                 router.with_product_tool(Arc::new(ProposeNotebookEditTool::new(notebook.clone())));
         }
         if let Some(search) = web_search_config_for_session(entry.search.clone()) {
             router = router.with_web_search(search);
-        }
-        let knowledge_allowed = entry.kb.as_ref().is_none_or(|kb| {
-            bound_tutor.as_ref().is_none_or(|tutor| {
-                tutor
-                    .resource_permissions
-                    .knowledge_base_ids
-                    .iter()
-                    .any(|allowed| allowed == kb)
-            })
-        });
-        if !knowledge_allowed {
-            return Err(tutor_agent::TutorError::Internal(
-                "bound tutor no longer has access to this Knowledge Base".into(),
-            ));
-        }
-        if entry.notebook_enabled && !notebook_allowed {
-            return Err(tutor_agent::TutorError::Internal(
-                "bound tutor no longer has Notebook access".into(),
-            ));
-        }
-        if !mentions.is_empty() && !space_allowed {
-            return Err(tutor_agent::TutorError::Internal(
-                "bound tutor does not have Space access".into(),
-            ));
         }
         let course_source = match (entry.embedding.clone(), entry.kb.as_deref()) {
             (Some(embedding), Some(kb)) => {
@@ -911,7 +674,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             router,
             course_source,
             learner_memory,
-            tutor_memory_runtime,
             &runtime_security,
         )?;
         if entry.capability == "research" {
@@ -921,7 +683,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                 .with_product_tool(Arc::new(CreateResearchReportTool::new(workflow_router)));
         }
         let resolved_content =
-            resolve_message_content_with_space_mentions(&notebook, &quizzes, &content, &mentions);
+            resolve_message_content_with_space_mentions(&notebook, &content, &mentions);
         if !mentions.is_empty() {
             let _ = entry
                 .stream
@@ -934,69 +696,12 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                 )
                 .await;
         }
-        let mut request = agent_run_request(
+        let request = agent_run_request(
             resolved_content.content,
             &entry.id,
             entry.kb.as_deref(),
             learner_memory_mode,
-            bound_tutor.as_ref(),
         )?;
-        if assistant_message_index == 1
-            && bound_tutor.is_some()
-            && let Some(knowledge_runtime) = router.knowledge_runtime.as_ref()
-        {
-            let access = agent_knowledge_access_context(
-                &entry.id,
-                entry.kb.as_deref(),
-                learner_memory_mode,
-                bound_tutor.as_ref(),
-            );
-            let chunks = knowledge_runtime
-                .collect_verified_chunks_scoped(
-                    access,
-                    "*",
-                    Some(TUTOR_MEMORY_SOURCE_ID.into()),
-                    vec![
-                        FilterExpr::Eq {
-                            field: "status".into(),
-                            value: serde_json::json!("active"),
-                        },
-                        FilterExpr::In {
-                            field: "kind".into(),
-                            values: vec![
-                                serde_json::json!("commitment"),
-                                serde_json::json!("open_loop"),
-                                serde_json::json!("lesson_plan"),
-                            ],
-                        },
-                    ],
-                    20,
-                    cancel.clone(),
-                )
-                .await?;
-            let items = chunks
-                .into_iter()
-                .filter_map(|chunk| {
-                    let entry_id = chunk.reference.item_id.strip_prefix("entry/")?.to_string();
-                    let revision = chunk.reference.revision?;
-                    Some(TutorMemoryBriefingItem {
-                        entry_id,
-                        revision,
-                        body: chunk.text,
-                    })
-                })
-                .collect::<Vec<_>>();
-            if !items.is_empty() {
-                let _ = entry
-                    .stream
-                    .status(
-                        "tutor_memory_recalled",
-                        serde_json::json!({ "count": items.len() }),
-                    )
-                    .await;
-                request = request.with_extension(TutorMemoryBriefing { items });
-            }
-        }
         let answer = router
             .run_request_with_session_cancel(
                 capability,
@@ -1052,7 +757,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                         "id": mention.id,
                         "type": mention.mention_type,
                         "target_id": mention.target_id,
-                        "question_id": mention.question_id,
                         "title": mention.title,
                     })).collect::<Vec<_>>(),
                         "assistant": answer,
@@ -1107,14 +811,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
     }
 }
 
-fn tutor_product_instruction(tutor: &TutorProfile) -> String {
-    format!(
-        "Tutor name: {}\n\n## Tutor Soul (user-authored Markdown)\n\n{}",
-        tutor.name.trim(),
-        tutor.soul_markdown.trim()
-    )
-}
-
 fn assistant_product_instruction(assistant: &crate::session::AssistantSessionConfig) -> String {
     let instructions = assistant.instructions.trim();
     if instructions.is_empty() {
@@ -1153,9 +849,8 @@ struct ResolvedMessageContent {
 
 fn resolve_message_content_with_space_mentions(
     notebook: &NotebookStore,
-    quizzes: &QuizStore,
     content: &str,
-    mentions: &[SpaceMention],
+    mentions: &[NotebookMention],
 ) -> ResolvedMessageContent {
     if mentions.is_empty() {
         return ResolvedMessageContent {
@@ -1167,9 +862,7 @@ fn resolve_message_content_with_space_mentions(
     let mut resolved_count = 0usize;
     let mut blocks = Vec::new();
     for mention in mentions.iter().take(8) {
-        let Some((resolved_id, _markdown)) =
-            resolve_space_mention_markdown(notebook, quizzes, mention)
-        else {
+        let Some((resolved_id, _markdown)) = resolve_notebook_mention(notebook, mention) else {
             continue;
         };
         resolved_count += 1;
@@ -1179,11 +872,10 @@ fn resolve_message_content_with_space_mentions(
             .and_then(|value| value.as_str())
             .unwrap_or("");
         blocks.push(format!(
-            "- id: {}; item_type: {}; target_id: {}; question_id: {}; title: {}; path: {}",
+            "- id: {}; item_type: {}; target_id: {}; title: {}; path: {}",
             resolved_id,
-            mention_type_name(&mention.mention_type),
+            mention.mention_type,
             mention.target_id.as_deref().unwrap_or(""),
-            mention.question_id.as_deref().unwrap_or(""),
             mention.title,
             path
         ));
@@ -1198,19 +890,11 @@ fn resolve_message_content_with_space_mentions(
 
     ResolvedMessageContent {
         content: format!(
-            "The user explicitly referenced these Space artifacts. Use the read_space_item tool to inspect exact content before relying on a referenced item, and identify the artifact when you use it.\n\n{}\n\nUser message:\n{}",
+            "The user explicitly referenced these Notebook entries. Use read_notebook_item with the exact target_id before relying on a referenced note, and identify the note when you use it.\n\n{}\n\nUser message:\n{}",
             blocks.join("\n"),
             content
         ),
         resolved_count,
-    }
-}
-
-fn mention_type_name(value: &crate::routes::space::SpaceMentionType) -> &'static str {
-    match value {
-        crate::routes::space::SpaceMentionType::NotebookEntry => "notebook_entry",
-        crate::routes::space::SpaceMentionType::QuizSession => "quiz_session",
-        crate::routes::space::SpaceMentionType::QuizQuestion => "quiz_question",
     }
 }
 
@@ -1278,17 +962,6 @@ fn llm_config_for_session(config: Option<LlmSessionConfig>) -> tutor_agent::Resu
     ))
 }
 
-fn create_quiz_llm_config_for_session(config: Option<LlmSessionConfig>) -> Option<CreateLlmConfig> {
-    let config = config?;
-    Some(CreateLlmConfig {
-        provider: config.provider,
-        model: config.model,
-        api_key: config.api_key,
-        base_url: config.base_url,
-        chat_path: config.chat_path,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1300,7 +973,6 @@ mod tests {
             "session-a",
             Some("kb-a"),
             LearnerMemoryMode::InteractiveMutation,
-            None,
         );
 
         assert_eq!(access.scope.namespace, tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
@@ -1333,18 +1005,14 @@ mod tests {
         assert_eq!(access.principal.principal_type, "local_user");
         assert_eq!(
             access.authorization_version.as_deref(),
-            Some("local-user:agent-knowledge:v1:learner-memory:interactive_mutation")
+            Some("local-user:agent-knowledge:v1:user-memory:interactive_mutation")
         );
     }
 
     #[test]
     fn disabled_learner_memory_omits_all_memory_claims() {
-        let access = agent_knowledge_access_context(
-            "session-a",
-            Some("kb-a"),
-            LearnerMemoryMode::Disabled,
-            None,
-        );
+        let access =
+            agent_knowledge_access_context("session-a", Some("kb-a"), LearnerMemoryMode::Disabled);
 
         assert!(
             !access
@@ -1367,7 +1035,6 @@ mod tests {
             "session-a",
             Some("kb-a"),
             LearnerMemoryMode::InteractiveMutation,
-            None,
         )
         .unwrap();
 
@@ -1382,10 +1049,9 @@ mod tests {
     }
 
     #[test]
-    fn resolves_space_mentions_into_turn_context() {
+    fn resolves_notebook_mentions_into_turn_context() {
         let dir = tempfile::tempdir().unwrap();
         let notebook = NotebookStore::new_with_path(dir.path().join("notebook"));
-        let quizzes = QuizStore::new_with_path(dir.path().join("quizzes.json"));
         let entry = notebook
             .create(NotebookEntryInput {
                 space_id: None,
@@ -1401,13 +1067,11 @@ mod tests {
 
         let resolved = resolve_message_content_with_space_mentions(
             &notebook,
-            &quizzes,
             "summarize this",
-            &[SpaceMention {
+            &[NotebookMention {
                 id: format!("notebook_entry:{}", entry.id),
-                mention_type: crate::routes::space::SpaceMentionType::NotebookEntry,
+                mention_type: "notebook_entry".into(),
                 target_id: Some(entry.id),
-                question_id: None,
                 title: "Mask notes".into(),
                 preview: None,
                 metadata: serde_json::json!({}),
@@ -1415,7 +1079,7 @@ mod tests {
         );
 
         assert_eq!(resolved.resolved_count, 1);
-        assert!(resolved.content.contains("read_space_item"));
+        assert!(resolved.content.contains("read_notebook_item"));
         assert!(resolved.content.contains("notebook_entry:"));
         assert!(!resolved.content.contains("Alignment marks"));
         assert!(resolved.content.contains("User message:\nsummarize this"));

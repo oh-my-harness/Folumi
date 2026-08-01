@@ -1,10 +1,9 @@
 pub mod knowledge;
 pub mod library;
 pub mod memory;
+pub mod migration;
 pub mod notebook;
-pub mod quiz;
+pub mod notebook_mentions;
 pub mod sessions;
 pub mod settings;
-pub mod space;
-pub mod tutors;
 pub mod ws;

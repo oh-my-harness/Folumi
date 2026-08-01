@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ChangeEvent, ReactNode, RefObject } from 'react'
 import {
   AlertCircle,
@@ -49,8 +49,7 @@ import { ResearchReportMessage, looksLikeResearchReport } from './ResearchReport
 import { SaveNotebookDialog, SaveNotebookOutcomeDialog } from './SaveNotebookDialog'
 
 type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'research' | 'organize'
-type OpenMenu = 'knowledge' | 'space' | 'model' | null
-type SpaceMentionFilter = 'all' | SpaceMention['type']
+type OpenMenu = 'knowledge' | 'notes' | 'model' | null
 
 export interface SaveToNotebookOptions {
   folderPath?: string
@@ -71,7 +70,7 @@ interface Message {
   researchUnavailable?: boolean
   notebookEditProposal?: NotebookEditProposal
   attachments?: ChatAttachment[]
-  mentions?: SpaceMention[]
+  mentions?: NotebookMention[]
 }
 
 interface ResearchPlan {
@@ -98,7 +97,7 @@ export interface ChatAttachment {
   truncated?: boolean
 }
 
-export interface SpaceMention {
+export interface NotebookMention {
   id: string
   type: 'notebook_entry'
   target_id?: string | null
@@ -148,7 +147,7 @@ interface Props {
   selectedKnowledgeBaseId: string
   selectedNotebookEnabled: boolean
   initialDraft?: { id: number; text: string } | null
-  onSend: (text: string, attachments?: ChatAttachment[], mentions?: SpaceMention[]) => void
+  onSend: (text: string, attachments?: ChatAttachment[], mentions?: NotebookMention[]) => void
   onStop?: () => void
   onEditUserMessage?: (messageIndex: number, nextText: string) => void
   onAskDeepSolveStep?: (step: { id: string; title: string; summary?: string }) => void
@@ -212,7 +211,7 @@ export function ChatBox({
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null)
   const [editingMessageText, setEditingMessageText] = useState('')
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
-  const [mentions, setMentions] = useState<SpaceMention[]>([])
+  const [mentions, setMentions] = useState<NotebookMention[]>([])
   const [saveNotebookMarkdown, setSaveNotebookMarkdown] = useState<string | null>(null)
   const [saveNotebookFolder, setSaveNotebookFolder] = useState('')
   const [saveNotebookNewFolder, setSaveNotebookNewFolder] = useState('')
@@ -313,7 +312,7 @@ export function ChatBox({
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
   }
 
-  const handleAddMention = (mention: SpaceMention) => {
+  const handleAddMention = (mention: NotebookMention) => {
     setMentions((current) => current.some((item) => item.id === mention.id) ? current : [...current, mention])
   }
 
@@ -1078,8 +1077,8 @@ function Composer({
   attachments: ChatAttachment[]
   onAddAttachments: (attachments: ChatAttachment[]) => void
   onRemoveAttachment: (id: string) => void
-  mentions: SpaceMention[]
-  onAddMention: (mention: SpaceMention) => void
+  mentions: NotebookMention[]
+  onAddMention: (mention: NotebookMention) => void
   onRemoveMention: (id: string) => void
   disabled: boolean
   running: boolean
@@ -1088,20 +1087,15 @@ function Composer({
   const { t } = useI18n()
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [readingAttachments, setReadingAttachments] = useState(false)
-  const [spaceQuery, setSpaceQuery] = useState('')
-  const [spaceMentionFilter] = useState<SpaceMentionFilter>('notebook_entry')
-  const [spaceMentions, setSpaceMentions] = useState<SpaceMention[]>([])
-  const [loadingSpaceMentions, setLoadingSpaceMentions] = useState(false)
+  const [noteQuery, setNoteQuery] = useState('')
+  const [noteMentions, setNoteMentions] = useState<NotebookMention[]>([])
+  const [loadingNoteMentions, setLoadingNoteMentions] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
   const activeKnowledge = selectedNotebookEnabled
     ? { id: '__notebook__', name: 'Notebook' }
     : knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId)
   const activeModel = llmConfigs.find((item) => item.id === activeLlmConfigId) ?? llmConfigs[0] ?? null
-  const visibleSpaceMentions = useMemo(
-    () => filterSpaceMentions(spaceMentions, spaceMentionFilter),
-    [spaceMentions, spaceMentionFilter],
-  )
   const knowledgeOptions = [
     {
       id: '',
@@ -1160,26 +1154,25 @@ function Composer({
   }
 
   useEffect(() => {
-    if (openMenu !== 'space') return
+    if (openMenu !== 'notes') return
     let cancelled = false
     const controller = new AbortController()
-    setLoadingSpaceMentions(true)
+    setLoadingNoteMentions(true)
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams()
-      if (spaceQuery.trim()) params.set('q', spaceQuery.trim())
-      if (spaceMentionFilter !== 'all') params.set('type', spaceMentionFilter)
+      if (noteQuery.trim()) params.set('q', noteQuery.trim())
       params.set('limit', '50')
-      fetch(`/api/space/mentions?${params.toString()}`, { signal: controller.signal })
+      fetch(`/api/notebook/mentions?${params.toString()}`, { signal: controller.signal })
         .then(async (res) => {
-          const data = await res.json().catch(() => ({})) as { mentions?: SpaceMention[] }
+          const data = await res.json().catch(() => ({})) as { mentions?: NotebookMention[] }
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          if (!cancelled) setSpaceMentions(data.mentions ?? [])
+          if (!cancelled) setNoteMentions(data.mentions ?? [])
         })
         .catch(() => {
-          if (!cancelled) setSpaceMentions([])
+          if (!cancelled) setNoteMentions([])
         })
         .finally(() => {
-          if (!cancelled) setLoadingSpaceMentions(false)
+          if (!cancelled) setLoadingNoteMentions(false)
         })
     }, 160)
 
@@ -1188,7 +1181,7 @@ function Composer({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [openMenu, spaceQuery, spaceMentionFilter])
+  }, [openMenu, noteQuery])
 
   return (
     <div
@@ -1301,12 +1294,12 @@ function Composer({
 
         <div className="relative">
           <ToolbarButton
-            active={openMenu === 'space'}
+            active={openMenu === 'notes'}
             icon={<AtSign size={18} />}
             label={mentions.length > 0 ? `${t('nav.knowledge')} ${mentions.length}` : t('nav.knowledge')}
-            onClick={() => toggleMenu('space')}
+            onClick={() => toggleMenu('notes')}
           />
-          {openMenu === 'space' && (
+          {openMenu === 'notes' && (
             <DropdownPanel
               widthClassName="w-[18rem] max-w-[calc(100vw-1.5rem)]"
               className="flex max-h-[min(19rem,calc(100vh-7rem))] flex-col"
@@ -1314,28 +1307,28 @@ function Composer({
               <div className="shrink-0 space-y-1.5 border-b border-blue-50 bg-white px-3 pb-1.5 pt-1">
                 <input
                   className="h-6 w-full rounded-lg border border-blue-100 px-2 text-xs outline-none focus:border-blue-300"
-                  value={spaceQuery}
-                  onChange={(event) => setSpaceQuery(event.target.value)}
-                  placeholder={t('chat.space.searchPlaceholder')}
+                  value={noteQuery}
+                  onChange={(event) => setNoteQuery(event.target.value)}
+                  placeholder={t('chat.notes.searchPlaceholder')}
                   autoFocus
                 />
-                {loadingSpaceMentions && (
-                  <div className="px-1 text-[11px] text-blue-500">{t('chat.space.updating')}</div>
+                {loadingNoteMentions && (
+                  <div className="px-1 text-[11px] text-blue-500">{t('chat.notes.updating')}</div>
                 )}
               </div>
               <div className="min-h-0 overflow-y-auto py-1">
-                {visibleSpaceMentions.length === 0 ? (
+                {noteMentions.length === 0 ? (
                   <div className="px-3 py-2 text-xs text-gray-500">
-                    {t('chat.space.noMatching')}
+                    {t('chat.notes.noMatching')}
                   </div>
                 ) : (
-                  visibleSpaceMentions.map((mention) => (
+                  noteMentions.map((mention) => (
                     <DropdownOption
                       key={mention.id}
                       selected={mentions.some((item) => item.id === mention.id)}
-                      icon={spaceMentionIcon(mention)}
+                      icon={noteMentionIcon(mention)}
                       title={mention.title}
-                      description={spaceMentionDescription(mention)}
+                      description={noteMentionDescription(mention)}
                       onClick={() => {
                         onAddMention(mention)
                         setOpenMenu(null)
@@ -1558,7 +1551,7 @@ function MentionSummary({
   removable = false,
   onRemove,
 }: {
-  mentions: SpaceMention[]
+  mentions: NotebookMention[]
   removable?: boolean
   onRemove?: (id: string) => void
 }) {
@@ -1570,9 +1563,9 @@ function MentionSummary({
           className="flex max-w-full items-center gap-2 rounded-xl border border-blue-100 bg-white px-3 py-2 text-xs text-gray-700"
           title={mention.preview || mention.title}
         >
-          <span className="shrink-0 text-blue-600">{spaceMentionIcon(mention, 16)}</span>
+          <span className="shrink-0 text-blue-600">{noteMentionIcon(mention, 16)}</span>
           <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700">
-            {spaceMentionTypeLabel(mention)}
+            {noteMentionTypeLabel(mention)}
           </span>
           <span className="min-w-0 truncate font-medium">{mention.title}</span>
           {removable && (
@@ -1580,7 +1573,7 @@ function MentionSummary({
               className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-blue-50 hover:text-gray-900"
               type="button"
               onClick={() => onRemove?.(mention.id)}
-              title="Remove Space reference"
+              title="Remove note reference"
             >
               <X size={14} />
             </button>
@@ -1591,21 +1584,16 @@ function MentionSummary({
   )
 }
 
-function spaceMentionIcon(_mention: SpaceMention, size = 21) {
+function noteMentionIcon(_mention: NotebookMention, size = 21) {
   return <FileText size={size} />
 }
 
-function spaceMentionTypeLabel(_mention: SpaceMention) {
+function noteMentionTypeLabel(_mention: NotebookMention) {
   return 'Note'
 }
 
-function filterSpaceMentions(mentions: SpaceMention[], filter: SpaceMentionFilter) {
-  if (filter === 'all') return mentions
-  return mentions.filter((mention) => mention.type === filter)
-}
-
-function spaceMentionDescription(mention: SpaceMention) {
-  return [spaceMentionTypeLabel(mention), mention.preview].filter(Boolean).join(' - ')
+function noteMentionDescription(mention: NotebookMention) {
+  return [noteMentionTypeLabel(mention), mention.preview].filter(Boolean).join(' - ')
 }
 
 function formatBytes(bytes: number) {

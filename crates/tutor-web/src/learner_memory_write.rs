@@ -27,6 +27,8 @@ const PREFERENCE_ITEM_PREFIX: &str = "l3/preferences/";
 const PREFERENCE_TARGET: &str = "L3/preferences.md";
 const PROFILE_ITEM_PREFIX: &str = "l3/profile/";
 const PROFILE_TARGET: &str = "L3/profile.md";
+const CONTINUITY_ITEM_PREFIX: &str = "l3/continuity/";
+const CONTINUITY_TARGET: &str = "L3/continuity.md";
 
 #[derive(Clone)]
 pub struct LearnerMemoryWriteStore {
@@ -65,12 +67,15 @@ impl MemoryStore for LearnerMemoryWriteStore {
             let (target, item_prefix) = match kind {
                 "profile" => (PROFILE_TARGET, PROFILE_ITEM_PREFIX),
                 "preference" => (PREFERENCE_TARGET, PREFERENCE_ITEM_PREFIX),
+                "commitment" | "open_loop" | "strategy" => {
+                    (CONTINUITY_TARGET, CONTINUITY_ITEM_PREFIX)
+                }
                 _ => return Err(KnowledgeError::Unauthorized),
             };
-            let access_kind = if kind == "profile" {
-                "profile"
-            } else {
-                "preferences"
+            let access_kind = match kind {
+                "profile" => "profile",
+                "preference" => "preferences",
+                _ => "continuity",
             };
             if !csv_contains(
                 ctx.access
@@ -120,19 +125,32 @@ impl MemoryStore for LearnerMemoryWriteStore {
             let (kind, marker) = if let Some(marker) =
                 reference.item_id.strip_prefix(PROFILE_ITEM_PREFIX)
             {
-                ("profile", marker)
+                ("profile".to_string(), marker)
             } else if let Some(marker) = reference.item_id.strip_prefix(PREFERENCE_ITEM_PREFIX) {
-                ("preference", marker)
+                ("preference".to_string(), marker)
+            } else if let Some(marker) = reference.item_id.strip_prefix(CONTINUITY_ITEM_PREFIX) {
+                let entry = self
+                    .backend
+                    .read(CONTINUITY_TARGET)
+                    .map_err(backend_error)?;
+                let kind = crate::memory_store::try_parse_memory_entries(&entry.markdown)
+                    .map_err(backend_error)?
+                    .into_iter()
+                    .find(|entry| entry.marker == marker)
+                    .and_then(|entry| entry.metadata.map(|metadata| metadata.kind))
+                    .ok_or(KnowledgeError::NotFound)?;
+                (kind, marker)
             } else {
                 return Err(KnowledgeError::NotFound);
             };
             if marker.is_empty() || marker.contains('/') {
                 return Err(KnowledgeError::NotFound);
             }
-            let access_kind = if kind == "profile" {
-                "profile"
-            } else {
-                "preferences"
+            let access_kind = match kind.as_str() {
+                "profile" => "profile",
+                "preference" => "preferences",
+                "commitment" | "open_loop" | "strategy" => "continuity",
+                _ => return Err(KnowledgeError::NotFound),
             };
             if !csv_contains(
                 ctx.access
@@ -149,7 +167,7 @@ impl MemoryStore for LearnerMemoryWriteStore {
                 .ok_or(KnowledgeError::StaleReference { latest: None })?;
             match self
                 .backend
-                .delete_durable_memory(kind, marker, expected_revision)
+                .delete_durable_memory(&kind, marker, expected_revision)
                 .map_err(backend_error)?
             {
                 ExactMemoryDeleteOutcome::Deleted => Ok(MemoryDeleteReceipt {
@@ -183,7 +201,13 @@ impl LearnerMemoryWritePolicy {
             secret,
             SecureMemoryWritePolicyConfig {
                 max_content_bytes: 4 * 1_200,
-                allowed_kinds: Some(BTreeSet::from(["preference".into(), "profile".into()])),
+                allowed_kinds: Some(BTreeSet::from([
+                    "preference".into(),
+                    "profile".into(),
+                    "commitment".into(),
+                    "open_loop".into(),
+                    "strategy".into(),
+                ])),
                 default_ttl: None,
                 max_ttl: Duration::from_secs(365 * 24 * 60 * 60),
                 metadata,
@@ -216,6 +240,7 @@ impl MemoryWritePolicy for LearnerMemoryWritePolicy {
             let target = match write.kind.as_deref() {
                 Some("profile") => PROFILE_TARGET,
                 Some("preference") => PREFERENCE_TARGET,
+                Some("commitment" | "open_loop" | "strategy") => CONTINUITY_TARGET,
                 _ => {
                     return Err(MemoryPolicyError::Rejected(
                         MemoryPolicyRejection::UnsupportedKind,
@@ -328,7 +353,8 @@ fn authorize_mutation(
         && (csv_contains(
             attributes.get(LEARNER_MEMORY_KINDS_ATTRIBUTE),
             "preferences",
-        ) || csv_contains(attributes.get(LEARNER_MEMORY_KINDS_ATTRIBUTE), "profile"));
+        ) || csv_contains(attributes.get(LEARNER_MEMORY_KINDS_ATTRIBUTE), "profile")
+            || csv_contains(attributes.get(LEARNER_MEMORY_KINDS_ATTRIBUTE), "continuity"));
     if allowed {
         Ok(())
     } else {

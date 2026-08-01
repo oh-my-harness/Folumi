@@ -1,7 +1,7 @@
 ﻿import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { ChatBox } from './components/ChatBox'
-import type { ChatAttachment, ContextStats, NotebookEditProposal, SaveToNotebookOptions, SpaceMention } from './components/ChatBox'
+import type { ChatAttachment, ContextStats, NotebookEditProposal, NotebookMention, SaveToNotebookOptions } from './components/ChatBox'
 import { TracePanel, TraceEntry } from './components/TracePanel'
 import { BudgetPanel } from './components/BudgetPanel'
 import { ApprovalDialog } from './components/ApprovalDialog'
@@ -66,7 +66,7 @@ interface Message {
   researchUnavailable?: boolean
   notebookEditProposal?: NotebookEditProposal
   attachments?: ChatAttachment[]
-  mentions?: SpaceMention[]
+  mentions?: NotebookMention[]
 }
 
 interface ResearchPlan {
@@ -137,7 +137,7 @@ interface SessionDetailResponse {
   messages?: Array<{
     role: 'user' | 'assistant'
     text: string
-    mentions?: SpaceMention[]
+    mentions?: NotebookMention[]
     citations?: Citation[]
   }>
   trace?: Array<{
@@ -192,7 +192,7 @@ export default function App() {
   const [streamingText, setStreamingText] = useState('')
   const streamingRef = useRef('')
   const progressStreamingRef = useRef('')
-  const pendingSessionSendRef = useRef<{ sessionId: string; content: string; mentions: SpaceMention[] } | null>(null)
+  const pendingSessionSendRef = useRef<{ sessionId: string; content: string; mentions: NotebookMention[] } | null>(null)
   const [traceEntries, setTraceEntries] = useState<TraceEntry[]>([])
   const pendingCitationsRef = useRef<Citation[]>([])
   const pendingDeepSolveRef = useRef<DeepSolveTraceEntry[]>([])
@@ -213,7 +213,7 @@ export default function App() {
   const [selectedNotebookEnabled, setSelectedNotebookEnabled] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [traceCollapsed, setTraceCollapsed] = useState(true)
-  const [spaceFocusTarget, setSpaceFocusTarget] = useState<Extract<SourceTarget, { type: 'notebook' }> | null>(null)
+  const [noteFocusTarget, setNoteFocusTarget] = useState<Extract<SourceTarget, { type: 'notebook' }> | null>(null)
   const [knowledgeFocusTarget, setKnowledgeFocusTarget] = useState<Extract<SourceTarget, { type: 'kb' }> | null>(null)
   const [latestUsage, setLatestUsage] = useState<TokenUsagePayload | null>(null)
   const contextStats = useMemo<ContextStats>(() => {
@@ -534,10 +534,10 @@ export default function App() {
     onError: (sourceSessionId) => {
       if (!isCurrentSessionEvent(sourceSessionId, activeSessionIdRef.current)) return
       setPendingApproval(null)
-      pushStatus({ kind: 'error', label: 'Connection failed', detail: 'Check tutor-web server' })
+      pushStatus({ kind: 'error', label: 'Connection failed', detail: 'Check the Folumi backend service' })
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', text: 'Error: WebSocket connection failed. Check that tutor-web is running on 127.0.0.1:8080.' },
+        { role: 'assistant', text: 'Error: WebSocket connection failed. Check that the Folumi backend is running on 127.0.0.1:8080.' },
       ])
       setRunning(false)
     },
@@ -682,10 +682,10 @@ export default function App() {
     })
   }, [refreshSessions, refreshKnowledgeBases, refreshNotebookFolders, pushStatus])
 
-  const handleSend = useCallback(async (text: string, attachments: ChatAttachment[] = [], mentions: SpaceMention[] = []) => {
+  const handleSend = useCallback(async (text: string, attachments: ChatAttachment[] = [], mentions: NotebookMention[] = []) => {
     try {
       const content = buildMessageContentWithAttachments(text, attachments)
-      const displayText = text.trim() || (attachments.length > 0 ? `Sent ${attachments.length} attachment(s)` : `Referenced ${mentions.length} Space item(s)`)
+      const displayText = text.trim() || (attachments.length > 0 ? `Sent ${attachments.length} attachment(s)` : `Referenced ${mentions.length} note(s)`)
       let sid = sessionId
       let createdSession = false
       if (!sid) {
@@ -1304,7 +1304,7 @@ export default function App() {
     }
 
     if (target.type === 'notebook') {
-      setSpaceFocusTarget(target)
+      setNoteFocusTarget(target)
       setKnowledgeSection('notes')
       setView('knowledge')
       pushStatus({
@@ -1397,7 +1397,7 @@ export default function App() {
                   notebookVault={notebookVault}
                   onSaveToNotebook={handleSaveToNotebook}
                   onOpenNotebookEntry={(entryId) => {
-                    setSpaceFocusTarget({ type: 'notebook', entryId })
+                    setNoteFocusTarget({ type: 'notebook', entryId })
                     setKnowledgeSection('notes')
                     setView('knowledge')
                   }}
@@ -1433,7 +1433,7 @@ export default function App() {
             onSectionChange={setKnowledgeSection}
             onChanged={refreshKnowledgeBases}
             knowledgeFocusTarget={knowledgeFocusTarget}
-            noteFocusTarget={spaceFocusTarget?.type === 'notebook' ? spaceFocusTarget : null}
+            noteFocusTarget={noteFocusTarget}
             onSourceNavigate={handleSourceNavigate}
           />
         )}

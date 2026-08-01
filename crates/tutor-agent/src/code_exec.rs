@@ -82,7 +82,7 @@ pub(crate) async fn run_code_exec_with_request(
                 tools,
                 plugins: vec![],
                 system_prompt: router.apply_product_instruction(
-                    "You are a code execution tutor. When the user asks to run code, \
+                    "You are a code execution assistant. When the user asks to run code, \
              call code_exec with the correct language and code, then explain stdout, stderr, \
              and exit code clearly. For non-trivial numeric calculations or approximations, \
              call code_exec with Python to compute or verify the result before answering. If no \
