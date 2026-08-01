@@ -4,6 +4,7 @@ export type UiLanguage = 'zh-CN' | 'en-US'
 
 export type TranslationKey =
   | 'app.subtitle'
+  | 'nav.assistant'
   | 'nav.chat'
   | 'nav.tutor'
   | 'nav.knowledge'
@@ -62,12 +63,14 @@ export type TranslationKey =
   | 'settings.subtitle'
   | 'settings.saved'
   | 'settings.tabs.appearance'
+  | 'settings.tabs.assistant'
   | 'settings.tabs.llm'
   | 'settings.tabs.embedding'
   | 'settings.tabs.search'
   | 'settings.tabs.governance'
   | 'settings.tabs.help'
   | 'settings.appearance.title'
+  | 'settings.assistant.description'
   | 'settings.appearance.description'
   | 'settings.theme.title'
   | 'settings.theme.description'
@@ -99,6 +102,7 @@ export type TranslationKey =
 const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
   'zh-CN': {
     'app.subtitle': '本地个人知识助手',
+    'nav.assistant': '助手',
     'nav.chat': '聊天',
     'nav.tutor': '辅导机器人',
     'nav.knowledge': '知识库',
@@ -122,11 +126,11 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'space.tabs.notebook.description': '保存研究报告、笔记、片段和可复用学习记录。',
     'space.tabs.quizBank.description': '查看历史测验和错题记录。',
     'space.tabs.studentProfile.description': '由 Markdown 记忆和练习数据构成的可见学生画像。',
-    'chat.title': '聊天',
-    'chat.subtitle': '提问、运行工具、查看轨迹。',
+    'chat.title': '助手',
+    'chat.subtitle': '基于你的资料提问、研究和整理想法。',
     'chat.new': '新对话',
-    'chat.empty.title': '你想学点什么？',
-    'chat.empty.description': '可以选择一位导师，也可以直接开始。',
+    'chat.empty.title': '今天想了解什么？',
+    'chat.empty.description': '直接提问，或关联知识库中的来源和笔记，让回答有据可查。',
     'chat.tutor.label': '导师',
     'chat.tutor.select': '选择导师',
     'chat.tutor.temporary': '临时助手',
@@ -141,7 +145,7 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.knowledge.none.description': '仅使用当前对话上下文',
     'chat.knowledge.use.description': '关联此知识库进行检索',
     'chat.notebook.description': '以纯 Markdown 文本搜索 Notebook',
-    'chat.space.searchPlaceholder': '搜索笔记和测验...',
+    'chat.space.searchPlaceholder': '搜索笔记...',
     'chat.space.updating': '更新中...',
     'chat.space.noMatching': '没有匹配内容。',
     'chat.model.select': '选择模型',
@@ -157,12 +161,14 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.subtitle': '调整外观、配置模型服务、查看内置工具。',
     'settings.saved': '所有更改已保存',
     'settings.tabs.appearance': '外观',
+    'settings.tabs.assistant': '助手与记忆',
     'settings.tabs.llm': 'LLM',
     'settings.tabs.embedding': '嵌入模型',
     'settings.tabs.search': '搜索',
     'settings.tabs.governance': '能力',
     'settings.tabs.help': '帮助',
     'settings.appearance.title': '界面外观',
+    'settings.assistant.description': '管理助手如何延续上下文，以及它保存的可见记忆。',
     'settings.appearance.description': '调整界面语言和视觉偏好。',
     'settings.theme.title': '主题色',
     'settings.theme.description': '选择应用框架、工作区和内容表面的整体配色。',
@@ -193,9 +199,10 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
   },
   'en-US': {
     'app.subtitle': 'Personal knowledge assistant',
+    'nav.assistant': 'Assistant',
     'nav.chat': 'Chat',
     'nav.tutor': 'Tutor Bot',
-    'nav.knowledge': 'Knowledge',
+    'nav.knowledge': 'Knowledge Base',
     'nav.space': 'Space',
     'nav.memory': 'Memory',
     'nav.settings': 'Settings',
@@ -216,11 +223,11 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'space.tabs.notebook.description': 'Saved reports, notes, snippets, and reusable learning records.',
     'space.tabs.quizBank.description': 'Review historical quizzes and missed questions.',
     'space.tabs.studentProfile.description': 'A visible learner profile built from Markdown memory and practice data.',
-    'chat.title': 'Chat',
-    'chat.subtitle': 'Ask questions, run tools, and inspect traces.',
+    'chat.title': 'Assistant',
+    'chat.subtitle': 'Ask, research, and organize ideas using your material.',
     'chat.new': 'New chat',
-    'chat.empty.title': 'What would you like to learn?',
-    'chat.empty.description': 'Choose a tutor, or start right away.',
+    'chat.empty.title': 'What would you like to understand?',
+    'chat.empty.description': 'Ask directly, or attach Sources and Notes from your Knowledge Base for grounded answers.',
     'chat.tutor.label': 'Tutor',
     'chat.tutor.select': 'Choose a tutor',
     'chat.tutor.temporary': 'Temporary assistant',
@@ -235,7 +242,7 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.knowledge.none.description': 'Use only the current conversation context',
     'chat.knowledge.use.description': 'Search this knowledge base for context',
     'chat.notebook.description': 'Search Notebook as plain Markdown text',
-    'chat.space.searchPlaceholder': 'Search notebook and quizzes...',
+    'chat.space.searchPlaceholder': 'Search notes...',
     'chat.space.updating': 'Updating...',
     'chat.space.noMatching': 'No matching content.',
     'chat.model.select': 'Select model',
@@ -251,12 +258,14 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.subtitle': 'Adjust appearance, configure model services, and inspect built-in tools.',
     'settings.saved': 'All changes saved',
     'settings.tabs.appearance': 'Appearance',
+    'settings.tabs.assistant': 'Assistant & Memory',
     'settings.tabs.llm': 'LLM',
     'settings.tabs.embedding': 'Embedding',
     'settings.tabs.search': 'Search',
     'settings.tabs.governance': 'Capabilities',
     'settings.tabs.help': 'Help',
     'settings.appearance.title': 'Appearance',
+    'settings.assistant.description': 'Control assistant continuity and review the visible memory it keeps.',
     'settings.appearance.description': 'Adjust interface language and visual preferences.',
     'settings.theme.title': 'Color theme',
     'settings.theme.description': 'Choose the palette used by the app frame, workspaces, and content surfaces.',

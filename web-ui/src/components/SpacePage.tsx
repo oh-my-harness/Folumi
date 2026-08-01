@@ -122,11 +122,13 @@ export function SpacePage({
   onSourceNavigate,
   onStartQuiz,
   mode = 'space',
+  embedded = false,
 }: {
   focusTarget?: SpaceFocusTarget | null
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
   onStartQuiz?: () => void
   mode?: 'space' | 'notebook'
+  embedded?: boolean
 }) {
   const { t, language } = useI18n()
   const [activeTab, setActiveTab] = useState<SpaceTab>(() => mode === 'notebook' ? 'notebook' : 'quiz_bank')
@@ -575,7 +577,7 @@ export function SpacePage({
   if (mode === 'notebook') {
     return (
       <main className="flex h-full min-h-0 flex-col bg-white">
-        <header className="flex items-center gap-4 border-b border-gray-100 px-8 py-5">
+        {!embedded && <header className="flex items-center gap-4 border-b border-gray-100 px-8 py-5">
           <div>
             <h1 className="text-xl font-semibold text-gray-950">{t('space.tabs.notebook')}</h1>
             <p className="mt-1 text-sm text-gray-500">{subtitleFor('notebook', t)}</p>
@@ -589,7 +591,7 @@ export function SpacePage({
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             {t('space.refresh')}
           </button>
-        </header>
+        </header>}
 
         <NotebookTab
           entries={notebookEntries}

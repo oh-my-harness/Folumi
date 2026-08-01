@@ -11,6 +11,12 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ### Changed
 
+- Reduced the primary interface to Assistant, Knowledge Base, and Settings.
+- Unified Sources and Notes under Knowledge Base and moved visible memory
+  management into Assistant settings.
+- Replaced the legacy capability menu with an on-demand Research chat action.
+- Rewrote onboarding and empty states so a first grounded answer no longer
+  requires Tutor, Space, or workflow concepts.
 - Established Folumi as the local-first personal knowledge assistant product,
   with Assistant, Sources, Notes, Memory, and Settings as the target scope.
 - Froze Quiz, Space, Student Profile, multi-Tutor, and standalone Research

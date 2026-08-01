@@ -9,14 +9,12 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  Code2,
   Copy,
   Database,
   Edit3,
   FileText,
   FileQuestion,
   SearchCheck,
-  MessageSquare,
   Paperclip,
   Quote,
   RefreshCw,
@@ -40,23 +38,21 @@ import {
 import type { NotebookVaultInfo, SaveToNotebookResult } from '../notebookSave'
 import type { LlmModelConfig } from '../settings'
 import type { QuizSession } from '../quizTypes'
-import { useI18n, type TranslationKey } from '../i18n'
+import { useI18n } from '../i18n'
 import { DeepSolveMessage, type DeepSolveTraceEntry } from './DeepSolveMessage'
 import { MarkdownMessage, SourceReferences, sourceTargetFromRaw } from './MarkdownMessage'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
-import type { TutorProfile } from '../tutorTypes'
 import {
   loadChatScrollPosition,
   restoredScrollTop,
   saveChatScrollPosition,
   type ChatScrollPosition,
 } from '../chatScrollPosition'
-import { TutorChooser } from './TutorChooser'
 import { ResearchReportMessage, looksLikeResearchReport } from './ResearchReportMessage'
 import { SaveNotebookDialog, SaveNotebookOutcomeDialog } from './SaveNotebookDialog'
 
 type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'quiz' | 'research' | 'organize'
-type OpenMenu = 'mode' | 'knowledge' | 'space' | 'model' | null
+type OpenMenu = 'knowledge' | 'space' | 'model' | null
 type SpaceMentionFilter = 'all' | SpaceMention['type']
 
 export interface SaveToNotebookOptions {
@@ -126,17 +122,6 @@ export interface SpaceMention {
   metadata?: Record<string, unknown>
 }
 
-const spaceMentionFilterOptions: Array<{
-  value: SpaceMentionFilter
-  labelKey: TranslationKey
-  icon: ReactNode
-}> = [
-  { value: 'all', labelKey: 'mention.filter.all', icon: <AtSign size={14} /> },
-  { value: 'notebook_entry', labelKey: 'mention.filter.notes', icon: <FileText size={14} /> },
-  { value: 'quiz_session', labelKey: 'mention.filter.quizzes', icon: <SearchCheck size={14} /> },
-  { value: 'quiz_question', labelKey: 'mention.filter.questions', icon: <FileQuestion size={14} /> },
-]
-
 export interface NotebookEditProposal {
   entryId: string
   entryTitle: string
@@ -176,11 +161,7 @@ interface Props {
   knowledgeBases: Array<{ id: string; name: string }>
   selectedKnowledgeBaseId: string
   selectedNotebookEnabled: boolean
-  tutors: TutorProfile[]
-  selectedTutorId: string | null | undefined
   initialDraft?: { id: number; text: string } | null
-  onTutorSelect: (tutorId: string | null) => void
-  onManageTutors: () => void
   onSend: (text: string, attachments?: ChatAttachment[], mentions?: SpaceMention[]) => void
   onStop?: () => void
   onEditUserMessage?: (messageIndex: number, nextText: string) => void
@@ -210,46 +191,6 @@ export interface ContextStats {
   source: 'provider' | 'estimate'
 }
 
-const modeOptions: Array<{
-  value: Capability
-  labelKey: TranslationKey
-  descriptionKey: TranslationKey
-  icon: ReactNode
-}> = [
-  {
-    value: 'chat',
-    labelKey: 'cap.chat',
-    descriptionKey: 'cap.chat.description',
-    icon: <MessageSquare size={21} />,
-  },
-  {
-    value: 'code_exec',
-    labelKey: 'cap.codeExec',
-    descriptionKey: 'cap.codeExec.description',
-    icon: <Code2 size={21} />,
-  },
-  {
-    value: 'quiz',
-    labelKey: 'cap.quiz',
-    descriptionKey: 'cap.quiz.description',
-    icon: <FileQuestion size={21} />,
-  },
-  {
-    value: 'research',
-    labelKey: 'cap.research',
-    descriptionKey: 'cap.research.description',
-    icon: <SearchCheck size={21} />,
-  },
-  {
-    value: 'organize',
-    labelKey: 'cap.organize',
-    descriptionKey: 'cap.organize.description',
-    icon: <FileText size={21} />,
-  },
-]
-
-const visibleModeOptions = modeOptions.filter((mode) => mode.value !== 'code_exec')
-
 export function ChatBox({
   sessionId,
   messages,
@@ -261,11 +202,7 @@ export function ChatBox({
   knowledgeBases,
   selectedKnowledgeBaseId,
   selectedNotebookEnabled,
-  tutors,
-  selectedTutorId,
   initialDraft,
-  onTutorSelect,
-  onManageTutors,
   onSend,
   onStop,
   onEditUserMessage,
@@ -639,14 +576,6 @@ export function ChatBox({
               disabled={disabled}
               running={running}
               variant="center"
-              footer={(
-                <TutorChooser
-                  tutors={tutors}
-                  selectedTutorId={selectedTutorId}
-                  onSelect={onTutorSelect}
-                  onManage={onManageTutors}
-                />
-              )}
             />
           </div>
         </div>
@@ -1429,7 +1358,6 @@ function Composer({
   disabled,
   running,
   variant,
-  footer,
 }: {
   inputRef?: RefObject<HTMLTextAreaElement | null>
   input: string
@@ -1455,18 +1383,16 @@ function Composer({
   disabled: boolean
   running: boolean
   variant: 'center' | 'bottom'
-  footer?: ReactNode
 }) {
   const { t } = useI18n()
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [readingAttachments, setReadingAttachments] = useState(false)
   const [spaceQuery, setSpaceQuery] = useState('')
-  const [spaceMentionFilter, setSpaceMentionFilter] = useState<SpaceMentionFilter>('all')
+  const [spaceMentionFilter] = useState<SpaceMentionFilter>('notebook_entry')
   const [spaceMentions, setSpaceMentions] = useState<SpaceMention[]>([])
   const [loadingSpaceMentions, setLoadingSpaceMentions] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
-  const activeMode = modeOptions.find((mode) => mode.value === capability) ?? modeOptions[0]!
   const activeKnowledge = selectedNotebookEnabled
     ? { id: '__notebook__', name: 'Notebook' }
     : knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId)
@@ -1603,31 +1529,21 @@ function Composer({
         </div>
       )}
       <div className="relative flex flex-wrap items-center gap-2 border-t border-blue-50 px-4 py-2">
-        <div className="relative">
-          <ToolbarButton
-            active={openMenu === 'mode'}
-            icon={activeMode.icon}
-            label={t(activeMode.labelKey)}
-            onClick={() => toggleMenu('mode')}
-          />
-          {openMenu === 'mode' && (
-            <DropdownPanel widthClassName="w-[18rem] max-w-[calc(100vw-1.5rem)]">
-              {visibleModeOptions.map((mode) => (
-                <DropdownOption
-                  key={mode.value}
-                  selected={mode.value === capability}
-                  icon={mode.icon}
-                  title={t(mode.labelKey)}
-                  description={t(mode.descriptionKey)}
-                  onClick={() => {
-                    onCapabilityChange(mode.value)
-                    setOpenMenu(null)
-                  }}
-                />
-              ))}
-            </DropdownPanel>
-          )}
-        </div>
+        <button
+          className={`inline-flex h-9 items-center gap-2 rounded-full px-3 text-sm transition ${
+            capability === 'research'
+              ? 'bg-blue-100 text-blue-800'
+              : 'text-gray-600 hover:bg-blue-50'
+          } disabled:text-gray-400`}
+          type="button"
+          title={t('cap.research.description')}
+          disabled={disabled || running}
+          aria-pressed={capability === 'research'}
+          onClick={() => onCapabilityChange(capability === 'research' ? 'chat' : 'research')}
+        >
+          <SearchCheck size={18} />
+          {t('cap.research')}
+        </button>
 
         <button
           className="inline-flex h-9 items-center gap-2 rounded-full px-3 text-sm text-gray-600 hover:bg-blue-50 disabled:text-gray-400"
@@ -1686,7 +1602,7 @@ function Composer({
           <ToolbarButton
             active={openMenu === 'space'}
             icon={<AtSign size={18} />}
-            label={mentions.length > 0 ? `${t('nav.space')} ${mentions.length}` : t('nav.space')}
+            label={mentions.length > 0 ? `${t('nav.knowledge')} ${mentions.length}` : t('nav.knowledge')}
             onClick={() => toggleMenu('space')}
           />
           {openMenu === 'space' && (
@@ -1695,23 +1611,6 @@ function Composer({
               className="flex max-h-[min(19rem,calc(100vh-7rem))] flex-col"
             >
               <div className="shrink-0 space-y-1.5 border-b border-blue-50 bg-white px-3 pb-1.5 pt-1">
-                <div className="flex rounded-lg bg-gray-50 p-0.5">
-                  {spaceMentionFilterOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      className={`flex h-6 flex-1 items-center justify-center gap-1 rounded-md text-[11px] font-medium transition ${
-                        spaceMentionFilter === option.value
-                          ? 'bg-white text-blue-700 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-900'
-                      }`}
-                      type="button"
-                      onClick={() => setSpaceMentionFilter(option.value)}
-                    >
-                      {option.icon}
-                      {t(option.labelKey)}
-                    </button>
-                  ))}
-                </div>
                 <input
                   className="h-6 w-full rounded-lg border border-blue-100 px-2 text-xs outline-none focus:border-blue-300"
                   value={spaceQuery}
@@ -1796,7 +1695,6 @@ function Composer({
           {running ? <Square size={15} /> : <ArrowUp size={20} />}
         </button>
       </div>
-      {footer}
     </div>
   )
 }

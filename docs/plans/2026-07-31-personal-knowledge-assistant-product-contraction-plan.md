@@ -322,12 +322,12 @@ Memory 不再占据一级导航。用户从助手设置进入“它记住了什�
 一句话：导航精简为“助手、知识库、设置”，把 Notebook、Memory 和 Research 放回正确的
 产品层级。
 
-- [ ] 重构 AppView 与 Sidebar；
-- [ ] Knowledge 和 Notebook 合并为统一知识库页面；
-- [ ] Memory 移入助手设置；
-- [ ] Research 改为聊天任务动作；
-- [ ] 删除 Capability 模式选择器中的 Quiz、Research 和 Organize；
-- [ ] 重写首次引导和空状态。
+- [x] 重构 AppView 与 Sidebar；
+- [x] Knowledge 和 Notebook 合并为统一知识库页面；
+- [x] Memory 移入助手设置；
+- [x] Research 改为聊天任务动作；
+- [x] 删除 Capability 模式选择器中的 Quiz、Research 和 Organize；
+- [x] 重写首次引导和空状态。
 
 验收：新用户不需要理解 Tutor、Space、Memory 层级或 workflow 名称即可完成首次资料问答。
 

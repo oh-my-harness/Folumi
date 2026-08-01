@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node --test src/quizSource.test.mjs src/quizRestore.test.mjs src/notebookSave.test.mjs src/researchRestore.test.mjs src/sessionResilience.test.mjs src/messageActions.test.mjs src/markdownMath.test.mjs src/chatScrollPosition.test.mjs src/memoryReview.test.mjs src/settings.test.mjs src/tutorSession.test.mjs src/tutorTypes.test.mjs src/tutorChooserPlacement.test.mjs src/onboardingModes.test.mjs src/productGuide.test.mjs src/knowledgeCitation.test.mjs",
+    "test": "node --test src/quizSource.test.mjs src/quizRestore.test.mjs src/notebookSave.test.mjs src/researchRestore.test.mjs src/sessionResilience.test.mjs src/messageActions.test.mjs src/markdownMath.test.mjs src/chatScrollPosition.test.mjs src/memoryReview.test.mjs src/settings.test.mjs src/tutorSession.test.mjs src/tutorTypes.test.mjs src/tutorChooserPlacement.test.mjs src/onboardingModes.test.mjs src/productGuide.test.mjs src/knowledgeCitation.test.mjs src/productShell.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

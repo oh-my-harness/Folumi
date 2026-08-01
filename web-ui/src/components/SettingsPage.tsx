@@ -38,6 +38,8 @@ import type {
 } from '../settings'
 import { chooseDesktopDirectory, getDesktopDataDir, openDesktopDataDir } from '../api'
 import type { ProductGuideDestination } from '../productGuide'
+import type { SourceReference, SourceTarget } from './MarkdownMessage'
+import { MemoryPage } from './MemoryPage'
 import { ProductGuide } from './ProductGuide'
 
 interface Props {
@@ -48,6 +50,7 @@ interface Props {
   onOpenOnboarding: () => void
   onGuideNavigate: (destination: ProductGuideDestination) => void
   onStartGuideTutor: () => void
+  onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
 }
 
 const providerOptions: { value: LlmProvider; label: string; description: string }[] = [
@@ -63,7 +66,7 @@ const providerOptions: { value: LlmProvider; label: string; description: string 
   },
 ]
 
-export type SettingsTab = 'appearance' | 'llm' | 'embedding' | 'search' | 'notebook' | 'governance' | 'help'
+export type SettingsTab = 'assistant' | 'appearance' | 'llm' | 'embedding' | 'search' | 'notebook' | 'governance' | 'help'
 type ConfigTestState = {
   status: 'running' | 'ok' | 'error'
   message: string
@@ -104,6 +107,7 @@ const settingsTabs: Array<{
   key: SettingsTab
   labelKey:
     | 'settings.tabs.appearance'
+    | 'settings.tabs.assistant'
     | 'settings.tabs.llm'
     | 'settings.tabs.embedding'
     | 'settings.tabs.search'
@@ -112,6 +116,7 @@ const settingsTabs: Array<{
     | 'space.tabs.notebook'
   icon: LucideIcon
 }> = [
+  { key: 'assistant', labelKey: 'settings.tabs.assistant', icon: Brain },
   { key: 'appearance', labelKey: 'settings.tabs.appearance', icon: Palette },
   { key: 'llm', labelKey: 'settings.tabs.llm', icon: Brain },
   { key: 'embedding', labelKey: 'settings.tabs.embedding', icon: Database },
@@ -129,6 +134,7 @@ export function SettingsPage({
   onOpenOnboarding,
   onGuideNavigate,
   onStartGuideTutor,
+  onSourceNavigate,
 }: Props) {
   const { t } = useI18n()
   const [testState, setTestState] = useState<Record<string, ConfigTestState>>({})
@@ -585,10 +591,16 @@ export function SettingsPage({
               </h2>
               <p className="mt-1 text-sm text-gray-600">{tabDescription(activeTab, t)}</p>
             </div>
-            {activeTab !== 'help' && (
+            {activeTab !== 'help' && activeTab !== 'assistant' && (
               <span className="ml-auto text-sm text-gray-500">{t('settings.saved')}</span>
             )}
           </div>
+
+          {activeTab === 'assistant' && (
+            <div className="h-[calc(100vh-12rem)] min-h-[32rem] overflow-hidden rounded-lg border border-gray-200 bg-white">
+              <MemoryPage settings={settings} onSourceNavigate={onSourceNavigate} />
+            </div>
+          )}
 
           {activeTab === 'appearance' && (
             <SettingsPanel
@@ -1318,6 +1330,7 @@ function ThemeOption({
 
 function tabDescription(tab: SettingsTab, t: (key: TranslationKey) => string) {
   const keyByTab: Record<SettingsTab, TranslationKey> = {
+    assistant: 'settings.assistant.description',
     appearance: 'settings.appearance.description',
     llm: 'settings.llm.description',
     embedding: 'settings.embedding.description',

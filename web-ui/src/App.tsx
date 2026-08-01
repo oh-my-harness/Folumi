@@ -6,12 +6,8 @@ import { TracePanel, TraceEntry } from './components/TracePanel'
 import { BudgetPanel } from './components/BudgetPanel'
 import { ApprovalDialog } from './components/ApprovalDialog'
 import { SettingsPage, type SettingsTab } from './components/SettingsPage'
-import { KnowledgePage } from './components/KnowledgePage'
-import { SpacePage } from './components/SpacePage'
-import { MemoryPage } from './components/MemoryPage'
-import { TutorPage } from './components/TutorPage'
+import { KnowledgeBasePage, type KnowledgeSection } from './components/KnowledgeBasePage'
 import { OnboardingDialog } from './components/OnboardingDialog'
-import { onboardingModeBlock, onboardingStarterPrompt, type OnboardingMode } from './onboardingModes'
 import { OnboardingResumeButton } from './components/OnboardingResumeButton'
 import { AppView, Sidebar } from './components/Sidebar'
 import type { DeepSolveTraceEntry } from './components/DeepSolveMessage'
@@ -203,13 +199,14 @@ interface TokenUsagePayload {
 }
 
 export default function App() {
-  const [view, setView] = useState<AppView>('chat')
+  const [view, setView] = useState<AppView>('assistant')
   const [capability, setCapability] = useState<Capability>('chat')
   const [llmSettings, setLlmSettings] = useState(loadLlmSettings)
   const [settingsHydrated, setSettingsHydrated] = useState(false)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [onboardingStep, setOnboardingStep] = useState(0)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('llm')
+  const [knowledgeSection, setKnowledgeSection] = useState<KnowledgeSection>('sources')
   const [starterDraft, setStarterDraft] = useState<{ id: number; text: string } | null>(null)
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(() => loadLlmSettings().activeLlmConfigId)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -1118,6 +1115,7 @@ export default function App() {
   const startNewChat = useCallback(() => {
     activateSession(null)
     setSelectedTutorId(null)
+    setCapability('chat')
     setSelectedLlmConfigId(llmSettings.activeLlmConfigId)
     setMessages([])
     setStreamingText('')
@@ -1134,7 +1132,7 @@ export default function App() {
     setLatestUsage(null)
     setBudgetWarning(false)
     setRunning(false)
-    setView('chat')
+    setView('assistant')
   }, [activateSession, llmSettings.activeLlmConfigId])
 
   const handleTutorSelect = useCallback((tutorId: string | null) => {
@@ -1156,7 +1154,7 @@ export default function App() {
   }, [llmSettings.activeLlmConfigId, tutors])
 
   const handleNavigate = useCallback((nextView: AppView) => {
-    if (nextView === 'chat') {
+    if (nextView === 'assistant') {
       startNewChat()
       return
     }
@@ -1180,30 +1178,6 @@ export default function App() {
   const pauseOnboarding = useCallback(() => {
     setOnboardingOpen(false)
   }, [])
-
-  const startOnboardingMode = useCallback((mode: OnboardingMode) => {
-    const tutorId = selectedTutorId
-    const tutor = tutorId ? tutors.find((item) => item.id === tutorId) ?? null : null
-    const block = onboardingModeBlock(mode, tutor)
-    if (block === 'capability') {
-      pushStatus({ kind: 'error', label: '模式不可用', detail: '当前导师未启用此模式。' })
-      return
-    }
-    if (block === 'notebook') {
-      pushStatus({ kind: 'error', label: 'Notebook 不可用', detail: '当前导师没有 Notebook 权限。' })
-      return
-    }
-
-    completeOnboarding()
-    startNewChat()
-    handleTutorSelect(tutorId)
-    setCapability(mode)
-    if (mode === 'organize') {
-      setSelectedNotebookEnabled(true)
-      setSelectedKnowledgeBaseId('')
-    }
-    setStarterDraft({ id: Date.now(), text: onboardingStarterPrompt(mode, llmSettings.language) })
-  }, [completeOnboarding, handleTutorSelect, llmSettings.language, pushStatus, selectedTutorId, startNewChat, tutors])
 
   const startGuideTutor = useCallback(() => {
     const guideTutor = tutors.find((tutor) => tutor.id === BUILT_IN_GUIDE_TUTOR_ID)
@@ -1229,7 +1203,13 @@ export default function App() {
       setView('settings')
       return
     }
-    setView(destination === 'tutors' ? 'tutor' : destination)
+    if (destination === 'memory' || destination === 'tutors') {
+      setSettingsTab('assistant')
+      setView('settings')
+      return
+    }
+    setKnowledgeSection(destination === 'notebook' ? 'notes' : 'sources')
+    setView('knowledge')
   }, [startNewChat])
 
   const handleCapabilityChange = useCallback(async (nextCapability: Capability) => {
@@ -1373,7 +1353,7 @@ export default function App() {
       setRunning(false)
       await hydrateSession(id)
     }
-    setView('chat')
+    setView('assistant')
   }
 
   const handleRenameSession = async (id: string, title: string) => {
@@ -1485,7 +1465,8 @@ export default function App() {
 
     if (target.type === 'notebook') {
       setSpaceFocusTarget(target)
-      setView('notebook')
+      setKnowledgeSection('notes')
+      setView('knowledge')
       pushStatus({
         kind: 'done',
         label: 'Opened source area',
@@ -1495,18 +1476,18 @@ export default function App() {
     }
 
     if (target.type === 'quiz') {
-      setSpaceFocusTarget(target)
-      setView('space')
+      setView('assistant')
       pushStatus({
         kind: 'done',
-        label: 'Opened source area',
-        detail: sourceTargetDetail(target, reference),
+        label: 'Legacy quiz source',
+        detail: 'This source remains in the conversation until legacy quiz data is exported.',
       })
       return
     }
 
     if (target.type === 'kb') {
       setKnowledgeFocusTarget(target)
+      setKnowledgeSection('sources')
       setView('knowledge')
       pushStatus({
         kind: 'done',
@@ -1516,7 +1497,7 @@ export default function App() {
     }
   }, [handleSelectSession, pushStatus])
 
-  const chatIsEmpty = view === 'chat' && messages.length === 0 && !streamingText && !sessionId
+  const chatIsEmpty = view === 'assistant' && messages.length === 0 && !streamingText && !sessionId
   const activeTutor = selectedTutorId ? tutors.find((item) => item.id === selectedTutorId) ?? null : null
   const t = (key: TranslationKey) => translate(llmSettings.language, key)
 
@@ -1525,7 +1506,7 @@ export default function App() {
     <div className="app-shell flex h-screen overflow-hidden" data-theme={llmSettings.theme}>
       <Sidebar
         activeView={view}
-        activeSessionId={view === 'chat' ? sessionId : null}
+        activeSessionId={view === 'assistant' ? sessionId : null}
         collapsed={sidebarCollapsed}
         recentSessions={recentSessions}
         onNavigate={handleNavigate}
@@ -1537,14 +1518,12 @@ export default function App() {
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {view === 'chat' && (
+        {view === 'assistant' && (
           <>
             <header className="flex items-center gap-4 bg-white px-6 py-3">
               <div>
                 <h1 className="text-lg font-semibold text-gray-900">{t('chat.title')}</h1>
-                <p className="text-xs text-gray-500">
-                  {activeTutor?.name ?? '临时助手'}
-                </p>
+                <p className="text-xs text-gray-500">{t('chat.subtitle')}</p>
               </div>
               <div className="ml-auto">
                 <BudgetPanel spent={budgetSpent} limit={llmSettings.budgetLimitUsd} warning={budgetWarning} />
@@ -1565,11 +1544,7 @@ export default function App() {
                     : knowledgeBases}
                   selectedKnowledgeBaseId={selectedKnowledgeBaseId}
                   selectedNotebookEnabled={selectedNotebookEnabled}
-                  tutors={tutors}
-                  selectedTutorId={selectedTutorId}
                   initialDraft={starterDraft}
-                  onTutorSelect={handleTutorSelect}
-                  onManageTutors={() => setView('tutor')}
                   onSend={handleSend}
                   onStop={handleStopGeneration}
                   onEditUserMessage={handleEditUserMessage}
@@ -1584,7 +1559,8 @@ export default function App() {
                   onSaveToNotebook={handleSaveToNotebook}
                   onOpenNotebookEntry={(entryId) => {
                     setSpaceFocusTarget({ type: 'notebook', entryId })
-                    setView('notebook')
+                    setKnowledgeSection('notes')
+                    setView('knowledge')
                   }}
                   onRegenerateResearch={handleRegenerateResearch}
                   onIngestResearchSources={handleIngestResearchSources}
@@ -1613,46 +1589,16 @@ export default function App() {
           </>
         )}
 
-        {view === 'tutor' && (
-          <TutorPage
-            tutors={tutors}
-            modelConfigs={llmSettings.llmConfigs}
-            knowledgeBases={knowledgeBases}
-            onChanged={refreshTutors}
-            onStartConversation={(tutorId) => {
-              startNewChat()
-              handleTutorSelect(tutorId)
-            }}
-          />
-        )}
-
         {view === 'knowledge' && (
-          <KnowledgePage settings={llmSettings} onChanged={refreshKnowledgeBases} focusTarget={knowledgeFocusTarget} />
-        )}
-
-        {view === 'notebook' && (
-          <SpacePage mode="notebook" focusTarget={spaceFocusTarget} onSourceNavigate={handleSourceNavigate} />
-        )}
-
-        {view === 'space' && (
-          <SpacePage
-            focusTarget={spaceFocusTarget}
+          <KnowledgeBasePage
+            settings={llmSettings}
+            section={knowledgeSection}
+            onSectionChange={setKnowledgeSection}
+            onChanged={refreshKnowledgeBases}
+            knowledgeFocusTarget={knowledgeFocusTarget}
+            noteFocusTarget={spaceFocusTarget?.type === 'notebook' ? spaceFocusTarget : null}
             onSourceNavigate={handleSourceNavigate}
-            onStartQuiz={() => {
-              startNewChat()
-              setCapability('quiz')
-              setStarterDraft({
-                id: Date.now(),
-                text: llmSettings.language === 'en-US'
-                  ? 'Create a short quiz for me. First ask what topic or saved material I want to use.'
-                  : '请为我生成一组简短测验，先询问我要使用的主题或已有材料。',
-              })
-            }}
           />
-        )}
-
-        {view === 'memory' && (
-          <MemoryPage settings={llmSettings} onSourceNavigate={handleSourceNavigate} />
         )}
 
         {view === 'settings' && (
@@ -1664,6 +1610,7 @@ export default function App() {
             onOpenOnboarding={openOnboarding}
             onGuideNavigate={handleGuideNavigate}
             onStartGuideTutor={startGuideTutor}
+            onSourceNavigate={handleSourceNavigate}
           />
         )}
       </div>
@@ -1675,13 +1622,9 @@ export default function App() {
       {onboardingOpen && (
         <OnboardingDialog
           settings={llmSettings}
-          tutors={tutors}
           knowledgeBaseCount={knowledgeBases.length}
-          notebookVault={notebookVault}
-          selectedTutorId={selectedTutorId}
           step={onboardingStep}
           onStepChange={setOnboardingStep}
-          onTutorSelect={handleTutorSelect}
           onOpenModelSettings={() => {
             setOnboardingOpen(false)
             setSettingsTab('llm')
@@ -1694,28 +1637,21 @@ export default function App() {
           }}
           onOpenKnowledge={() => {
             setOnboardingOpen(false)
+            setKnowledgeSection('sources')
             setView('knowledge')
-          }}
-          onOpenNotebookSettings={() => {
-            setOnboardingOpen(false)
-            setSettingsTab('notebook')
-            setView('settings')
-          }}
-          onOpenNotebook={() => {
-            setOnboardingOpen(false)
-            setView('notebook')
-          }}
-          onOpenMemory={() => {
-            setOnboardingOpen(false)
-            setView('memory')
-          }}
-          onManageTutors={() => {
-            setOnboardingOpen(false)
-            setView('tutor')
           }}
           onDismiss={pauseOnboarding}
           onComplete={completeOnboarding}
-          onStartMode={startOnboardingMode}
+          onStart={() => {
+            completeOnboarding()
+            startNewChat()
+            setStarterDraft({
+              id: Date.now(),
+              text: llmSettings.language === 'en-US'
+                ? 'Summarize the three key conclusions in my material and cite where each one came from.'
+                : '请总结我资料中的三个关键结论，并标明每个结论分别来自哪里。',
+            })
+          }}
         />
       )}
     </div>

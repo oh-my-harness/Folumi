@@ -1,14 +1,10 @@
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import {
-  BookOpen,
   Bot,
-  Brain,
   Check,
   Edit3,
   FileText,
-  Grid2X2,
   MessageSquare,
-  NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
   Pin,
@@ -21,14 +17,7 @@ import { useI18n } from '../i18n'
 import { openDesktopContextMenu } from '../desktop'
 import type { TutorSummary } from '../tutorTypes'
 
-export type AppView =
-  | 'chat'
-  | 'tutor'
-  | 'knowledge'
-  | 'notebook'
-  | 'space'
-  | 'memory'
-  | 'settings'
+export type AppView = 'assistant' | 'knowledge' | 'settings'
 
 interface RecentSession {
   id: string
@@ -57,21 +46,11 @@ interface Props {
 
 const navItems: Array<{
   key: AppView
-  labelKey:
-    | 'nav.chat'
-    | 'nav.tutor'
-    | 'nav.knowledge'
-    | 'nav.space'
-    | 'nav.memory'
-    | 'space.tabs.notebook'
+  labelKey: 'nav.assistant' | 'nav.knowledge'
   icon: typeof MessageSquare
 }> = [
-  { key: 'chat', labelKey: 'nav.chat', icon: MessageSquare },
-  { key: 'tutor', labelKey: 'nav.tutor', icon: Bot },
-  { key: 'knowledge', labelKey: 'nav.knowledge', icon: BookOpen },
-  { key: 'notebook', labelKey: 'space.tabs.notebook', icon: NotebookPen },
-  { key: 'space', labelKey: 'nav.space', icon: Grid2X2 },
-  { key: 'memory', labelKey: 'nav.memory', icon: Brain },
+  { key: 'assistant', labelKey: 'nav.assistant', icon: MessageSquare },
+  { key: 'knowledge', labelKey: 'nav.knowledge', icon: FileText },
 ]
 
 export function Sidebar({
@@ -141,7 +120,7 @@ export function Sidebar({
       <div className={`flex items-center ${collapsed ? 'justify-center px-2 py-4' : 'justify-between px-5 py-5'}`}>
         <button
           className={`flex items-center gap-2 text-left ${collapsed ? 'justify-center' : ''}`}
-          onClick={() => onNavigate('chat')}
+          onClick={() => onNavigate('assistant')}
           title="Folumi"
         >
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-blue-600">
