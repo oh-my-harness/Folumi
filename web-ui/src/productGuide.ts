@@ -80,8 +80,8 @@ export function saveProductGuideState(state: ProductGuideState) {
 
 export function guideTutorStarterPrompt(language: UiLanguage) {
   return language === 'en-US'
-    ? 'I need help using Tutor Agent. First ask what I am trying to accomplish, then point me to the exact controls.'
-    : '我需要了解如何使用 Tutor Agent。请先问我想完成什么，再告诉我准确的界面入口。'
+    ? 'I need help using Folumi. First ask what I am trying to accomplish, then point me to the exact controls.'
+    : '我需要了解如何使用 Folumi。请先问我想完成什么，再告诉我准确的界面入口。'
 }
 
 function isProductGuideTopic(value: unknown): value is ProductGuideTopic {

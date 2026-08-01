@@ -47,7 +47,7 @@ $desktopBinary = Join-Path $root "target\$Target\release\llm-tutor-desktop$exeSu
 $sidecarBinary = Join-Path $sidecarDir "tutor-web-$Target$exeSuffix"
 $bundleDir = Join-Path $root "target\$Target\release\bundle"
 
-Write-Host "llm-tutor desktop release build"
+Write-Host "Folumi desktop release build"
 Write-Host "Root:   $root"
 Write-Host "Target: $Target"
 

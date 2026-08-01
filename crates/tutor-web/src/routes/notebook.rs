@@ -959,7 +959,7 @@ fn export_obsidian_vault(
     writer.start_file("README.md", options)?;
     std::io::Write::write_all(
         &mut writer,
-        b"# Notebook Vault\n\nExported from Tutor Agent. Notes keep their YAML frontmatter and wiki links.\n",
+        b"# Notebook Vault\n\nExported from Folumi. Notes keep their YAML frontmatter and wiki links.\n",
     )?;
 
     for entry in entries {

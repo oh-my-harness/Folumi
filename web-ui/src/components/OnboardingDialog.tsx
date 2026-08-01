@@ -136,7 +136,7 @@ export function OnboardingDialog({
         <aside className="w-52 shrink-0 border-r border-gray-200 bg-gray-50 px-5 py-6">
           <div className="mb-8 flex items-center gap-2 text-gray-900">
             <Sparkles size={20} className="text-blue-600" />
-            <span className="text-sm font-semibold">Tutor Agent</span>
+            <span className="text-sm font-semibold">Folumi</span>
           </div>
           <ol className="space-y-1">
             {copy.steps.map((label, index) => (

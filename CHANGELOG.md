@@ -9,6 +9,18 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ## Unreleased
 
+### Changed
+
+- Established Folumi as the local-first personal knowledge assistant product,
+  with Assistant, Sources, Notes, Memory, and Settings as the target scope.
+- Froze Quiz, Space, Student Profile, multi-Tutor, and standalone Research
+  development pending explicit export and migration paths.
+- Updated desktop and user-facing branding to Folumi while retaining the
+  existing application identifier, data directory, and storage keys until the
+  one-time data migration is implemented.
+- Renamed only untouched built-in Tutor Agent usage guides to Folumi; customized
+  guide profiles and Soul content remain unchanged.
+
 ## 0.3.4 - 2026-07-17
 
 ### Fixed

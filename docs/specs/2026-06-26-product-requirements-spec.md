@@ -1,16 +1,25 @@
-# llm-tutor Product Requirements Spec
+# Folumi Product Requirements Spec
 
-> Status: active | Date: 2026-06-26 | Last updated: 2026-07-17 | Scope: consolidate current and planned product requirements into one itemized spec.
+> Status: active transition baseline | Date: 2026-06-26 | Last updated: 2026-08-01 | Scope: define Folumi as a local-first personal knowledge assistant.
+
+## 0. Scope Decision (Normative)
+
+- REQ-000-A: This section and the acceptance baseline take precedence over older requirements in this document during the Folumi transition.
+- REQ-000-B: The target product shall have three primary navigation areas: Assistant, Knowledge Base, and Settings.
+- REQ-000-C: Sources, Notes, and Memory shall remain separate data domains with different ownership and mutation rules.
+- REQ-000-D: Quiz, Space, Student Profile, multi-Tutor, and standalone Research modes are frozen legacy scope. No new feature may depend on them.
+- REQ-000-E: Frozen requirements remain in this document only to describe the current transition build and migration obligations; they are not target-product commitments.
+- REQ-000-F: Legacy data shall not be discarded. Removal requires an explicit export or one-time migration path.
 
 ## 1. Product Goal
 
-- REQ-001: The product shall be a local-first AI learning workspace.
-- REQ-002: The product shall support learning from user-provided documents, chat history, web sources, and generated reports.
-- REQ-003: The product shall prioritize grounded learning workflows over general-purpose chat.
+- REQ-001: Folumi shall be a local-first personal knowledge assistant.
+- REQ-002: The product shall help users import sources, maintain Markdown notes, and converse with grounded answers across durable sessions.
+- REQ-003: The product shall prioritize source-grounded answers, clear citations, user-owned notes, and controllable memory over feature breadth.
 - REQ-004: The product shall keep agent runtime responsibilities in `llm-harness-runtime` / `llm-harness-agent` wherever possible.
-- REQ-005: The product shall keep `llm-tutor` focused on product data, UI,
-  knowledge bases, Notebook, quizzes, reports, settings, and runtime-session
-  mappings.
+- REQ-005: Folumi shall own product data and UI for Sources, Notes, Memory,
+  Settings, and runtime-session mappings; agent infrastructure shall remain in
+  the runtime.
 
 ## 2. Architecture
 
@@ -1029,10 +1038,8 @@ other generated learning records.
 - REQ-550: A clean clone shall be able to start backend and frontend using README commands.
 - REQ-551: A user shall be able to create a knowledge base and upload a document.
 - REQ-552: A user shall be able to ask a RAG-grounded question and see citations.
-- REQ-553: Retired. Users shall solve complex questions through Chat/Tutor and
-  may inspect ordinary tool traces; no new Deep Solve turn can be started.
-- REQ-554: A user shall be able to generate and answer a Quiz.
-- REQ-555: A user shall be able to run a Research turn and get a sourced report.
-- REQ-556: A user shall be able to save a Research report into Notebook.
-- REQ-557: A user shall be able to reopen the app and find prior sessions and
-  saved Notebook reports.
+- REQ-553: A user shall be able to create, edit, link, import, and export Markdown Notes without converting them into read-only Sources.
+- REQ-554: A user shall be able to disable Memory and, when enabled, inspect, correct, approve, or forget remembered items.
+- REQ-555: A user shall be able to reopen the app and find prior sessions, Sources, Notes, and approved Memory.
+- REQ-556: A user shall be able to export all user-owned data and all frozen legacy data before legacy removal.
+- REQ-557: No new feature shall introduce a dependency on Quiz, Space, Student Profile, multi-Tutor, or standalone Research modes.

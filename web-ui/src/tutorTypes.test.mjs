@@ -32,7 +32,7 @@ test('maps only stable legacy role fields into Soul Markdown', () => {
 test('rejects writes acknowledged by a legacy Tutor backend', () => {
   assert.throws(
     () => assertTutorMutationContract({ role: 'Old role', goal: 'Old goal' }),
-    /重启 Tutor Agent/,
+    /重启 Folumi/,
   )
   assert.doesNotThrow(() => assertTutorMutationContract({ soul_markdown: '# Identity' }))
 })

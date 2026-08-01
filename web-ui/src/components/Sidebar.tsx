@@ -142,13 +142,13 @@ export function Sidebar({
         <button
           className={`flex items-center gap-2 text-left ${collapsed ? 'justify-center' : ''}`}
           onClick={() => onNavigate('chat')}
-          title="Tutor Agent"
+          title="Folumi"
         >
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-blue-600">
             <Sparkles size={20} />
           </div>
           {!collapsed && <div>
-            <div className="text-lg font-semibold text-gray-900">Tutor Agent</div>
+            <div className="text-lg font-semibold text-gray-900">Folumi</div>
             <div className="text-xs text-gray-500">{t('app.subtitle')}</div>
           </div>}
         </button>

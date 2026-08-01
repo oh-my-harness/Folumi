@@ -98,7 +98,7 @@ export type TranslationKey =
 
 const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
   'zh-CN': {
-    'app.subtitle': 'AI 学习工作区',
+    'app.subtitle': '本地个人知识助手',
     'nav.chat': '聊天',
     'nav.tutor': '辅导机器人',
     'nav.knowledge': '知识库',
@@ -192,7 +192,7 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'cap.organize.description': '搜索并整理 Notebook 笔记',
   },
   'en-US': {
-    'app.subtitle': 'AI learning workspace',
+    'app.subtitle': 'Personal knowledge assistant',
     'nav.chat': 'Chat',
     'nav.tutor': 'Tutor Bot',
     'nav.knowledge': 'Knowledge',

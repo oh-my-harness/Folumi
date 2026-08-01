@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tutor Agent",
+  "productName": "Folumi",
   "version": "0.3.5",
   "identifier": "com.gkxtwork.llmtutor",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Tutor Agent",
+        "title": "Folumi",
         "width": 1200,
         "height": 800,
         "minWidth": 1100,

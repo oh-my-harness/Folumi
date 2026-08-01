@@ -1130,7 +1130,7 @@ mod tests {
             .unwrap();
         let detail: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(detail["tutor_id"], "general-tutor");
-        assert_eq!(detail["tutor"]["name"], "Tutor Agent 使用指南");
+        assert_eq!(detail["tutor"]["name"], "Folumi 使用指南");
 
         let update = app
             .oneshot(

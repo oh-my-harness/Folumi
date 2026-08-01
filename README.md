@@ -1,44 +1,40 @@
-# llm-tutor / Tutor Agent
+# Folumi
 
-`llm-tutor` 是一个基于
+**Folumi** 是一个基于
 [`llm-harness-runtime`](https://github.com/oh-my-harness/llm-harness-runtime)
-构建的本地优先 AI 学习工作区。桌面产品名为 **Tutor Agent**。
+构建的本地优先个人知识助手。它围绕知识来源、Markdown 笔记和用户可控记忆，帮助用户与自己的长期资料持续对话。
 
-它把多轮聊天、联网研究、测验、RAG 知识库、Markdown Notebook 和学习记忆组合在一个可持久化的桌面应用中。复杂问题由 Chat/Tutor Agent 按需调用检索、搜索和代码执行工具完成。
+当前代码由 `llm-tutor` 演进而来，仍保留 Tutor、Quiz、Space、Research 等旧界面和数据。它们已经冻结，不再作为产品方向继续扩展；后续阶段会在提供明确导出和迁移路径后移除，而不是长期维护两套产品模型。
 
 > 当前版本：`0.3.5`
 >
-> 当前阶段：单用户本地产品原型；核心闭环可用，桌面发布仍在持续人工 QA。
+> 当前阶段：Folumi 产品收缩 Phase 1；建立新产品基线，现有数据格式暂时保持不变。
 >
-> 文档状态：已按 `v0.3.5` / `main` 分支截至 2026-07-20 的实现更新。
+> 文档状态：已按 2026-08-01 的产品范围决策更新。
 
 ## 文档
 
 - [使用手册](./MANUAL.md)：首次配置和全部用户功能
 - [产品需求规格](./docs/specs/2026-06-26-product-requirements-spec.md)
-- [持久化辅导机器人设计](./docs/specs/2026-07-15-persistent-tutor-design.md)
+- [Folumi 产品收缩计划](./docs/plans/2026-07-31-personal-knowledge-assistant-product-contraction-plan.md)
+- [旧产品数据迁移清单](./docs/migrations/2026-08-01-legacy-product-data-inventory.md)
 - [桌面发布计划](./docs/plans/2026-06-28-tauri-desktop-release-plan.md)
 - [桌面 QA 清单](./docs/qa/desktop-release.md)
 - [框架反馈](./docs/framework-feedback.md)
 - [开发原则](./AGENTS.md)
 - [更新记录](./CHANGELOG.md)
 
-## 当前功能
+## 目标产品边界
 
-| 模块 | 当前能力 |
+| 领域 | Folumi 提供的能力 |
 | --- | --- |
-| Chat | runtime session、多轮历史、流式输出、附件、模型/模式/来源选择、`@` 空间引用、消息操作栏、trace；按需使用 RAG、联网搜索和代码执行解决复杂问题。 |
-| Research | 普通对话确认需求后，通过 `create_research_report` 启动独立 workflow；报告、来源和运行状态可恢复。 |
-| Quiz | 普通对话确认要求后，通过 `create_quiz` 启动独立 workflow；生成可恢复、可继续答题的 Quiz 卡片。 |
-| Knowledge / RAG | 创建知识库、绑定 embedding、PDF/文本入库、LanceDB 检索、引用和来源导航。 |
-| Notebook | Markdown 文件树、文件夹、编辑、Wiki Link、反向链接、导入/导出、外部 Vault、生成内容保存。 |
-| Space | 题库、来源筛选、学生画像和跨模块学习资产入口。 |
-| Memory | L1 事件证据、L2 分模块摘要与 L3 跨模块记忆；支持模型/模式可选的更新、检查、去重 workflow，以及逐项 diff 审核。 |
-| Desktop | Tauri 原生窗口、托管 `tutor-web` sidecar、系统文件对话框、桌面剪贴板/右键菜单、外部链接。 |
-| Appearance | `cool-light` 与 `graphite-dark` 主题，中英文界面。 |
-| Tutor | 持久导师身份、Markdown Soul、不可变会话绑定、默认模型、能力与资料权限、隔离的私有连续性记忆。 |
+| Assistant | 基于 runtime session 的多轮对话，按需读取知识、引用来源并使用明确启用的工具。 |
+| Sources | 导入和管理只读资料，支持检索、原文读取、证据引用和来源定位。 |
+| Notes | 用户拥有的 Markdown 内容，可编辑、链接、导入和导出；助手产出只有经用户确认才写入。 |
+| Memory | 默认可关闭、可查看、可修改、可遗忘的助手记忆；业务可以选择完全不用或自行组织。 |
+| Settings | 模型、embedding、搜索、数据目录、工具权限、外观和记忆策略。 |
 
-“辅导机器人”现在支持创建和管理持久导师。每位导师通过 Markdown Soul 定义稳定身份与教学方式，并可配置默认模型、能力和资料权限。承诺、未完成事项、课程计划、反思与教学策略存储在按 Tutor 隔离的私有记忆中，可在“连续性”视图管理。运行时提示词会依据实际挂载的工具分流全局学习者记忆与 Tutor 私有记忆，并避免把同一内容双写；Tutor 页面中的会话集合与汇总运行状态、导师交接和自主记忆硬校验仍在后续阶段。原 Books 能力已经移除，Research 报告只保存到 Notebook。
+目标主导航只有 **Assistant、Knowledge Base、Settings**。Sources、Notes 和 Memory 是清晰分离的数据域：来源不可被助手暗中改写，笔记由用户拥有，记忆必须受用户策略和审批边界控制。Quiz、Space、Student Profile、多 Tutor 和独立 Research 模式属于冻结范围。
 
 ## 快速开始
 
@@ -46,13 +42,13 @@
 
 发布产物由 [GitHub Actions](./.github/workflows/release-desktop.yml) 构建：
 
-- `Tutor-Agent-v<version>-windows-x64-setup.exe`
-- `Tutor-Agent-v<version>-windows-x64.msi`
-- `Tutor-Agent-v<version>-macos-x64.dmg`
-- `Tutor-Agent-v<version>-macos-arm64.dmg`
+- `Folumi-v<version>-windows-x64-setup.exe`
+- `Folumi-v<version>-windows-x64.msi`
+- `Folumi-v<version>-macos-x64.dmg`
+- `Folumi-v<version>-macos-arm64.dmg`
 
 版本标签发布后可从项目的
-[GitHub Releases](https://github.com/oh-my-harness/llm-tutor/releases)
+[GitHub Releases](https://github.com/oh-my-harness/Folumi/releases)
 获取对应产物。桌面应用会自动启动本地后端，无需另行运行服务。
 
 ### 开发环境
@@ -117,7 +113,7 @@ npm run dev --prefix web-ui
 ## 架构
 
 ```text
-Tutor Agent desktop
+Folumi desktop
   -> Tauri shell
       -> React / Vite UI
       -> managed tutor-web sidecar
@@ -153,11 +149,13 @@ scripts              开发、版本、桌面构建和 QA 脚本。
 
 ## 数据存储
 
-浏览器/源码开发模式默认使用：
+浏览器/源码开发模式当前仍使用旧数据目录名：
 
 ```text
 <repo>/.llm-tutor/
 ```
+
+Phase 1 不改目录名、应用标识符或持久化键，避免已有用户的数据被操作系统视为另一套应用数据。迁移会采用一次性、可预览、可回滚的方式完成，详见[旧产品数据迁移清单](./docs/migrations/2026-08-01-legacy-product-data-inventory.md)。
 
 可通过环境变量或后端参数覆盖：
 
@@ -261,7 +259,7 @@ GitHub 发布工作流在 `v*` 标签和手动 `workflow_dispatch` 下构建 Win
 
 ## 开发原则
 
-项目优先使用 `llm-harness-runtime` / `llm-harness-agent` 提供的 session、上下文、工具编排、hook、trace、compaction 和 provider 行为。`llm-tutor` 聚焦产品数据与 UI，不在仓库内建立平行 runtime。
+项目优先使用 `llm-harness-runtime` / `llm-harness-agent` 提供的 session、上下文、工具编排、hook、trace、compaction 和 provider 行为。Folumi 聚焦产品数据与 UI，不在仓库内建立平行 runtime。
 
 完整原则见 [AGENTS.md](./AGENTS.md)。框架缺口记录在 [docs/framework-feedback.md](./docs/framework-feedback.md)。
 

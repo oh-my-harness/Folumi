@@ -212,7 +212,7 @@ export function normalizeTutorProfile(value: unknown): TutorProfile {
 
 export function assertTutorMutationContract(value: Record<string, unknown>) {
   if (typeof value.soul_markdown !== 'string') {
-    throw new Error('当前后端版本不支持导师 Soul，请重启 Tutor Agent 后再保存。')
+    throw new Error('当前后端版本不支持导师 Soul，请重启 Folumi 后再保存。')
   }
 }
 

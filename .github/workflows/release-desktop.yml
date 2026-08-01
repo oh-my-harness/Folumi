@@ -137,11 +137,11 @@ jobs:
           if [[ "${PLATFORM}" == "windows-x64" ]]; then
             msi=(target/${TARGET}/release/bundle/msi/*.msi)
             exe=(target/${TARGET}/release/bundle/nsis/*setup.exe)
-            cp "${msi[0]}" "${output_dir}/Tutor-Agent-${version}-windows-x64.msi"
-            cp "${exe[0]}" "${output_dir}/Tutor-Agent-${version}-windows-x64-setup.exe"
+            cp "${msi[0]}" "${output_dir}/Folumi-${version}-windows-x64.msi"
+            cp "${exe[0]}" "${output_dir}/Folumi-${version}-windows-x64-setup.exe"
           else
             dmg=(target/${TARGET}/release/bundle/dmg/*.dmg)
-            cp "${dmg[0]}" "${output_dir}/Tutor-Agent-${version}-${PLATFORM}.dmg"
+            cp "${dmg[0]}" "${output_dir}/Folumi-${version}-${PLATFORM}.dmg"
           fi
 
       - name: Upload workflow artifact

@@ -153,7 +153,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("failed to build llm-tutor desktop app");
+        .expect("failed to build Folumi desktop app");
 
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit)
