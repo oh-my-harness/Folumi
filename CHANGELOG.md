@@ -17,6 +17,10 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 - Replaced the legacy capability menu with an on-demand Research chat action.
 - Rewrote onboarding and empty states so a first grounded answer no longer
   requires Tutor, Space, or workflow concepts.
+- Added unified Sources and Notes search with type filters, snippets, and
+  direct navigation to the matching item.
+- Added content-based duplicate detection, retryable failed imports, and an
+  explicit full-index rebuild from stored source documents.
 - Established Folumi as the local-first personal knowledge assistant product,
   with Assistant, Sources, Notes, Memory, and Settings as the target scope.
 - Froze Quiz, Space, Student Profile, multi-Tutor, and standalone Research

@@ -38,6 +38,8 @@ pub struct KnowledgeDocument {
     pub content_path: Option<String>,
     #[serde(default)]
     pub file_path: Option<String>,
+    #[serde(default)]
+    pub content_sha256: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -300,6 +302,28 @@ impl KnowledgeStore {
         Ok(Some(std::fs::read(path)?))
     }
 
+    pub fn find_duplicate_document(
+        &self,
+        kb: &str,
+        content_sha256: &str,
+        text: &str,
+    ) -> Result<Option<KnowledgeDocument>> {
+        let Some(item) = self.get(kb) else {
+            return Err(anyhow!("knowledge base not found"));
+        };
+        for document in item.documents {
+            if document.content_sha256.as_deref() == Some(content_sha256) {
+                return Ok(Some(document));
+            }
+            if document.content_sha256.is_none()
+                && self.document_text(kb, &document.id)?.as_deref() == Some(text)
+            {
+                return Ok(Some(document));
+            }
+        }
+        Ok(None)
+    }
+
     fn remove_document_files(&self, document: &KnowledgeDocument) {
         if let Some(relative) = &document.content_path {
             let _ = std::fs::remove_file(self.documents_root.join(relative));
@@ -430,6 +454,7 @@ mod tests {
             mime_type: Some("text/plain".into()),
             content_path: Some(content_path),
             file_path: None,
+            content_sha256: None,
             created_at: Utc::now(),
         };
         store
@@ -457,6 +482,59 @@ mod tests {
             store.document_text("kb-1", "doc-1").unwrap().as_deref(),
             Some("hello knowledge")
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn duplicate_lookup_supports_fingerprinted_and_legacy_documents() {
+        let root = std::env::temp_dir().join(format!("folumi-kb-{}", uuid::Uuid::new_v4()));
+        let path = root.join("knowledge-bases.json");
+        let store = KnowledgeStore::new_with_path(&path);
+        let item = store
+            .create(
+                "Library",
+                tutor_rag::EmbeddingConfig {
+                    provider: "openai".into(),
+                    model: "embedding".into(),
+                    api_key: "test".into(),
+                    base_url: None,
+                    embeddings_path: None,
+                    dimensions: Some(8),
+                    send_dimensions: false,
+                },
+            )
+            .unwrap();
+        let content_path = store
+            .store_document_text(&item.id, "legacy", "same content")
+            .unwrap();
+        store
+            .add_document(
+                &item.id,
+                KnowledgeDocument {
+                    id: "legacy".into(),
+                    name: "legacy.md".into(),
+                    source: "legacy.md".into(),
+                    index_source: None,
+                    size_bytes: 12,
+                    chunks: 1,
+                    mime_type: Some("text/markdown".into()),
+                    content_path: Some(content_path),
+                    file_path: None,
+                    content_sha256: None,
+                    created_at: Utc::now(),
+                },
+            )
+            .unwrap();
+
+        let duplicate = store
+            .find_duplicate_document(&item.id, "sha256:new", "same content")
+            .unwrap()
+            .expect("legacy content should be compared");
+        assert_eq!(duplicate.name, "legacy.md");
+        assert!(store
+            .find_duplicate_document(&item.id, "sha256:other", "different")
+            .unwrap()
+            .is_none());
         let _ = std::fs::remove_dir_all(root);
     }
 }

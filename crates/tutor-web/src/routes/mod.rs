@@ -1,4 +1,5 @@
 pub mod knowledge;
+pub mod library;
 pub mod memory;
 pub mod notebook;
 pub mod quiz;

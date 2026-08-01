@@ -813,6 +813,7 @@ mod tests {
                     mime_type: Some("text/markdown".into()),
                     content_path: None,
                     file_path: None,
+                    content_sha256: None,
                     created_at: Utc::now(),
                 },
             )

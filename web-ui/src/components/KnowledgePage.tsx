@@ -286,14 +286,19 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
   const uploadFiles = async () => {
     if (!activeKb || selectedFiles.length === 0 || busy) return
     setBusy(true)
-    setStatus(`正在上传 ${selectedFiles.length} 个附件...`)
-    setUploadProgress(selectedFiles.map(fileToProgressItem))
+    const filesToUpload = selectedFiles.filter((file) => {
+      const progress = uploadProgress.find((item) => item.id === uploadProgressId(file))
+      return progress?.status !== 'done'
+    })
+    setStatus(`正在上传 ${filesToUpload.length} 个附件...`)
+    if (uploadProgress.length === 0) setUploadProgress(selectedFiles.map(fileToProgressItem))
     try {
       let latestKb: KnowledgeBaseItem | null = null
       let latestDoc: KnowledgeDocument | null = null
       const previews: Record<string, string> = {}
+      const failedFiles: File[] = []
 
-      for (const file of selectedFiles) {
+      for (const file of filesToUpload) {
         const uploadId = uploadProgressId(file)
         let data: { knowledge_base: KnowledgeBaseItem; chunks?: number }
         try {
@@ -311,7 +316,8 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                 : item,
             ),
           )
-          throw new Error(`${file.name}: ${message}`)
+          failedFiles.push(file)
+          continue
         }
         latestKb = data.knowledge_base as KnowledgeBaseItem
         latestDoc = latestKb.documents[0] ?? null
@@ -334,10 +340,15 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
         setSelectedDocId(latestDoc.id)
         setPreviewTextByDocId((prev) => ({ ...prev, ...previews }))
       }
-      setSelectedFiles([])
-      if (fileInputRef.current) fileInputRef.current.value = ''
-      setTab('files')
-      setStatus('附件已入库')
+      if (failedFiles.length === 0) {
+        setSelectedFiles([])
+        if (fileInputRef.current) fileInputRef.current.value = ''
+        setTab('files')
+        setStatus('附件已入库')
+      } else {
+        setSelectedFiles(failedFiles)
+        setStatus(`${filesToUpload.length - failedFiles.length} 个附件已入库，${failedFiles.length} 个失败，可直接重试`)
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setUploadProgress((prev) =>
@@ -418,6 +429,29 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
       setStatus(`已重建 ${job.chunks ?? 0} 个片段`)
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const reindexKnowledgeBase = async () => {
+    if (!activeKb || busy) return
+    setBusy(true)
+    setStatus('正在从保存的原文重建全部索引...')
+    try {
+      const res = await fetch(`/api/knowledge-bases/${encodeURIComponent(activeKb.id)}/reindex`, {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      const job = await pollIngestionJob(data.job?.id, (next) => {
+        setStatus(`${stageLabel(next.stage)} · ${next.message}`)
+      })
+      if (job.knowledge_base) applyUpdatedKnowledgeBase(job.knowledge_base)
+      setChunksByDocId({})
+      setStatus(`已从权威原文重建全部索引，共 ${job.chunks ?? 0} 个片段`)
+    } catch (err) {
+      setStatus(`整库重建失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setBusy(false)
     }
@@ -596,7 +630,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                               disabled={busy || selectedFiles.length === 0}
                             >
                               <Database size={17} />
-                              上传并入库
+                              {uploadProgress.some((item) => item.status === 'error') ? '重试失败项' : '上传并入库'}
                             </button>
                           </div>
                         )}
@@ -630,8 +664,17 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                   <div className="max-w-3xl">
                     <h3 className="text-lg font-semibold text-gray-950">索引版本</h3>
                     <p className="mt-1 text-sm text-gray-600">
-                      当前版本绑定 {activeKb.embedding.model}，切换模型需要新建索引版本。
+                      当前版本绑定 {activeKb.embedding.model}。索引是可丢弃的派生数据，可随时从保存的原始文档重建。
                     </p>
+                    <div className="mt-4 flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3">
+                      <div className="min-w-0 flex-1 text-sm text-gray-600">
+                        原始文档是权威数据；此操作会重建当前知识库全部向量片段，不会修改原文。
+                      </div>
+                      <button className={secondaryButtonClassName} type="button" onClick={reindexKnowledgeBase} disabled={busy || activeKb.documents.length === 0}>
+                        <RefreshCw size={16} className={busy ? 'animate-spin' : ''} />
+                        重建全部索引
+                      </button>
+                    </div>
                     <div className="mt-5 flex gap-3">
                       <input
                         className={inputClassName}
@@ -1481,3 +1524,6 @@ const inputClassName =
 
 const primaryButtonClassName =
   'inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3.5 text-sm font-medium text-white shadow-sm shadow-blue-950/10 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400'
+
+const secondaryButtonClassName =
+  'inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50'

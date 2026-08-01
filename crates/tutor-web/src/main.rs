@@ -89,6 +89,10 @@ async fn main() -> anyhow::Result<()> {
             notebook.clone(),
             memory.clone(),
         ))
+        .merge(routes::library::library_router(
+            knowledge.clone(),
+            notebook.clone(),
+        ))
         .merge(routes::space::space_router(
             notebook.clone(),
             quizzes.clone(),

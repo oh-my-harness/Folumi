@@ -12,6 +12,7 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::knowledge_store::{
     KnowledgeBaseView, KnowledgeDocument, KnowledgeStore, normalize_embedding_config,
@@ -374,6 +375,17 @@ async fn ingest_text_document(
         anyhow::bail!("knowledge base not found");
     };
 
+    let content_sha256 = format!("sha256:{:x}", Sha256::digest(text.as_bytes()));
+    if let Some(existing) = state
+        .store
+        .find_duplicate_document(kb, &content_sha256, text)?
+    {
+        anyhow::bail!(
+            "duplicate document: `{}` already contains the same content",
+            existing.name
+        );
+    }
+
     let document_id = uuid::Uuid::new_v4().to_string();
     let index_source = document_index_source(&document_id, source);
     let rag = tutor_rag::LanceDbRag::new(state.rag_root.clone(), item.embedding);
@@ -410,6 +422,7 @@ async fn ingest_text_document(
         mime_type: Some("text/plain; charset=utf-8".to_string()),
         content_path: Some(content_path),
         file_path: None,
+        content_sha256: Some(content_sha256),
         created_at: Utc::now(),
     };
     let view = state.store.add_document(kb, document.clone())?;
