@@ -13,12 +13,10 @@ import {
   Database,
   Edit3,
   FileText,
-  FileQuestion,
   SearchCheck,
   Paperclip,
   Quote,
   RefreshCw,
-  Circle,
   Square,
   X,
 } from 'lucide-react'
@@ -37,7 +35,6 @@ import {
 } from '../notebookSave'
 import type { NotebookVaultInfo, SaveToNotebookResult } from '../notebookSave'
 import type { LlmModelConfig } from '../settings'
-import type { QuizSession } from '../quizTypes'
 import { useI18n } from '../i18n'
 import { DeepSolveMessage, type DeepSolveTraceEntry } from './DeepSolveMessage'
 import { MarkdownMessage, SourceReferences, sourceTargetFromRaw } from './MarkdownMessage'
@@ -51,7 +48,7 @@ import {
 import { ResearchReportMessage, looksLikeResearchReport } from './ResearchReportMessage'
 import { SaveNotebookDialog, SaveNotebookOutcomeDialog } from './SaveNotebookDialog'
 
-type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'quiz' | 'research' | 'organize'
+type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'research' | 'organize'
 type OpenMenu = 'knowledge' | 'space' | 'model' | null
 type SpaceMentionFilter = 'all' | SpaceMention['type']
 
@@ -69,23 +66,12 @@ interface Message {
   kind?: 'idle' | 'thinking' | 'tool' | 'done' | 'error'
   citations?: Citation[]
   deepSolve?: DeepSolveTraceEntry[]
-  quiz?: QuizSession
-  quizPlan?: QuizPlan
   researchPlan?: ResearchPlan
   researchTitle?: string
   researchUnavailable?: boolean
   notebookEditProposal?: NotebookEditProposal
   attachments?: ChatAttachment[]
   mentions?: SpaceMention[]
-}
-
-interface QuizPlan {
-  title: string
-  topic: string
-  source: string
-  difficulty: string
-  questionCount: number
-  notes: string[]
 }
 
 interface ResearchPlan {
@@ -114,7 +100,7 @@ export interface ChatAttachment {
 
 export interface SpaceMention {
   id: string
-  type: 'notebook_entry' | 'quiz_session' | 'quiz_question'
+  type: 'notebook_entry'
   target_id?: string | null
   question_id?: string | null
   title: string
@@ -178,8 +164,6 @@ interface Props {
   onRegenerateResearch?: (markdown: string) => void
   onIngestResearchSources?: (sources: SourceReference[], markdown: string) => Promise<void>
   onApplyNotebookEdit?: (proposal: NotebookEditProposal) => Promise<void>
-  onQuizAnswer?: (quizId: string, questionId: string, selectedOptionId: string) => Promise<void>
-  onQuizFinish?: (quizId: string) => Promise<void>
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
   disabled: boolean
   running?: boolean
@@ -219,8 +203,6 @@ export function ChatBox({
   onRegenerateResearch,
   onIngestResearchSources,
   onApplyNotebookEdit,
-  onQuizAnswer,
-  onQuizFinish,
   onSourceNavigate,
   disabled,
   running = false,
@@ -544,11 +526,7 @@ export function ChatBox({
                   ? language === 'en-US'
                     ? 'Describe what you want to investigate. The agent will clarify scope before starting the research workflow.'
                     : '描述你想调研的主题，Agent 会先确认范围，再启动详细研究 workflow。'
-                  : capability === 'quiz'
-                    ? language === 'en-US'
-                      ? 'Name a topic or reference saved material, then generate a quiz in this conversation.'
-                      : '输入一个主题或引用已有材料，在当前会话中生成测验。'
-                    : t('chat.empty.description')}
+                  : t('chat.empty.description')}
               </p>
             </div>
             <Composer
@@ -597,16 +575,7 @@ export function ChatBox({
                     <span>{msg.text}</span>
                   </div>
                 ) : msg.role === 'assistant' ? (
-                  msg.quiz ? (
-                    <ChatQuizCard
-                      quiz={msg.quiz}
-                      onAnswer={onQuizAnswer}
-                      onFinish={onQuizFinish}
-                      onSourceNavigate={onSourceNavigate}
-                    />
-                  ) : msg.quizPlan ? (
-                    <QuizPlanCard plan={msg.quizPlan} text={msg.text} />
-                  ) : msg.researchPlan ? (
+                  msg.researchPlan ? (
                     <ResearchPlanCard
                       plan={msg.researchPlan}
                       text={msg.text}
@@ -957,48 +926,6 @@ function citationRawTarget(citation: Citation) {
   return citation.rawSource || citation.source
 }
 
-function QuizPlanCard({ plan, text }: { plan: QuizPlan; text: string }) {
-  return (
-    <div className="space-y-3 rounded-lg border border-blue-100 bg-white p-4">
-      {text.trim() && <MarkdownMessage text={text} />}
-      <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
-          <FileQuestion size={17} />
-          Quiz plan
-        </div>
-        <div className="mt-3 grid gap-2 text-sm text-gray-700 sm:grid-cols-2">
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Title</span>
-            <p className="font-medium text-gray-950">{plan.title}</p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Topic</span>
-            <p>{plan.topic}</p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Source</span>
-            <p>{plan.source}</p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Settings</span>
-            <p>
-              {plan.questionCount} questions · {plan.difficulty}
-            </p>
-          </div>
-        </div>
-        {plan.notes.length > 0 && (
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-600">
-            {plan.notes.map((note, index) => (
-              <li key={`${index}:${note}`}>{note}</li>
-            ))}
-          </ul>
-        )}
-        <p className="mt-3 text-xs text-gray-500">Reply with confirmation or changes before generating the quiz.</p>
-      </div>
-    </div>
-  )
-}
-
 function ResearchPlanCard({
   plan,
   text,
@@ -1105,232 +1032,6 @@ function startResearchPrompt(plan: ResearchPlan) {
     plan.useKnowledgeBase ? 'Use the selected Knowledge Base if relevant.' : '',
     'Search, read sources, synthesize the report, verify citations, and return the final Markdown report.',
   ].filter(Boolean).join('\n')
-}
-
-function ChatQuizCard({
-  quiz,
-  onAnswer,
-  onFinish,
-  onSourceNavigate,
-}: {
-  quiz: QuizSession
-  onAnswer?: (quizId: string, questionId: string, selectedOptionId: string) => Promise<void>
-  onFinish?: (quizId: string) => Promise<void>
-  onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
-}) {
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [selectedOptionId, setSelectedOptionId] = useState('')
-  const [busy, setBusy] = useState(false)
-  const question = quiz.questions[currentIndex] ?? null
-  const answer = question ? quiz.answers.find((item) => item.question_id === question.id) ?? null : null
-  const score = quiz.score ?? { correct: 0, total: quiz.questions.length }
-
-  useEffect(() => {
-    setSelectedOptionId(answer?.selected_option_id ?? '')
-  }, [answer?.selected_option_id, question?.id])
-
-  if (!question) {
-    return (
-      <div className="rounded-lg border border-blue-100 bg-white p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
-          <FileQuestion size={18} />
-          Quiz
-        </div>
-        <p className="mt-3 text-sm text-gray-600">This quiz does not have generated questions yet.</p>
-      </div>
-    )
-  }
-
-  const submit = async () => {
-    if (!selectedOptionId || answer || !onAnswer || busy) return
-    setBusy(true)
-    try {
-      await onAnswer(quiz.id, question.id, selectedOptionId)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const finish = async () => {
-    if (!onFinish || busy || quiz.status === 'finished') return
-    setBusy(true)
-    try {
-      await onFinish(quiz.id)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="space-y-4 rounded-lg border border-blue-100 bg-white p-4">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-          <FileQuestion size={19} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-semibold text-gray-950">{quiz.title || 'Quiz'}</h3>
-            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-              {quiz.status}
-            </span>
-            {quiz.verification && (
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                  quiz.verification.status === 'verified'
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-amber-50 text-amber-700'
-                }`}
-                title={quiz.verification.method}
-              >
-                {quiz.verification.status === 'verified' ? 'Verified' : 'Needs review'}
-              </span>
-            )}
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Question {currentIndex + 1} of {quiz.questions.length} · Score {score.correct}/{score.total}
-          </p>
-        </div>
-      </div>
-
-      <div>
-        <div className="mb-3 flex flex-wrap gap-2">
-          {question.tags.map((tag) => (
-            <span key={tag} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-              {tag}
-            </span>
-          ))}
-        </div>
-        <p className="text-base font-medium leading-7 text-gray-950">{question.stem}</p>
-      </div>
-
-      <div className="space-y-2">
-        {question.options.map((option) => {
-          const selected = selectedOptionId === option.id
-          const answered = Boolean(answer)
-          const isCorrect = question.correct_option_id === option.id
-          return (
-            <button
-              key={option.id}
-              type="button"
-              disabled={answered || busy}
-              onClick={() => setSelectedOptionId(option.id)}
-              className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left text-sm transition ${
-                selected ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/40'
-              } ${answered && isCorrect ? 'border-emerald-300 bg-emerald-50' : ''}`}
-            >
-              <span className="mt-0.5 text-blue-700">
-                {selected || (answered && isCorrect) ? <CheckCircle2 size={18} /> : <Circle size={18} />}
-              </span>
-              <span className="leading-6 text-gray-700">
-                <span className="font-medium text-gray-950">{option.id}.</span> {option.text}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-
-      {answer && (
-        <div className={`rounded-lg p-3 text-sm ${answer.correct ? 'bg-emerald-50 text-emerald-900' : 'bg-red-50 text-red-900'}`}>
-          <div className="font-medium">{answer.correct ? 'Correct' : 'Incorrect'}</div>
-          <p className="mt-2 leading-6">{question.explanation}</p>
-          {question.citations.length > 0 && (
-            <QuizCitationReferences
-              quizId={quiz.id}
-              questionId={question.id}
-              citations={question.citations}
-              onSourceNavigate={onSourceNavigate}
-            />
-          )}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
-        <button
-          className="inline-flex h-8 items-center rounded-lg border border-gray-200 px-3 text-xs font-medium text-gray-700 hover:bg-blue-50 disabled:opacity-50"
-          type="button"
-          disabled={currentIndex === 0}
-          onClick={() => setCurrentIndex((value) => Math.max(0, value - 1))}
-        >
-          Previous
-        </button>
-        <button
-          className="inline-flex h-8 items-center rounded-lg border border-gray-200 px-3 text-xs font-medium text-gray-700 hover:bg-blue-50 disabled:opacity-50"
-          type="button"
-          disabled={currentIndex >= quiz.questions.length - 1}
-          onClick={() => setCurrentIndex((value) => Math.min(quiz.questions.length - 1, value + 1))}
-        >
-          Next
-        </button>
-        <button
-          className="ml-auto inline-flex h-8 items-center rounded-lg bg-blue-600 px-3 text-xs font-medium text-white hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400"
-          type="button"
-          disabled={!selectedOptionId || Boolean(answer) || busy}
-          onClick={submit}
-        >
-          Submit answer
-        </button>
-        <button
-          className="inline-flex h-8 items-center rounded-lg border border-gray-200 px-3 text-xs font-medium text-gray-700 hover:bg-blue-50 disabled:opacity-50"
-          type="button"
-          disabled={busy || quiz.status === 'finished'}
-          onClick={finish}
-        >
-          Finish quiz
-        </button>
-      </div>
-    </div>
-  )
-}
-function QuizCitationReferences({
-  quizId,
-  questionId,
-  citations,
-  onSourceNavigate,
-}: {
-  quizId: string
-  questionId: string
-  citations: QuizSession['questions'][number]['citations']
-  onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
-}) {
-  const references = citations.map((citation, index) => quizCitationToSourceReference(citation, index))
-  return (
-    <SourceReferences
-      id={`quiz-citations-${quizId}-${questionId}`}
-      references={references}
-      onNavigate={onSourceNavigate}
-    />
-  )
-}
-
-function quizCitationToSourceReference(
-  citation: QuizSession['questions'][number]['citations'][number],
-  index: number,
-): SourceReference {
-  const raw = quizCitationRawTarget(citation)
-  const target = sourceTargetFromRaw(raw)
-  return {
-    id: `${index + 1}:${raw}`,
-    label: String(index + 1),
-    raw,
-    surface: target?.type === 'web' ? 'web' : target?.type === 'kb' ? 'kb' : 'unknown',
-    title: citation.title || citation.source,
-    description: citation.text,
-    score: citation.score,
-    metadata: {
-      documentName: citation.title || citation.source,
-      documentId: citation.document_id ?? undefined,
-      chunkId: citation.chunk_id ?? undefined,
-      missingReason: target ? undefined : 'This quiz citation was generated before source navigation metadata was available.',
-    },
-    target,
-  }
-}
-
-function quizCitationRawTarget(citation: QuizSession['questions'][number]['citations'][number]) {
-  if (citation.kb && citation.document_id) {
-    return ['kb', citation.kb, citation.document_id, citation.chunk_id].filter(Boolean).join(':')
-  }
-  return citation.source
 }
 
 function Composer({
@@ -1890,15 +1591,12 @@ function MentionSummary({
   )
 }
 
-function spaceMentionIcon(mention: SpaceMention, size = 21) {
-  if (mention.type === 'notebook_entry') return <FileText size={size} />
-  return <FileQuestion size={size} />
+function spaceMentionIcon(_mention: SpaceMention, size = 21) {
+  return <FileText size={size} />
 }
 
-function spaceMentionTypeLabel(mention: SpaceMention) {
-  if (mention.type === 'notebook_entry') return 'Note'
-  if (mention.type === 'quiz_question') return 'Question'
-  return 'Quiz'
+function spaceMentionTypeLabel(_mention: SpaceMention) {
+  return 'Note'
 }
 
 function filterSpaceMentions(mentions: SpaceMention[], filter: SpaceMentionFilter) {
@@ -2068,9 +1766,7 @@ function MessageActionToolbar({
 function isStructuredAssistantMessage(msg: Message, capability: Capability) {
   if (msg.role !== 'assistant') return false
   return Boolean(
-    msg.quiz
-    || msg.quizPlan
-    || msg.researchPlan
+    msg.researchPlan
     || (msg.deepSolve && msg.deepSolve.length > 0)
     || (capability === 'research' && (looksLikeResearchReport(msg.text) || msg.researchUnavailable)),
   )

@@ -40,6 +40,7 @@ import { chooseDesktopDirectory, getDesktopDataDir, openDesktopDataDir } from '.
 import type { ProductGuideDestination } from '../productGuide'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
 import { UserMemoryPage } from './UserMemoryPage'
+import { LegacyMigrationPanel } from './LegacyMigrationPanel'
 import { ProductGuide } from './ProductGuide'
 
 interface Props {
@@ -49,7 +50,7 @@ interface Props {
   onChange: (settings: LlmSettings) => void
   onOpenOnboarding: () => void
   onGuideNavigate: (destination: ProductGuideDestination) => void
-  onStartGuideTutor: () => void
+  onStartGuideAssistant: () => void
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
 }
 
@@ -133,7 +134,7 @@ export function SettingsPage({
   onChange,
   onOpenOnboarding,
   onGuideNavigate,
-  onStartGuideTutor,
+  onStartGuideAssistant,
   onSourceNavigate,
 }: Props) {
   const { t } = useI18n()
@@ -628,6 +629,7 @@ export function SettingsPage({
               <div className="h-[calc(100vh-20rem)] min-h-[32rem] overflow-hidden rounded-lg border border-gray-200 bg-white">
                 <UserMemoryPage language={settings.language} enabled={settings.memoryEnabled} onSourceNavigate={onSourceNavigate} />
               </div>
+              <LegacyMigrationPanel language={settings.language} />
             </div>
           )}
 
@@ -1296,7 +1298,7 @@ export function SettingsPage({
           {activeTab === 'help' && (
             <ProductGuide
               onNavigate={onGuideNavigate}
-              onStartGuideTutor={onStartGuideTutor}
+              onStartGuideAssistant={onStartGuideAssistant}
               onRestartOnboarding={onOpenOnboarding}
             />
           )}

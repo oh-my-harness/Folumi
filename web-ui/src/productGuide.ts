@@ -7,7 +7,6 @@ export type ProductGuideTopic =
   | 'knowledge'
   | 'notebook'
   | 'memory'
-  | 'tutors'
 
 export type ComposerGuideControl = 'mode' | 'attachment' | 'source' | 'mention' | 'model' | 'send'
 
@@ -21,7 +20,6 @@ export type ProductGuideDestination =
   | 'knowledge'
   | 'notebook'
   | 'memory'
-  | 'tutors'
   | 'embedding-settings'
   | 'notebook-settings'
 
@@ -32,7 +30,6 @@ export const productGuideTopics: ProductGuideTopic[] = [
   'knowledge',
   'notebook',
   'memory',
-  'tutors',
 ]
 
 export const composerGuideControls: ComposerGuideControl[] = [
@@ -49,7 +46,7 @@ export const defaultProductGuideState: ProductGuideState = {
   composerControl: 'mode',
 }
 
-const PRODUCT_GUIDE_STORAGE_KEY = 'tutor.productGuideState'
+const PRODUCT_GUIDE_STORAGE_KEY = 'folumi.productGuideState'
 
 export function normalizeProductGuideState(value: unknown): ProductGuideState {
   const candidate = value && typeof value === 'object' ? value as Record<string, unknown> : {}
@@ -78,7 +75,7 @@ export function saveProductGuideState(state: ProductGuideState) {
   }
 }
 
-export function guideTutorStarterPrompt(language: UiLanguage) {
+export function guideAssistantStarterPrompt(language: UiLanguage) {
   return language === 'en-US'
     ? 'I need help using Folumi. First ask what I am trying to accomplish, then point me to the exact controls.'
     : '我需要了解如何使用 Folumi。请先问我想完成什么，再告诉我准确的界面入口。'

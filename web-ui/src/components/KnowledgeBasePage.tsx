@@ -3,7 +3,7 @@ import { BookOpen, FileText, NotebookPen, Search, X } from 'lucide-react'
 import type { LlmSettings } from '../settings'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
 import { KnowledgePage } from './KnowledgePage'
-import { SpacePage } from './SpacePage'
+import { NotesPage } from './NotesPage'
 
 export type KnowledgeSection = 'sources' | 'notes'
 
@@ -183,7 +183,7 @@ export function KnowledgeBasePage({
         {section === 'sources' ? (
           <KnowledgePage settings={settings} onChanged={onChanged} focusTarget={selectedSource ?? knowledgeFocusTarget} />
         ) : (
-          <SpacePage mode="notebook" embedded focusTarget={selectedNote ?? noteFocusTarget} onSourceNavigate={onSourceNavigate} />
+          <NotesPage focusTarget={selectedNote ?? noteFocusTarget} onSourceNavigate={onSourceNavigate} />
         )}
       </div>
     </main>

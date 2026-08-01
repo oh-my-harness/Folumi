@@ -1,6 +1,5 @@
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import {
-  Bot,
   Check,
   Edit3,
   FileText,
@@ -15,7 +14,6 @@ import {
 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import { openDesktopContextMenu } from '../desktop'
-import type { TutorSummary } from '../tutorTypes'
 
 export type AppView = 'assistant' | 'knowledge' | 'settings'
 
@@ -27,8 +25,6 @@ interface RecentSession {
     status?: string
   } | null
   pinned?: boolean
-  tutorId?: string | null
-  tutor?: TutorSummary | null
 }
 
 interface Props {
@@ -217,9 +213,7 @@ export function Sidebar({
                     />
                   )}
                   <div className="pointer-events-none relative z-10 shrink-0">
-                    {session.tutorId
-                      ? <Bot size={16} className={running ? 'text-blue-600' : 'text-gray-500'} />
-                      : <FileText size={16} className={running ? 'text-blue-600' : 'text-gray-500'} />}
+                    <FileText size={16} className={running ? 'text-blue-600' : 'text-gray-500'} />
                     {running && (
                       <span
                         className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-white"
@@ -259,9 +253,6 @@ export function Sidebar({
                           <span className="mt-0.5 block truncate text-[11px] font-medium text-blue-600">
                             Running{session.activeRun?.capability ? ` · ${capabilityLabel(session.activeRun.capability)}` : ''}
                           </span>
-                        )}
-                        {!running && session.tutor?.name && (
-                          <span className="mt-0.5 block truncate text-[11px] text-gray-500">{session.tutor.name}</span>
                         )}
                       </div>
                       <div className="pointer-events-none relative z-20 flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">

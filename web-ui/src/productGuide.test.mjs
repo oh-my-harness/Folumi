@@ -12,7 +12,7 @@ const compiled = ts.transpileModule(source, {
 const module = { exports: {} }
 Function('module', 'exports', compiled)(module, module.exports)
 
-const { guideTutorStarterPrompt, normalizeProductGuideState } = module.exports
+const { guideAssistantStarterPrompt, normalizeProductGuideState } = module.exports
 
 test('restores valid independent help navigation state', () => {
   assert.deepEqual(normalizeProductGuideState({ topic: 'notebook', composerControl: 'mention' }), {
@@ -28,7 +28,7 @@ test('repairs invalid help state without onboarding semantics', () => {
   })
 })
 
-test('usage guide Tutor prompt follows the active UI language', () => {
-  assert.match(guideTutorStarterPrompt('zh-CN'), /准确的界面入口/)
-  assert.match(guideTutorStarterPrompt('en-US'), /exact controls/)
+test('usage guide Assistant prompt follows the active UI language', () => {
+  assert.match(guideAssistantStarterPrompt('zh-CN'), /准确的界面入口/)
+  assert.match(guideAssistantStarterPrompt('en-US'), /exact controls/)
 })

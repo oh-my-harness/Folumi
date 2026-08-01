@@ -29,11 +29,9 @@ import {
   settingsRequireSessionReset,
   settingsForSession,
 } from './settings'
-import type { QuizSession } from './quizTypes'
-import { attachRestoredQuizzesToMessages, quizFromTrace } from './quizRestore'
 import { attachRestoredResearchReports, researchReportFromTracePayload } from './researchRestore'
 import type { ResearchReportTraceData } from './researchRestore'
-import { guideTutorStarterPrompt, type ProductGuideDestination } from './productGuide'
+import { guideAssistantStarterPrompt, type ProductGuideDestination } from './productGuide'
 import {
   appendCompletedSessionMessage,
   completedStreamText,
@@ -52,11 +50,9 @@ import {
   titleFromMarkdown,
 } from './notebookSave'
 import type { NotebookVaultInfo, SaveToNotebookResult } from './notebookSave'
-import { BUILT_IN_GUIDE_TUTOR_ID, fetchTutors, type TutorProfile, type TutorSummary } from './tutorTypes'
-import { tutorBindingForCreate } from './tutorSession'
 import { knowledgeCitationsFromTrace } from './knowledgeCitation'
 
-type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'quiz' | 'research' | 'organize'
+type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'research' | 'organize'
 
 interface Message {
   role: 'user' | 'assistant' | 'status'
@@ -65,32 +61,12 @@ interface Message {
   transient?: boolean
   citations?: Citation[]
   deepSolve?: DeepSolveTraceEntry[]
-  quiz?: QuizSession
-  artifacts?: MessageArtifact[]
-  quizPlan?: QuizPlan
   researchPlan?: ResearchPlan
   researchTitle?: string
   researchUnavailable?: boolean
   notebookEditProposal?: NotebookEditProposal
   attachments?: ChatAttachment[]
   mentions?: SpaceMention[]
-}
-
-interface MessageArtifact {
-  type: 'quiz_session' | string
-  quiz_id?: string
-  artifact_id?: string
-  artifact_store?: string
-  title?: string
-}
-
-interface QuizPlan {
-  title: string
-  topic: string
-  source: string
-  difficulty: string
-  questionCount: number
-  notes: string[]
 }
 
 interface ResearchPlan {
@@ -127,8 +103,6 @@ interface RecentSession {
   title: string
   activeRun?: SessionRunSummary | null
   pinned?: boolean
-  tutorId?: string | null
-  tutor?: TutorSummary | null
 }
 
 interface SessionRunSummary {
@@ -152,14 +126,10 @@ interface SessionListResponse {
     title?: string
     name?: string | null
     active_run?: SessionRunSummary | null
-    tutor_id?: string | null
-    tutor?: TutorSummary | null
   }>
 }
 
 interface SessionDetailResponse {
-  tutor_id?: string | null
-  tutor?: TutorSummary | null
   capability?: Capability
   kb?: string | null
   notebook_enabled?: boolean
@@ -169,7 +139,6 @@ interface SessionDetailResponse {
     text: string
     mentions?: SpaceMention[]
     citations?: Citation[]
-    artifacts?: MessageArtifact[]
   }>
   trace?: Array<{
     kind: string
@@ -210,8 +179,6 @@ export default function App() {
   const [starterDraft, setStarterDraft] = useState<{ id: number; text: string } | null>(null)
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(() => loadLlmSettings().activeLlmConfigId)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [selectedTutorId, setSelectedTutorId] = useState<string | null>(null)
-  const [tutors, setTutors] = useState<TutorProfile[]>([])
   const activeSessionIdRef = useRef<string | null>(null)
   const sessionSelectionVersionRef = useRef(0)
   const sessionHydrationVersionRef = useRef(0)
@@ -230,8 +197,6 @@ export default function App() {
   const pendingCitationsRef = useRef<Citation[]>([])
   const pendingDeepSolveRef = useRef<DeepSolveTraceEntry[]>([])
   const pendingNotebookEditProposalRef = useRef<NotebookEditProposal | undefined>(undefined)
-  const pendingQuizRef = useRef<QuizSession | undefined>(undefined)
-  const pendingQuizPlanRef = useRef<QuizPlan | undefined>(undefined)
   const pendingResearchPlanRef = useRef<ResearchPlan | undefined>(undefined)
   const pendingResearchReportRef = useRef<ResearchReportTraceData | undefined>(undefined)
   const [budgetSpent, setBudgetSpent] = useState(0)
@@ -248,7 +213,7 @@ export default function App() {
   const [selectedNotebookEnabled, setSelectedNotebookEnabled] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [traceCollapsed, setTraceCollapsed] = useState(true)
-  const [spaceFocusTarget, setSpaceFocusTarget] = useState<Extract<SourceTarget, { type: 'notebook' | 'quiz' }> | null>(null)
+  const [spaceFocusTarget, setSpaceFocusTarget] = useState<Extract<SourceTarget, { type: 'notebook' }> | null>(null)
   const [knowledgeFocusTarget, setKnowledgeFocusTarget] = useState<Extract<SourceTarget, { type: 'kb' }> | null>(null)
   const [latestUsage, setLatestUsage] = useState<TokenUsagePayload | null>(null)
   const contextStats = useMemo<ContextStats>(() => {
@@ -319,24 +284,17 @@ export default function App() {
           text: message.text,
           mentions: message.mentions,
           citations: message.citations,
-          artifacts: message.artifacts,
         })),
         restoredTrace,
       )
       const restoredReports = attachRestoredResearchReports(withCitations, restoredTrace)
       const restored = attachRestoredResearchPlans(
-        attachRestoredQuizPlans(attachRestoredDeepSolve(restoredReports, restoredTrace), restoredTrace),
+        attachRestoredDeepSolve(restoredReports, restoredTrace),
         restoredTrace,
       )
       setMessages((live) => reconcileSessionMessages(restored, live))
-      void attachRestoredQuizzes(restored, restoredTrace).then((nextMessages) => {
-        if (isCurrentHydration()) {
-          setMessages((live) => reconcileSessionMessages(nextMessages, live))
-        }
-      })
       setTraceEntries(restoredTrace)
       setLatestUsage(data.latest_usage ?? null)
-      setSelectedTutorId(data.tutor_id ?? null)
       const restoredModelConfig = data.llm?.model
         ? llmSettings.llmConfigs.find((config) => config.model === data.llm?.model)
         : null
@@ -411,12 +369,10 @@ export default function App() {
           const citations = pendingCitationsRef.current
           const deepSolve = pendingDeepSolveRef.current
           const notebookEditProposal = pendingNotebookEditProposalRef.current
-          const quiz = pendingQuizRef.current
-          const quizPlan = pendingQuizPlanRef.current
           const researchPlan = pendingResearchPlanRef.current
           const researchReport = pendingResearchReportRef.current
-          const messageText = researchReport?.markdown || finalText || (quiz ? `Quiz "${quiz.title}" is ready.` : '')
-          if (messageText.trim() || citations.length > 0 || deepSolve.length > 0 || notebookEditProposal || quiz || quizPlan || researchPlan) {
+          const messageText = researchReport?.markdown || finalText
+          if (messageText.trim() || citations.length > 0 || deepSolve.length > 0 || notebookEditProposal || researchPlan) {
             setMessages((prev) => appendCompletedSessionMessage(
               dropTrailingTransientStatus(prev),
               {
@@ -425,9 +381,6 @@ export default function App() {
                 citations,
                 deepSolve: deepSolve.length > 0 ? deepSolve : undefined,
                 notebookEditProposal,
-                quiz,
-                artifacts: quiz ? [{ type: 'quiz_session', quiz_id: quiz.id }] : undefined,
-                quizPlan,
                 researchPlan,
                 researchTitle: researchReport?.title,
               },
@@ -438,8 +391,6 @@ export default function App() {
           pendingCitationsRef.current = []
           pendingDeepSolveRef.current = []
           pendingNotebookEditProposalRef.current = undefined
-          pendingQuizRef.current = undefined
-          pendingQuizPlanRef.current = undefined
           pendingResearchPlanRef.current = undefined
           pendingResearchReportRef.current = undefined
           streamingRef.current = ''
@@ -479,14 +430,6 @@ export default function App() {
         const notebookEditProposal = notebookEditProposalFromTrace(event.payload as Record<string, unknown>)
         if (notebookEditProposal) {
           pendingNotebookEditProposalRef.current = notebookEditProposal
-        }
-        const quiz = quizFromTrace(event.payload as Record<string, unknown>)
-        if (quiz) {
-          pendingQuizRef.current = quiz
-        }
-        const quizPlan = quizPlanFromTrace(event.payload as Record<string, unknown>)
-        if (quizPlan) {
-          pendingQuizPlanRef.current = quizPlan
         }
         const researchPlan = researchPlanFromTrace(event.payload as Record<string, unknown>)
         if (researchPlan) {
@@ -611,14 +554,8 @@ export default function App() {
       title: session.title || session.name || 'New session',
       activeRun: session.active_run ?? null,
       pinned: pinnedSessionIds.has(session.id),
-      tutorId: session.tutor_id ?? null,
-      tutor: session.tutor ?? null,
     }))))
   }, [pinnedSessionIds])
-
-  const refreshTutors = useCallback(async () => {
-    setTutors(await fetchTutors())
-  }, [])
 
   const reconcileActiveSessionRuns = useCallback(async () => {
     const res = await fetch('/api/sessions')
@@ -743,15 +680,10 @@ export default function App() {
       const message = err instanceof Error ? err.message : String(err)
       pushStatus({ kind: 'error', label: 'Error', detail: message })
     })
-    refreshTutors().catch((err) => {
-      const message = err instanceof Error ? err.message : String(err)
-      pushStatus({ kind: 'error', label: '导师加载失败', detail: message })
-    })
-  }, [refreshSessions, refreshKnowledgeBases, refreshNotebookFolders, refreshTutors, pushStatus])
+  }, [refreshSessions, refreshKnowledgeBases, refreshNotebookFolders, pushStatus])
 
   const handleSend = useCallback(async (text: string, attachments: ChatAttachment[] = [], mentions: SpaceMention[] = []) => {
     try {
-      const tutorBinding = sessionId ? null : tutorBindingForCreate(selectedTutorId)
       const content = buildMessageContentWithAttachments(text, attachments)
       const displayText = text.trim() || (attachments.length > 0 ? `Sent ${attachments.length} attachment(s)` : `Referenced ${mentions.length} Space item(s)`)
       let sid = sessionId
@@ -763,7 +695,6 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             capability,
-            ...tutorBinding,
             kb,
             notebook_enabled: selectedNotebookEnabled,
             assistant: {
@@ -784,12 +715,7 @@ export default function App() {
         createdSession = true
         pendingSessionSendRef.current = { sessionId: createdSessionId, content, mentions }
         activateSession(createdSessionId)
-        promoteRecentSession(
-          setRecentSessions,
-          createdSessionId,
-          sessionTitleFromMessage(displayText),
-          selectedTutorId ? tutors.find((item) => item.id === selectedTutorId) ?? null : null,
-        )
+        promoteRecentSession(setRecentSessions, createdSessionId, sessionTitleFromMessage(displayText))
       } else {
         promoteRecentSession(setRecentSessions, sid, sessionTitleFromMessage(displayText))
       }
@@ -804,7 +730,7 @@ export default function App() {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [sessionId, selectedTutorId, tutors, capability, llmSettings, selectedLlmConfigId, selectedKnowledgeBaseId, selectedNotebookEnabled, send, pushStatus, activateSession])
+  }, [sessionId, capability, llmSettings, selectedLlmConfigId, selectedKnowledgeBaseId, selectedNotebookEnabled, send, pushStatus, activateSession])
 
   const handleStopGeneration = useCallback(() => {
     if (!running) return
@@ -842,8 +768,6 @@ export default function App() {
           pendingCitationsRef.current = []
           pendingDeepSolveRef.current = []
           pendingNotebookEditProposalRef.current = undefined
-          pendingQuizRef.current = undefined
-          pendingQuizPlanRef.current = undefined
           pendingResearchPlanRef.current = undefined
           pendingResearchReportRef.current = undefined
           setRunning(true)
@@ -859,7 +783,6 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           capability,
-          ...tutorBindingForCreate(selectedTutorId),
           kb: selectedKnowledgeBaseId || null,
           notebook_enabled: selectedNotebookEnabled,
           assistant: {
@@ -878,12 +801,7 @@ export default function App() {
       const nextSessionId = data.id as string
 
       activateSession(nextSessionId)
-      promoteRecentSession(
-        setRecentSessions,
-        nextSessionId,
-        sessionTitleFromMessage(nextText),
-        selectedTutorId ? tutors.find((item) => item.id === selectedTutorId) ?? null : null,
-      )
+      promoteRecentSession(setRecentSessions, nextSessionId, sessionTitleFromMessage(nextText))
       setMessages([{ role: 'user', text: nextText }])
       setTraceEntries([])
       setLatestUsage(null)
@@ -893,8 +811,6 @@ export default function App() {
       pendingCitationsRef.current = []
       pendingDeepSolveRef.current = []
       pendingNotebookEditProposalRef.current = undefined
-      pendingQuizRef.current = undefined
-      pendingQuizPlanRef.current = undefined
       pendingResearchPlanRef.current = undefined
       pendingResearchReportRef.current = undefined
       setRunning(true)
@@ -906,41 +822,7 @@ export default function App() {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [capability, llmSettings, selectedLlmConfigId, messages, pushStatus, running, selectedKnowledgeBaseId, selectedNotebookEnabled, selectedTutorId, tutors, send, sessionId, activateSession])
-
-  const updateQuizInMessages = useCallback((quiz: QuizSession) => {
-    setMessages((prev) =>
-      prev.map((message) => {
-        if (message.quiz?.id !== quiz.id) return message
-        return { ...message, quiz }
-      }),
-    )
-  }, [])
-
-  const handleQuizAnswer = useCallback(async (quizId: string, questionId: string, selectedOptionId: string) => {
-    const res = await fetch(`/api/quizzes/${encodeURIComponent(quizId)}/answers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        question_id: questionId,
-        selected_option_id: selectedOptionId,
-      }),
-    })
-    const data = await safeJson(res)
-    if (!res.ok) {
-      throw new Error(errorMessage(data, res.status))
-    }
-    updateQuizInMessages(data.quiz as QuizSession)
-  }, [updateQuizInMessages])
-
-  const handleQuizFinish = useCallback(async (quizId: string) => {
-    const res = await fetch(`/api/quizzes/${encodeURIComponent(quizId)}/finish`, { method: 'POST' })
-    const data = await safeJson(res)
-    if (!res.ok) {
-      throw new Error(errorMessage(data, res.status))
-    }
-    updateQuizInMessages(data.quiz as QuizSession)
-  }, [updateQuizInMessages])
+  }, [capability, llmSettings, selectedLlmConfigId, messages, pushStatus, running, selectedKnowledgeBaseId, selectedNotebookEnabled, send, sessionId, activateSession])
 
   const handleSaveToNotebook = useCallback(async (markdown: string, options: SaveToNotebookOptions = {}): Promise<SaveToNotebookResult> => {
     try {
@@ -1115,23 +997,15 @@ export default function App() {
 
   const handleSettingsChange = (nextSettings: typeof llmSettings) => {
     setLlmSettings(nextSettings)
-    const tutor = selectedTutorId ? tutors.find((item) => item.id === selectedTutorId) : null
-    const tutorModelExists = tutor?.default_model_config_id
-      ? nextSettings.llmConfigs.some((config) => config.id === tutor.default_model_config_id)
-      : false
-    setSelectedLlmConfigId(
-      tutorModelExists ? tutor?.default_model_config_id ?? nextSettings.activeLlmConfigId : nextSettings.activeLlmConfigId,
-    )
+    setSelectedLlmConfigId(nextSettings.activeLlmConfigId)
     persistSettings(nextSettings)
     if (settingsRequireSessionReset(llmSettings, nextSettings)) {
       activateSession(null)
-      setSelectedTutorId(null)
     }
   }
 
   const startNewChat = useCallback(() => {
     activateSession(null)
-    setSelectedTutorId(null)
     setCapability('chat')
     setSelectedLlmConfigId(llmSettings.activeLlmConfigId)
     setMessages([])
@@ -1142,8 +1016,6 @@ export default function App() {
     pendingCitationsRef.current = []
     pendingDeepSolveRef.current = []
     pendingNotebookEditProposalRef.current = undefined
-    pendingQuizRef.current = undefined
-    pendingQuizPlanRef.current = undefined
     pendingResearchPlanRef.current = undefined
     pendingResearchReportRef.current = undefined
     setLatestUsage(null)
@@ -1151,24 +1023,6 @@ export default function App() {
     setRunning(false)
     setView('assistant')
   }, [activateSession, llmSettings.activeLlmConfigId])
-
-  const handleTutorSelect = useCallback((tutorId: string | null) => {
-    setSelectedTutorId(tutorId)
-    const tutor = tutorId ? tutors.find((item) => item.id === tutorId) : null
-    setSelectedLlmConfigId(tutor?.default_model_config_id ?? llmSettings.activeLlmConfigId)
-    if (tutor) {
-      setSelectedKnowledgeBaseId((current) => (
-        tutor.resource_permissions.knowledge_base_ids.includes(current) ? current : ''
-      ))
-      if (!tutor.resource_permissions.notebook) setSelectedNotebookEnabled(false)
-    }
-    const nextCapability = tutorId
-      ? tutor?.default_capability
-      : 'chat'
-    if (nextCapability && isCapability(nextCapability)) {
-      setCapability(nextCapability)
-    }
-  }, [llmSettings.activeLlmConfigId, tutors])
 
   const handleNavigate = useCallback((nextView: AppView) => {
     if (nextView === 'assistant') {
@@ -1196,19 +1050,13 @@ export default function App() {
     setOnboardingOpen(false)
   }, [])
 
-  const startGuideTutor = useCallback(() => {
-    const guideTutor = tutors.find((tutor) => tutor.id === BUILT_IN_GUIDE_TUTOR_ID)
-    if (!guideTutor) {
-      pushStatus({ kind: 'error', label: '使用指南不可用', detail: '内置使用指南 Tutor 尚未加载，请稍后重试。' })
-      return
-    }
+  const startGuideAssistant = useCallback(() => {
     startNewChat()
-    handleTutorSelect(guideTutor.id)
     setCapability('chat')
     setSelectedKnowledgeBaseId('')
     setSelectedNotebookEnabled(false)
-    setStarterDraft({ id: Date.now(), text: guideTutorStarterPrompt(llmSettings.language) })
-  }, [handleTutorSelect, llmSettings.language, pushStatus, startNewChat, tutors])
+    setStarterDraft({ id: Date.now(), text: guideAssistantStarterPrompt(llmSettings.language) })
+  }, [llmSettings.language, startNewChat])
 
   const handleGuideNavigate = useCallback((destination: ProductGuideDestination) => {
     if (destination === 'chat') {
@@ -1220,7 +1068,7 @@ export default function App() {
       setView('settings')
       return
     }
-    if (destination === 'memory' || destination === 'tutors') {
+    if (destination === 'memory') {
       setSettingsTab('assistant')
       setView('settings')
       return
@@ -1231,16 +1079,6 @@ export default function App() {
 
   const handleCapabilityChange = useCallback(async (nextCapability: Capability) => {
     if (running) return
-    const tutor = selectedTutorId ? tutors.find((item) => item.id === selectedTutorId) : null
-    if (tutor && !tutor.allowed_capabilities.includes(nextCapability)) {
-      pushStatus({ kind: 'error', label: '模式不可用', detail: '当前导师未启用此能力。' })
-      return
-    }
-    if (nextCapability === 'organize' && tutor && !tutor.resource_permissions.notebook) {
-      pushStatus({ kind: 'error', label: 'Notebook 不可用', detail: '当前导师没有 Notebook 权限。' })
-      return
-    }
-
     setCapability(nextCapability)
     if (nextCapability === 'organize') {
       setSelectedNotebookEnabled(true)
@@ -1264,15 +1102,10 @@ export default function App() {
       const message = err instanceof Error ? err.message : String(err)
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
     }
-  }, [pushStatus, running, selectedTutorId, sessionId, tutors])
+  }, [running, sessionId])
 
   const handleKnowledgeBaseChange = useCallback(async (nextKb: string) => {
     if (running) return
-    const tutor = selectedTutorId ? tutors.find((item) => item.id === selectedTutorId) : null
-    if (nextKb && tutor && !tutor.resource_permissions.knowledge_base_ids.includes(nextKb)) {
-      pushStatus({ kind: 'error', label: '知识库不可用', detail: '当前导师没有该知识库的权限。' })
-      return
-    }
     setSelectedKnowledgeBaseId(nextKb)
     setSelectedNotebookEnabled(false)
     if (!sessionId) return
@@ -1290,15 +1123,10 @@ export default function App() {
       const message = err instanceof Error ? err.message : String(err)
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
     }
-  }, [pushStatus, running, selectedTutorId, sessionId, tutors])
+  }, [running, sessionId])
 
   const handleNotebookEnabledChange = useCallback(async (enabled: boolean) => {
     if (running) return
-    const tutor = selectedTutorId ? tutors.find((item) => item.id === selectedTutorId) : null
-    if (enabled && tutor && !tutor.resource_permissions.notebook) {
-      pushStatus({ kind: 'error', label: 'Notebook 不可用', detail: '当前导师没有 Notebook 权限。' })
-      return
-    }
     setSelectedNotebookEnabled(enabled)
     if (enabled) setSelectedKnowledgeBaseId('')
     if (!sessionId) return
@@ -1316,7 +1144,7 @@ export default function App() {
       const message = err instanceof Error ? err.message : String(err)
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
     }
-  }, [pushStatus, running, selectedTutorId, sessionId, tutors])
+  }, [running, sessionId])
 
   const handleLlmConfigChange = useCallback(async (id: string) => {
     if (running) return
@@ -1362,8 +1190,6 @@ export default function App() {
       pendingCitationsRef.current = []
       pendingDeepSolveRef.current = []
       pendingNotebookEditProposalRef.current = undefined
-      pendingQuizRef.current = undefined
-      pendingQuizPlanRef.current = undefined
       pendingResearchPlanRef.current = undefined
       pendingResearchReportRef.current = undefined
       setLatestUsage(null)
@@ -1422,7 +1248,6 @@ export default function App() {
     setRecentSessions((prev) => prev.filter((item) => item.id !== id))
     if (sessionId === id) {
       activateSession(null)
-      setSelectedTutorId(null)
       setMessages([])
       setStreamingText('')
       streamingRef.current = ''
@@ -1431,8 +1256,6 @@ export default function App() {
       pendingCitationsRef.current = []
       pendingDeepSolveRef.current = []
       pendingNotebookEditProposalRef.current = undefined
-      pendingQuizRef.current = undefined
-      pendingQuizPlanRef.current = undefined
       pendingResearchPlanRef.current = undefined
       pendingResearchReportRef.current = undefined
       setLatestUsage(null)
@@ -1492,16 +1315,6 @@ export default function App() {
       return
     }
 
-    if (target.type === 'quiz') {
-      setView('assistant')
-      pushStatus({
-        kind: 'done',
-        label: 'Legacy quiz source',
-        detail: 'This source remains in the conversation until legacy quiz data is exported.',
-      })
-      return
-    }
-
     if (target.type === 'kb') {
       setKnowledgeFocusTarget(target)
       setKnowledgeSection('sources')
@@ -1515,7 +1328,6 @@ export default function App() {
   }, [handleSelectSession, pushStatus])
 
   const chatIsEmpty = view === 'assistant' && messages.length === 0 && !streamingText && !sessionId
-  const activeTutor = selectedTutorId ? tutors.find((item) => item.id === selectedTutorId) ?? null : null
   const t = (key: TranslationKey) => translate(llmSettings.language, key)
 
   return (
@@ -1568,9 +1380,7 @@ export default function App() {
                   capability={capability}
                   llmConfigs={llmSettings.llmConfigs}
                   activeLlmConfigId={selectedLlmConfigId}
-                  knowledgeBases={activeTutor
-                    ? knowledgeBases.filter((item) => activeTutor.resource_permissions.knowledge_base_ids.includes(item.id))
-                    : knowledgeBases}
+                  knowledgeBases={knowledgeBases}
                   selectedKnowledgeBaseId={selectedKnowledgeBaseId}
                   selectedNotebookEnabled={selectedNotebookEnabled}
                   initialDraft={starterDraft}
@@ -1594,8 +1404,6 @@ export default function App() {
                   onRegenerateResearch={handleRegenerateResearch}
                   onIngestResearchSources={handleIngestResearchSources}
                   onApplyNotebookEdit={handleApplyNotebookEdit}
-                  onQuizAnswer={handleQuizAnswer}
-                  onQuizFinish={handleQuizFinish}
                   onSourceNavigate={handleSourceNavigate}
                   disabled={false}
                   running={running}
@@ -1638,7 +1446,7 @@ export default function App() {
             onChange={handleSettingsChange}
             onOpenOnboarding={openOnboarding}
             onGuideNavigate={handleGuideNavigate}
-            onStartGuideTutor={startGuideTutor}
+            onStartGuideAssistant={startGuideAssistant}
             onSourceNavigate={handleSourceNavigate}
           />
         )}
@@ -1879,29 +1687,6 @@ function notebookEditProposalFromTrace(payload: Record<string, unknown>): Notebo
   }
 }
 
-function quizPlanFromTrace(payload: Record<string, unknown>): QuizPlan | undefined {
-  if (payload.kind !== 'tool_result' || payload.tool !== 'propose_quiz_plan' || payload.ok === false) return undefined
-  const details = payload.details
-  if (!details || typeof details !== 'object') return undefined
-  const item = details as Record<string, unknown>
-  const title = typeof item.title === 'string' && item.title.trim() ? item.title : 'Quiz plan'
-  const topic = typeof item.topic === 'string' && item.topic.trim() ? item.topic : 'selected material'
-  const source = typeof item.source === 'string' && item.source.trim() ? item.source : 'current conversation'
-  const difficulty = typeof item.difficulty === 'string' && item.difficulty.trim() ? item.difficulty : 'medium'
-  const questionCount = typeof item.question_count === 'number' ? item.question_count : 5
-  const notes = Array.isArray(item.notes)
-    ? item.notes.filter((note): note is string => typeof note === 'string' && note.trim().length > 0)
-    : []
-  return {
-    title,
-    topic,
-    source,
-    difficulty,
-    questionCount,
-    notes,
-  }
-}
-
 function researchPlanFromTrace(payload: Record<string, unknown>): ResearchPlan | undefined {
   if (payload.kind !== 'tool_result' || payload.tool !== 'propose_research_plan' || payload.ok === false) return undefined
   const details = payload.details
@@ -2088,22 +1873,6 @@ function attachRestoredDeepSolve(messages: Message[], traceEntries: TraceEntry[]
   })
 }
 
-function attachRestoredQuizPlans(messages: Message[], traceEntries: TraceEntry[]): Message[] {
-  const plans = traceEntries
-    .map((entry) => quizPlanFromTrace(entry.payload))
-    .filter((plan): plan is QuizPlan => Boolean(plan))
-  if (plans.length === 0) return messages
-
-  let planIndex = 0
-  return messages.map((message) => {
-    if (message.role !== 'assistant') return message
-    if (message.quiz || message.quizPlan) return message
-    const plan = plans[planIndex]
-    planIndex += 1
-    return plan ? { ...message, quizPlan: plan } : message
-  })
-}
-
 function attachRestoredResearchPlans(messages: Message[], traceEntries: TraceEntry[]): Message[] {
   const plans = traceEntries
     .map((entry) => researchPlanFromTrace(entry.payload))
@@ -2113,29 +1882,16 @@ function attachRestoredResearchPlans(messages: Message[], traceEntries: TraceEnt
   let planIndex = 0
   return messages.map((message) => {
     if (message.role !== 'assistant') return message
-    if (message.quiz || message.quizPlan || message.researchPlan) return message
+    if (message.researchPlan) return message
     const plan = plans[planIndex]
     planIndex += 1
     return plan ? { ...message, researchPlan: plan } : message
   })
 }
 
-async function attachRestoredQuizzes(messages: Message[], traceEntries: TraceEntry[]): Promise<Message[]> {
-  return attachRestoredQuizzesToMessages(messages, traceEntries, async (id) => {
-    try {
-      const res = await fetch(`/api/quizzes/${encodeURIComponent(id)}`)
-      const data = await safeJson(res)
-      return res.ok ? data.quiz as QuizSession : null
-    } catch {
-      return null
-    }
-  })
-}
-
 function capabilityLabel(value: string): string {
   if (value === 'deep_solve') return 'Deep Solve'
   if (value === 'code_exec') return 'Code Exec'
-  if (value === 'quiz') return 'Quiz'
   if (value === 'research') return 'Research'
   if (value === 'organize') return 'Organize'
   return 'Chat'
@@ -2164,7 +1920,6 @@ function promoteRecentSession(
   setRecentSessions: Dispatch<SetStateAction<RecentSession[]>>,
   id: string,
   title: string,
-  tutor: TutorSummary | null | undefined = undefined,
 ) {
   setRecentSessions((prev) => {
     const existing = prev.find((session) => session.id === id)
@@ -2173,8 +1928,6 @@ function promoteRecentSession(
       title,
       activeRun: existing?.activeRun ?? null,
       pinned: existing?.pinned ?? false,
-      tutorId: tutor === undefined ? existing?.tutorId ?? null : tutor?.id ?? null,
-      tutor: tutor === undefined ? existing?.tutor ?? null : tutor,
     }
     const rest = prev.filter((session) => session.id !== id)
     return nextSession.pinned
@@ -2362,12 +2115,11 @@ function numberOrUndefined(value: unknown) {
 }
 
 function isCapability(value: string): value is Capability {
-  return value === 'chat' || value === 'deep_solve' || value === 'code_exec' || value === 'quiz' || value === 'research' || value === 'organize'
+  return value === 'chat' || value === 'deep_solve' || value === 'code_exec' || value === 'research' || value === 'organize'
 }
 
 function sourceTargetDetail(target: SourceTarget, reference: SourceReference) {
   if (target.type === 'notebook') return `Notebook ${target.entryId}`
-  if (target.type === 'quiz') return target.questionId ? `Quiz ${target.quizId}, question ${target.questionId}` : `Quiz ${target.quizId}`
   if (target.type === 'kb') return target.chunkId ? `Knowledge ${target.documentId}, chunk ${target.chunkId}` : `Knowledge ${target.documentId}`
   return reference.raw
 }

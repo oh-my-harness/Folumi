@@ -4,7 +4,6 @@ import {
   Bot,
   Brain,
   Database,
-  FileQuestion,
   FileText,
   MessageSquare,
   Paperclip,
@@ -24,11 +23,11 @@ import { ComposerGuidePreview } from './ComposerGuidePreview'
 
 interface Props {
   onNavigate: (destination: ProductGuideDestination) => void
-  onStartGuideTutor: () => void
+  onStartGuideAssistant: () => void
   onRestartOnboarding: () => void
 }
 
-export function ProductGuide({ onNavigate, onStartGuideTutor, onRestartOnboarding }: Props) {
+export function ProductGuide({ onNavigate, onStartGuideAssistant, onRestartOnboarding }: Props) {
   const { language } = useI18n()
   const copy = language === 'en-US' ? englishCopy : chineseCopy
   const [guideState, setGuideState] = useState(loadProductGuideState)
@@ -51,7 +50,7 @@ export function ProductGuide({ onNavigate, onStartGuideTutor, onRestartOnboardin
         <button
           type="button"
           className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-950"
-          onClick={onStartGuideTutor}
+          onClick={onStartGuideAssistant}
         >
           <Bot size={15} />
           {copy.askGuide}
@@ -59,7 +58,7 @@ export function ProductGuide({ onNavigate, onStartGuideTutor, onRestartOnboardin
       </div>
 
       <nav className="pt-4" aria-label={copy.topicNavigation}>
-        <div className="grid grid-cols-4 gap-1 rounded-lg bg-gray-100 p-1 xl:grid-cols-7">
+        <div className="grid grid-cols-3 gap-1 rounded-lg bg-gray-100 p-1 xl:grid-cols-6">
           {productGuideTopics.map((topic) => (
             <button
               key={topic}
@@ -139,15 +138,6 @@ export function ProductGuide({ onNavigate, onStartGuideTutor, onRestartOnboardin
             </GuideSection>
           )}
 
-          {guideState.topic === 'tutors' && (
-            <GuideSection title={copy.tutors.title} description={copy.tutors.description}>
-              <NumberedSteps items={copy.tutors.steps} />
-              <div className="mt-5 flex flex-wrap gap-2">
-                <GuideAction onClick={() => onNavigate('tutors')}>{copy.tutors.manage}</GuideAction>
-                <GuideAction onClick={onStartGuideTutor} primary>{copy.askGuide}</GuideAction>
-              </div>
-            </GuideSection>
-          )}
       </article>
 
       <footer className="flex justify-end border-t border-gray-200 pt-3 text-xs text-gray-500">
@@ -229,7 +219,6 @@ const chineseCopy = {
     knowledge: '知识库',
     notebook: '笔记本',
     memory: '记忆',
-    tutors: '导师',
   },
   showInComposer: '查看入口',
   restartOnboarding: '重新运行首次配置',
@@ -246,7 +235,7 @@ const chineseCopy = {
     sourceTitle: '知识库或 Notebook：会话级资料源',
     sourceText: '适合让 Agent 在整个会话中按需检索一组资料。当前只能关联一个知识库或 Notebook。',
     mentionTitle: '@ 目标：精确引用已有内容',
-    mentionText: '适合明确指定某条笔记、某次测验或某道题，避免从整个资料源中猜测目标。',
+    mentionText: '适合明确指定某条笔记，避免从整个资料源中猜测目标。',
   },
   modes: {
     title: '选择会话模式',
@@ -255,7 +244,6 @@ const chineseCopy = {
     items: [
       { icon: <MessageSquare size={18} />, title: 'Chat', text: '普通流式多轮对话，可按需使用工具，不强制启动 workflow。', action: '查看入口' },
       { icon: <SearchCheck size={18} />, title: 'Research', text: '先确认研究范围，再显式启动详细调研 workflow 并生成带引用报告。', action: '查看入口' },
-      { icon: <FileQuestion size={18} />, title: 'Quiz', text: '先确认主题和材料，再生成可持续作答与恢复的测验卡片。', action: '查看入口' },
       { icon: <FileText size={18} />, title: 'Organize', text: '读取 Notebook 后提出可审核的整理建议，不会绕过确认直接写入。', action: '查看入口' },
     ],
   },
@@ -269,25 +257,19 @@ const chineseCopy = {
   notebook: {
     title: '配置并使用 Notebook',
     description: 'Notebook 是 Markdown 工作区。可直接使用应用本地目录，也可在桌面端绑定外部 Vault。',
-    steps: ['在“设置 > 笔记本”查看本地目录，或绑定一个外部 Markdown Vault。', '进入“空间 > 笔记本”创建、阅读和编辑笔记。', '在聊天资料源中选择 Notebook，可让 Agent 搜索多条笔记。', '若只需要一条笔记，使用“空间”按钮通过 @ 精确引用。'],
+    steps: ['在“设置 > 笔记本”查看本地目录，或绑定一个外部 Markdown Vault。', '进入“知识 > 笔记”创建、阅读和编辑笔记。', '在聊天资料源中选择 Notebook，可让 Agent 搜索多条笔记。', '若只需要一条笔记，使用 @ 按钮精确引用。'],
     settings: 'Notebook 设置',
     open: '打开 Notebook',
   },
   memory: {
     title: '查看和更新记忆',
-    description: '记忆用于形成可靠的学习者画像与 Tutor 连续性，不等同于 Notebook 资料库。',
+    description: '用户记忆保存稳定事实和偏好，助手连续性保存承诺、待办和策略；两者都可见、可改、可关闭。',
     open: '打开记忆',
     items: [
-      { icon: <FileText size={18} />, title: 'L1 工作区证据', text: '来自聊天、测验和 Notebook 等真实产品事件，是 L2 更新的证据来源。' },
-      { icon: <Database size={18} />, title: 'L2 模块摘要', text: '按聊天、测验、Notebook 等模块整理；选择文档后运行更新、检查或去重。' },
-      { icon: <Brain size={18} />, title: 'L3 跨模块记忆', text: '从 L2 归纳稳定的偏好、目标和策略，变更会先进入审核界面。' },
+      { icon: <FileText size={18} />, title: '用户记忆', text: '记录经过确认的稳定事实、偏好和目标，并保留来源。' },
+      { icon: <Database size={18} />, title: '助手连续性', text: '记录跨会话承诺、待办和有效策略，让单一助手能持续跟进。' },
+      { icon: <Brain size={18} />, title: '用户控制', text: '可逐条检查、修改和遗忘，也可用总开关完全停用记忆。' },
     ],
-  },
-  tutors: {
-    title: '选择和管理 Tutor',
-    description: 'Tutor 是具有独立 Soul、默认模型、能力权限和私有连续性记忆的持久角色。',
-    steps: ['新会话开始前在输入框下方选择 Tutor；不选择时使用临时助手。', '到“辅导机器人”编辑 Soul、能力、资料权限和私有记忆。', '内置“使用指南”Tutor 专门回答软件操作问题，并会指出准确入口。'],
-    manage: '管理 Tutor',
   },
 }
 
@@ -302,7 +284,6 @@ const englishCopy: typeof chineseCopy = {
     knowledge: 'Knowledge Base',
     notebook: 'Notebook',
     memory: 'Memory',
-    tutors: 'Tutors',
   },
   showInComposer: 'Show control',
   restartOnboarding: 'Rerun first-time setup',
@@ -319,7 +300,7 @@ const englishCopy: typeof chineseCopy = {
     sourceTitle: 'Knowledge Base or Notebook: conversation source',
     sourceText: 'Use it when the Agent should search a collection throughout the conversation. One Knowledge Base or Notebook can be associated at a time.',
     mentionTitle: '@ target: reference exact saved content',
-    mentionText: 'Use it to name one note, quiz, or question instead of asking the Agent to infer a target from a full source.',
+    mentionText: 'Use it to name one note instead of asking the Agent to infer a target from a full source.',
   },
   modes: {
     title: 'Choose a conversation mode',
@@ -328,7 +309,6 @@ const englishCopy: typeof chineseCopy = {
     items: [
       { icon: <MessageSquare size={18} />, title: 'Chat', text: 'Normal streaming conversation with optional tool use and no forced workflow.', action: 'Show control' },
       { icon: <SearchCheck size={18} />, title: 'Research', text: 'Clarifies scope before explicitly starting detailed research and producing a cited report.', action: 'Show control' },
-      { icon: <FileQuestion size={18} />, title: 'Quiz', text: 'Confirms topic and material before creating a durable interactive quiz card.', action: 'Show control' },
       { icon: <FileText size={18} />, title: 'Organize', text: 'Reads Notebook and proposes reviewable organization changes without bypassing approval.', action: 'Show control' },
     ],
   },
@@ -342,24 +322,18 @@ const englishCopy: typeof chineseCopy = {
   notebook: {
     title: 'Configure and use Notebook',
     description: 'Notebook is a Markdown workspace. Use the app-local directory or bind an external Vault on desktop.',
-    steps: ['Inspect the local directory or bind an external Markdown Vault under Settings > Notebook.', 'Create, read, and edit notes under Space > Notebook.', 'Select Notebook from the Chat source menu when the Agent should search multiple notes.', 'Use the Space button and @ reference when you need one exact note.'],
+    steps: ['Inspect the local directory or bind an external Markdown Vault under Settings > Notebook.', 'Create, read, and edit notes under Knowledge > Notes.', 'Select Notebook from the Chat source menu when the Agent should search multiple notes.', 'Use the @ button when you need one exact note.'],
     settings: 'Notebook settings',
     open: 'Open Notebook',
   },
   memory: {
     title: 'Inspect and update Memory',
-    description: 'Memory builds a reliable learner profile and Tutor continuity; it is not a Notebook document library.',
+    description: 'User Memory keeps stable facts and preferences; Assistant Continuity keeps commitments, open loops, and strategies. Both remain visible and optional.',
     open: 'Open Memory',
     items: [
-      { icon: <FileText size={18} />, title: 'L1 workspace evidence', text: 'Real Chat, Quiz, and Notebook product events that support L2 updates.' },
-      { icon: <Database size={18} />, title: 'L2 module summaries', text: 'Organized by Chat, Quiz, Notebook, and other modules; select a document to update, check, or deduplicate.' },
-      { icon: <Brain size={18} />, title: 'L3 cross-module memory', text: 'Stable preferences, goals, and strategies summarized from L2, with changes reviewed before application.' },
+      { icon: <FileText size={18} />, title: 'User Memory', text: 'Confirmed stable facts, preferences, and goals with visible provenance.' },
+      { icon: <Database size={18} />, title: 'Assistant Continuity', text: 'Cross-session commitments, open loops, and successful strategies for one Assistant.' },
+      { icon: <Brain size={18} />, title: 'User control', text: 'Inspect, edit, or forget individual items, or disable Memory completely.' },
     ],
-  },
-  tutors: {
-    title: 'Choose and manage Tutors',
-    description: 'A Tutor is a persistent role with its own Soul, default model, capabilities, permissions, and private continuity memory.',
-    steps: ['Choose a Tutor below the composer before the first message; no selection means Temporary Assistant.', 'Open Tutor Bot to edit Soul, capabilities, resource permissions, and private memory.', 'The built-in Usage Guide Tutor answers product-use questions and points to exact controls.'],
-    manage: 'Manage Tutors',
   },
 }
