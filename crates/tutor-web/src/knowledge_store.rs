@@ -531,10 +531,12 @@ mod tests {
             .unwrap()
             .expect("legacy content should be compared");
         assert_eq!(duplicate.name, "legacy.md");
-        assert!(store
-            .find_duplicate_document(&item.id, "sha256:other", "different")
-            .unwrap()
-            .is_none());
+        assert!(
+            store
+                .find_duplicate_document(&item.id, "sha256:other", "different")
+                .unwrap()
+                .is_none()
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

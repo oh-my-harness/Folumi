@@ -21,6 +21,13 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
   direct navigation to the matching item.
 - Added content-based duplicate detection, retryable failed imports, and an
   explicit full-index rebuild from stored source documents.
+- Replaced multi-Tutor setup in new conversations with one configurable
+  Assistant Profile and made each session's Sources, Notes, and Memory scope
+  visible in the conversation header.
+- Added a user-facing Memory list with a global switch, provenance and source
+  inspection, revision-safe editing, and confirmed forgetting.
+- Made Note edits and moves revision-safe and atomic, and added deletion
+  confirmation with an immediate restore action.
 - Established Folumi as the local-first personal knowledge assistant product,
   with Assistant, Sources, Notes, Memory, and Settings as the target scope.
 - Froze Quiz, Space, Student Profile, multi-Tutor, and standalone Research

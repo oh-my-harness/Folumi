@@ -518,6 +518,66 @@ impl NotebookStore {
         Ok(ExactNotebookMutationOutcome::Updated(Box::new(updated)))
     }
 
+    pub fn update_and_move_exact(
+        &self,
+        id: &str,
+        expected_revision: &str,
+        input: NotebookEntryUpdate,
+        requested_path: Option<&str>,
+    ) -> Result<ExactNotebookMutationOutcome> {
+        let mut items = self.items.lock().unwrap();
+        let Some(entry_index) = items.iter().position(|item| item.id == id) else {
+            return Ok(ExactNotebookMutationOutcome::NotFound);
+        };
+        let latest_revision = notebook_entry_revision(&items[entry_index]);
+        if latest_revision != expected_revision {
+            return Ok(ExactNotebookMutationOutcome::Stale { latest_revision });
+        }
+
+        let requested_path = requested_path
+            .map(|path| {
+                normalize_note_path(path).ok_or_else(|| anyhow!("notebook path is invalid"))
+            })
+            .transpose()?;
+        if let Some(path) = requested_path.as_deref()
+            && items.iter().enumerate().any(|(index, entry)| {
+                index != entry_index
+                    && entry
+                        .path
+                        .as_deref()
+                        .is_some_and(|existing| existing.eq_ignore_ascii_case(path))
+            })
+        {
+            return Err(anyhow!("notebook path already exists"));
+        }
+
+        let previous_path = items[entry_index].path.clone();
+        let mut updated = apply_notebook_entry_update(&mut items, entry_index, input)?;
+        if let Some(path) = requested_path
+            && updated.path.as_deref() != Some(path.as_str())
+        {
+            items[entry_index].path = Some(path);
+            items[entry_index].updated_at = Utc::now();
+            items[entry_index].file_size = None;
+            items[entry_index].file_modified_ms = None;
+            updated = items[entry_index].clone();
+        }
+
+        let mut folders = self.folders.lock().unwrap();
+        add_parent_folders(&updated, &mut folders);
+        self.save_locked(&items, &folders)?;
+        if let Some(previous_path) = previous_path
+            && updated.path.as_deref() != Some(previous_path.as_str())
+        {
+            let vault_root = self.vault_root.lock().unwrap().clone();
+            let previous_file = vault_root.join(previous_path);
+            if previous_file.is_file() {
+                fs::remove_file(previous_file)?;
+            }
+        }
+        Ok(ExactNotebookMutationOutcome::Updated(Box::new(updated)))
+    }
+
     pub fn move_exact(
         &self,
         id: &str,

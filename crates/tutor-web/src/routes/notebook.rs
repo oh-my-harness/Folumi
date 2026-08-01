@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::memory_store::{FileMemoryBackend, MemoryEventCategory};
 use crate::notebook_store::{
-    NotebookEntryInput, NotebookEntryType, NotebookEntryUpdate, NotebookStore,
+    ExactNotebookMutationOutcome, NotebookEntryInput, NotebookEntryType, NotebookEntryUpdate,
+    NotebookStore, notebook_entry_revision,
 };
 
 #[derive(Clone)]
@@ -47,6 +48,8 @@ struct CreateNotebookEntryRequest {
 
 #[derive(Deserialize)]
 struct UpdateNotebookEntryRequest {
+    expected_revision: String,
+    path: Option<String>,
     title: Option<String>,
     markdown: Option<String>,
     metadata: Option<serde_json::Value>,
@@ -166,9 +169,14 @@ async fn get_entry(
     AxumPath(entry_id): AxumPath<String>,
 ) -> impl IntoResponse {
     match state.store.get_view(&entry_id) {
-        Some(entry) => {
-            (StatusCode::OK, Json(serde_json::json!({ "entry": entry }))).into_response()
-        }
+        Some(entry) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "revision": notebook_entry_revision(&entry.entry),
+                "entry": entry,
+            })),
+        )
+            .into_response(),
         None => error_response(StatusCode::NOT_FOUND, "notebook entry not found".into()),
     }
 }
@@ -188,6 +196,7 @@ async fn create_entry(
         source_message_id: req.source_message_id,
     }) {
         Ok(entry) => {
+            let revision = notebook_entry_revision(&entry);
             let _ = state.memory.record_event(
                 MemoryEventCategory::Notebook,
                 "created",
@@ -201,7 +210,7 @@ async fn create_entry(
             );
             (
                 StatusCode::CREATED,
-                Json(serde_json::json!({ "entry": entry })),
+                Json(serde_json::json!({ "entry": entry, "revision": revision })),
             )
                 .into_response()
         }
@@ -231,8 +240,9 @@ async fn update_entry(
     AxumPath(entry_id): AxumPath<String>,
     Json(req): Json<UpdateNotebookEntryRequest>,
 ) -> impl IntoResponse {
-    match state.store.update(
+    match state.store.update_and_move_exact(
         &entry_id,
+        &req.expected_revision,
         NotebookEntryUpdate {
             title: req.title,
             markdown: req.markdown,
@@ -240,8 +250,10 @@ async fn update_entry(
             source_session_id: req.source_session_id,
             source_message_id: req.source_message_id,
         },
+        req.path.as_deref(),
     ) {
-        Ok(entry) => {
+        Ok(ExactNotebookMutationOutcome::Updated(entry)) => {
+            let revision = notebook_entry_revision(&entry);
             let _ = state.memory.record_event(
                 MemoryEventCategory::Notebook,
                 "updated",
@@ -253,11 +265,26 @@ async fn update_entry(
                     "metadata": entry.metadata,
                 }),
             );
-            (StatusCode::OK, Json(serde_json::json!({ "entry": entry }))).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "entry": entry,
+                    "revision": revision,
+                })),
+            )
+                .into_response()
         }
-        Err(err) if err.to_string().contains("not found") => {
-            error_response(StatusCode::NOT_FOUND, err.to_string())
+        Ok(ExactNotebookMutationOutcome::NotFound) => {
+            error_response(StatusCode::NOT_FOUND, "notebook entry not found".into())
         }
+        Ok(ExactNotebookMutationOutcome::Stale { latest_revision }) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({
+                "error": "notebook entry changed; reload before saving",
+                "latest_revision": latest_revision,
+            })),
+        )
+            .into_response(),
         Err(err) => error_response(StatusCode::BAD_REQUEST, err.to_string()),
     }
 }
@@ -1123,7 +1150,8 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::CREATED);
         let body = response_json(response).await;
-        let entry_id = body["entry"]["id"].as_str().unwrap();
+        let entry_id = body["entry"]["id"].as_str().unwrap().to_string();
+        let revision = body["revision"].as_str().unwrap().to_string();
 
         let response = app
             .clone()
@@ -1150,7 +1178,9 @@ mod tests {
                 Method::PATCH,
                 &format!("/api/notebook/entries/{entry_id}"),
                 serde_json::json!({
+                    "expected_revision": revision.clone(),
                     "title": "Updated report",
+                    "path": "concepts/updated-report.md",
                     "markdown": "# Updated report"
                 }),
             ))
@@ -1159,7 +1189,22 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["entry"]["title"], "Updated report");
+        assert_eq!(body["entry"]["path"], "concepts/updated-report.md");
         assert_eq!(body["entry"]["markdown"], "# Updated report");
+
+        let response = app
+            .clone()
+            .oneshot(json_request(
+                Method::PATCH,
+                &format!("/api/notebook/entries/{entry_id}"),
+                serde_json::json!({
+                    "expected_revision": revision,
+                    "title": "Stale update"
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
 
         let response = app
             .clone()

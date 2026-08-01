@@ -49,10 +49,7 @@ struct LibrarySearchHit {
     note_id: Option<String>,
 }
 
-pub fn library_router(
-    knowledge: Arc<KnowledgeStore>,
-    notebook: Arc<NotebookStore>,
-) -> Router {
+pub fn library_router(knowledge: Arc<KnowledgeStore>, notebook: Arc<NotebookStore>) -> Router {
     Router::new()
         .route("/api/library/search", get(search_library))
         .with_state(LibraryState {
@@ -122,9 +119,7 @@ async fn search_library(
                     item_type: LibraryItemType::Note,
                     title: note.title,
                     snippet: found.snippet,
-                    location: note
-                        .path
-                        .unwrap_or_else(|| format!("line {}", found.line)),
+                    location: note.path.unwrap_or_else(|| format!("line {}", found.line)),
                     knowledge_base_id: None,
                     document_id: None,
                     note_id: Some(note.id),
@@ -194,8 +189,11 @@ mod tests {
 
     #[test]
     fn multiple_terms_can_match_across_lines() {
-        let found = find_text_match("Runtime architecture\nTrusted citations", "runtime citations")
-            .expect("all terms exist in the document");
+        let found = find_text_match(
+            "Runtime architecture\nTrusted citations",
+            "runtime citations",
+        )
+        .expect("all terms exist in the document");
         assert_eq!(found.line, 1);
     }
 }

@@ -36,6 +36,23 @@ pub struct SearchSessionConfig {
     pub max_fetch_chars: Option<usize>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AssistantSessionConfig {
+    pub name: String,
+    pub instructions: String,
+    pub memory_enabled: bool,
+}
+
+impl Default for AssistantSessionConfig {
+    fn default() -> Self {
+        Self {
+            name: "Folumi Assistant".into(),
+            instructions: String::new(),
+            memory_enabled: true,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SessionCreateConfig {
     pub capability: String,
@@ -44,6 +61,7 @@ pub struct SessionCreateConfig {
     pub llm: Option<LlmSessionConfig>,
     pub search: Option<SearchSessionConfig>,
     pub embedding: Option<tutor_rag::EmbeddingConfig>,
+    pub assistant: AssistantSessionConfig,
 }
 
 /// Product metadata for an active tutor session.
@@ -57,6 +75,7 @@ pub struct SessionEntry {
     pub llm: Option<LlmSessionConfig>,
     pub search: Option<SearchSessionConfig>,
     pub embedding: Option<tutor_rag::EmbeddingConfig>,
+    pub assistant: AssistantSessionConfig,
     pub stream: TutorStream,
 }
 
@@ -146,6 +165,8 @@ struct ProductSessionMetadata {
     search: Option<SearchSessionConfig>,
     #[serde(default)]
     embedding: Option<tutor_rag::EmbeddingConfig>,
+    #[serde(default)]
+    assistant: AssistantSessionConfig,
 }
 
 impl SessionPool {
@@ -192,6 +213,7 @@ impl SessionPool {
                 llm,
                 search,
                 embedding,
+                assistant: AssistantSessionConfig::default(),
             },
         )
         .await
@@ -209,6 +231,7 @@ impl SessionPool {
             llm,
             search,
             embedding,
+            assistant,
         } = config;
         let storage = self
             .repo
@@ -230,6 +253,7 @@ impl SessionPool {
             llm: llm.clone(),
             search: search.clone(),
             embedding: embedding.clone(),
+            assistant: assistant.clone(),
             stream: TutorStream::new(128),
         };
         self.sessions.lock().unwrap().insert(id.clone(), entry);
@@ -243,6 +267,7 @@ impl SessionPool {
                 llm,
                 search,
                 embedding,
+                assistant,
             },
         );
         Ok(id)
@@ -275,6 +300,10 @@ impl SessionPool {
             llm: product.as_ref().and_then(|value| value.llm.clone()),
             search: product.as_ref().and_then(|value| value.search.clone()),
             embedding: product.as_ref().and_then(|value| value.embedding.clone()),
+            assistant: product
+                .as_ref()
+                .map(|value| value.assistant.clone())
+                .unwrap_or_default(),
             stream: TutorStream::new(128),
         };
         self.sessions
@@ -985,6 +1014,7 @@ impl SessionPool {
                 llm: None,
                 search: None,
                 embedding: None,
+                assistant: AssistantSessionConfig::default(),
             });
         update(entry);
         let _ = persist_product_metadata(&self.product_metadata_path, &metadata);
@@ -1732,6 +1762,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn assistant_profile_and_memory_policy_survive_pool_reopen() {
+        let root = std::env::temp_dir().join(format!("folumi-test-{}", uuid::Uuid::new_v4()));
+        let pool = SessionPool::new_with_root(&root);
+        let id = pool
+            .create_with_tutor(
+                None,
+                SessionCreateConfig {
+                    capability: "chat".into(),
+                    kb: None,
+                    notebook_enabled: false,
+                    llm: None,
+                    search: None,
+                    embedding: None,
+                    assistant: AssistantSessionConfig {
+                        name: "My Folumi".into(),
+                        instructions: "Prefer short, practical answers.".into(),
+                        memory_enabled: false,
+                    },
+                },
+            )
+            .await
+            .unwrap();
+
+        drop(pool);
+        let reopened = SessionPool::new_with_root(&root);
+        let entry = reopened.ensure_entry(&id).await.unwrap();
+
+        assert_eq!(entry.assistant.name, "My Folumi");
+        assert_eq!(
+            entry.assistant.instructions,
+            "Prefer short, practical answers."
+        );
+        assert!(!entry.assistant.memory_enabled);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
     async fn notebook_binding_survives_pool_reopen() {
         let root = std::env::temp_dir().join(format!("llm-tutor-test-{}", uuid::Uuid::new_v4()));
         let pool = SessionPool::new_with_root(&root);
@@ -1764,6 +1831,7 @@ mod tests {
                     llm: None,
                     search: None,
                     embedding: None,
+                    assistant: AssistantSessionConfig::default(),
                 },
             )
             .await

@@ -366,6 +366,26 @@
     persistence. It should be able to reuse the current `RunContext` so
     Knowledge evidence and cancellation remain in the same run.
 
+- **Runtime has no first-class `ContextAttachment` boundary**
+  - Tracking: [llm-harness-runtime#101](https://github.com/oh-my-harness/llm-harness-runtime/issues/101).
+  - Expected: a product can attach a user-selected file or text fragment to one
+    turn, let the agent cite it, and replay the Session without restoring the
+    attachment body or making it eligible for later Knowledge recall.
+  - Actual: the pinned runtime revision exposes Knowledge sources and generic
+    resources, but no typed attachment contract consumed by the harness. Folumi
+    would otherwise have to concatenate attachment bodies into the durable user
+    message, which incorrectly turns temporary context into conversation
+    history.
+  - Product decision: do not add a parallel attachment store or prompt glue in
+    Folumi. The Phase 4 temporary-material item remains blocked until runtime
+    owns a run-scoped attachment contract with stable metadata, optional
+    Evidence identity, audit visibility, and explicit Session persistence
+    semantics.
+  - Suggestion: add a `ContextAttachment` input to `RunRequest` (or an
+    equivalent typed run extension with built-in harness consumption) whose
+    body is available only to the current run, while a safe descriptor may be
+    persisted for replay and audit.
+
 - **Resolved: workflow steps use runtime structured final output**
   - Runtime commit `8ab2a377` removed the synthetic
     `submit_step_result` Tool contract.

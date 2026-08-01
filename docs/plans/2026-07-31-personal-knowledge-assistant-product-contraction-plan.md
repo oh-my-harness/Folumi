@@ -349,12 +349,15 @@ Memory 不再占据一级导航。用户从助手设置进入“它记住了什�
 
 一句话：建立单一助手体验，使其能基于指定资料工作、受控维护笔记，并让记忆对用户完全透明。
 
-- [ ] 将多 Tutor 收缩成一个 Assistant Profile；
-- [ ] 明确显示每个会话正在使用的资料范围；
-- [ ] 完成 Notes 创建、更新、移动、删除确认和恢复闭环；
-- [ ] 将 Learner/Tutor Memory 迁移为 User Memory + Assistant Continuity；
-- [ ] 增加 Memory 总开关、逐项来源、编辑和遗忘；
-- [ ] 使用 ContextAttachment 支持临时资料，但不默认自动召回。
+- [x] 将多 Tutor 收缩成一个 Assistant Profile；
+- [x] 明确显示每个会话正在使用的资料范围；
+- [x] 完成 Notes 创建、更新、移动、删除确认和恢复闭环；
+- [ ] 将 Learner/Tutor Memory 迁移为 User Memory + Assistant Continuity（新会话已使用
+  User Memory；旧 Tutor 连续性须在 Phase 5 经用户确认后迁移，不能静默合并不同 Tutor 的私有数据）；
+- [x] 增加 Memory 总开关、逐项来源、编辑和遗忘；
+- [ ] 使用 ContextAttachment 支持临时资料，但不默认自动召回（runtime
+  尚无一等临时附件边界，已记录到 `docs/framework-feedback.md` 和
+  [llm-harness-runtime#101](https://github.com/oh-my-harness/llm-harness-runtime/issues/101)，产品侧不建设平行实现）。
 
 验收：用户可以用一个助手完成“查资料—形成答案—保存笔记—延续偏好”的完整任务，并能
 解释所有长期数据如何产生。

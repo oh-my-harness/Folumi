@@ -33,7 +33,8 @@ use crate::memory_evidence::{
 };
 use crate::memory_store::{
     FileMemoryBackend, MemoryAssistAction, MemoryChange, MemoryChangeOp, MemoryChangeSet,
-    MemoryFile, MemoryFinding, memory_entry_text_limit, try_parse_memory_entries,
+    MemoryFile, MemoryFinding, memory_entry_revision, memory_entry_text_limit,
+    try_parse_memory_entries,
 };
 
 #[derive(Deserialize)]
@@ -59,6 +60,125 @@ struct SourceQuery {
 #[derive(Deserialize)]
 struct UndoMemoryRequest {
     target_path: String,
+}
+
+#[derive(Deserialize)]
+struct UpdateMemoryItemRequest {
+    path: String,
+    marker: String,
+    file_revision: String,
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct ForgetMemoryItemRequest {
+    path: String,
+    marker: String,
+    file_revision: String,
+}
+
+async fn list_memory_items(State(state): State<MemoryState>) -> impl IntoResponse {
+    let files = match state.store.list() {
+        Ok(files) => files,
+        Err(error) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+    let mut items = Vec::new();
+    for file in files {
+        if file.level != "L2" && file.level != "L3" {
+            continue;
+        }
+        let entries = match try_parse_memory_entries(&file.markdown) {
+            Ok(entries) => entries,
+            Err(error) => {
+                return error_response(
+                    StatusCode::CONFLICT,
+                    format!("{} cannot be parsed safely: {error}", file.path),
+                );
+            }
+        };
+        for entry in entries {
+            let revision = match memory_entry_revision(&entry) {
+                Ok(revision) => revision,
+                Err(error) => {
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
+                }
+            };
+            items.push(serde_json::json!({
+                "path": file.path,
+                "level": file.level,
+                "file_revision": file.revision,
+                "marker": entry.marker,
+                "revision": revision,
+                "section": entry.section,
+                "text": entry.text,
+                "source_refs": entry.source_refs,
+                "provenance": entry.metadata.as_ref().map(|metadata| &metadata.provenance),
+                "kind": entry.metadata.as_ref().map(|metadata| metadata.kind.as_str()),
+                "expires_at": entry.metadata.as_ref().and_then(|metadata| metadata.expires_at),
+            }));
+        }
+    }
+    (StatusCode::OK, Json(serde_json::json!({ "items": items }))).into_response()
+}
+
+async fn update_memory_item(
+    State(state): State<MemoryState>,
+    Json(req): Json<UpdateMemoryItemRequest>,
+) -> impl IntoResponse {
+    if req.text.trim().is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "memory text is empty".into());
+    }
+    apply_memory_item_change(
+        &state.store,
+        &req.path,
+        &req.marker,
+        &req.file_revision,
+        MemoryChangeOp::Replace,
+        Some(req.text),
+    )
+}
+
+async fn forget_memory_item(
+    State(state): State<MemoryState>,
+    Json(req): Json<ForgetMemoryItemRequest>,
+) -> impl IntoResponse {
+    apply_memory_item_change(
+        &state.store,
+        &req.path,
+        &req.marker,
+        &req.file_revision,
+        MemoryChangeOp::Delete,
+        None,
+    )
+}
+
+fn apply_memory_item_change(
+    store: &FileMemoryBackend,
+    path: &str,
+    marker: &str,
+    file_revision: &str,
+    op: MemoryChangeOp,
+    text: Option<String>,
+) -> axum::response::Response {
+    let change_id = uuid::Uuid::new_v4().to_string();
+    let change = MemoryChange {
+        id: change_id.clone(),
+        op,
+        section: None,
+        entry_id: Some(marker.to_string()),
+        after_entry_id: None,
+        text,
+        refs: Vec::new(),
+        reason: "User edited visible memory".into(),
+        before_text: None,
+    };
+    match store.apply_memory_changes(path, file_revision, &[change], &[change_id]) {
+        Ok(file) => (StatusCode::OK, Json(serde_json::json!({ "file": file }))).into_response(),
+        Err(error) if error.to_string().contains("changed since") => {
+            error_response(StatusCode::CONFLICT, error.to_string())
+        }
+        Err(error) => error_response(StatusCode::BAD_REQUEST, error.to_string()),
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -937,6 +1057,12 @@ pub fn memory_router(
     };
     Router::new()
         .route("/api/memory/files", get(list_files))
+        .route(
+            "/api/memory/items",
+            get(list_memory_items)
+                .patch(update_memory_item)
+                .delete(forget_memory_item),
+        )
         .route("/api/memory/file", get(get_file).patch(update_file))
         .route("/api/memory/events", get(list_events))
         .route("/api/memory/source", get(get_source))
@@ -1393,6 +1519,79 @@ mod tests {
                 .unwrap()
                 .contains("Needs review")
         );
+    }
+
+    #[tokio::test]
+    async fn user_memory_items_are_visible_editable_and_forgettable() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
+        store
+            .write(
+                "L3/preferences.md",
+                "# Learning preferences\n\n## Preferences\n\n- Keep answers concise. <!--m_01-->"
+                    .into(),
+            )
+            .unwrap();
+        let app = memory_router(
+            store,
+            AgentRuntimeSecurity::generate(),
+            dir.path().join("workflow-sessions"),
+        );
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/memory/items")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let item = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["marker"] == "m_01")
+            .unwrap();
+        let revision = item["file_revision"].as_str().unwrap().to_string();
+
+        let response = app
+            .clone()
+            .oneshot(json_request(
+                Method::PATCH,
+                "/api/memory/items",
+                serde_json::json!({
+                    "path": "L3/preferences.md",
+                    "marker": "m_01",
+                    "file_revision": revision,
+                    "text": "Prefer concise, direct answers."
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let revision = body["file"]["revision"].as_str().unwrap().to_string();
+
+        let response = app
+            .oneshot(json_request(
+                Method::DELETE,
+                "/api/memory/items",
+                serde_json::json!({
+                    "path": "L3/preferences.md",
+                    "marker": "m_01",
+                    "file_revision": revision
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert!(!body["file"]["markdown"].as_str().unwrap().contains("m_01"));
     }
 
     #[tokio::test]

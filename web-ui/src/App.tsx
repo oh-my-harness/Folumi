@@ -766,6 +766,11 @@ export default function App() {
             ...tutorBinding,
             kb,
             notebook_enabled: selectedNotebookEnabled,
+            assistant: {
+              name: llmSettings.assistantName,
+              instructions: llmSettings.assistantInstructions,
+              memory_enabled: llmSettings.memoryEnabled,
+            },
             llm: settingsForSession(llmSettings, selectedLlmConfigId),
             search: searchForSession(llmSettings),
           }),
@@ -857,6 +862,11 @@ export default function App() {
           ...tutorBindingForCreate(selectedTutorId),
           kb: selectedKnowledgeBaseId || null,
           notebook_enabled: selectedNotebookEnabled,
+          assistant: {
+            name: llmSettings.assistantName,
+            instructions: llmSettings.assistantInstructions,
+            memory_enabled: llmSettings.memoryEnabled,
+          },
           llm: settingsForSession(llmSettings, selectedLlmConfigId),
           search: searchForSession(llmSettings),
         }),
@@ -997,10 +1007,17 @@ export default function App() {
 
   const handleApplyNotebookEdit = useCallback(async (proposal: NotebookEditProposal) => {
     try {
+      const detailRes = await fetch(`/api/notebook/entries/${encodeURIComponent(proposal.entryId)}`)
+      const detailData = await safeJson(detailRes)
+      if (!detailRes.ok) {
+        throw new Error(errorMessage(detailData, detailRes.status))
+      }
       const res = await fetch(`/api/notebook/entries/${encodeURIComponent(proposal.entryId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          expected_revision: detailData.revision,
+          path: (detailData.entry as { path?: string | null } | undefined)?.path,
           title: proposal.proposedTitle,
           markdown: proposal.proposedMarkdown,
           metadata: {
@@ -1522,8 +1539,20 @@ export default function App() {
           <>
             <header className="flex items-center gap-4 bg-white px-6 py-3">
               <div>
-                <h1 className="text-lg font-semibold text-gray-900">{t('chat.title')}</h1>
+                <h1 className="text-lg font-semibold text-gray-900">{llmSettings.assistantName || t('chat.title')}</h1>
                 <p className="text-xs text-gray-500">{t('chat.subtitle')}</p>
+              </div>
+              <div className="hidden items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 lg:flex">
+                <span className="font-medium">{llmSettings.language === 'en-US' ? 'Context' : '资料范围'}</span>
+                <span>{selectedNotebookEnabled
+                  ? (llmSettings.language === 'en-US' ? 'Notes' : '笔记')
+                  : knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId)?.name
+                    ?? (llmSettings.language === 'en-US' ? 'Conversation only' : '仅当前会话')}</span>
+                <span className={llmSettings.memoryEnabled ? 'text-emerald-700' : 'text-gray-400'}>
+                  · {llmSettings.memoryEnabled
+                    ? (llmSettings.language === 'en-US' ? 'Memory on' : '记忆已开启')
+                    : (llmSettings.language === 'en-US' ? 'Memory off' : '记忆已关闭')}
+                </span>
               </div>
               <div className="ml-auto">
                 <BudgetPanel spent={budgetSpent} limit={llmSettings.budgetLimitUsd} warning={budgetWarning} />

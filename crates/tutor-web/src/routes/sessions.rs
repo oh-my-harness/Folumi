@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::knowledge_store::KnowledgeStore;
 use crate::session::{
-    LlmSessionConfig, SearchSessionConfig, SessionCreateConfig, SessionPool, message_role,
-    message_text,
+    AssistantSessionConfig, LlmSessionConfig, SearchSessionConfig, SessionCreateConfig,
+    SessionPool, message_role, message_text,
 };
 use crate::settings_store::SettingsStore;
 use crate::tutor_store::{TutorProfile, TutorStore};
@@ -33,6 +33,7 @@ struct CreateSessionRequest {
     notebook_enabled: Option<bool>,
     llm: Option<CreateLlmConfig>,
     search: Option<CreateSearchConfig>,
+    assistant: Option<CreateAssistantConfig>,
 }
 
 #[derive(Serialize)]
@@ -60,6 +61,13 @@ struct CreateSearchConfig {
     max_results: Option<usize>,
     fetch_timeout_secs: Option<u64>,
     max_fetch_chars: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct CreateAssistantConfig {
+    name: Option<String>,
+    instructions: Option<String>,
+    memory_enabled: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -192,6 +200,10 @@ async fn create_session(
                 llm,
                 search,
                 embedding,
+                assistant: req
+                    .assistant
+                    .map(assistant_config_from_request)
+                    .unwrap_or_default(),
             },
         )
         .await
@@ -202,6 +214,18 @@ async fn create_session(
             Json(serde_json::json!({ "error": err.to_string() })),
         )
             .into_response(),
+    }
+}
+
+fn assistant_config_from_request(config: CreateAssistantConfig) -> AssistantSessionConfig {
+    AssistantSessionConfig {
+        name: config
+            .name
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "Folumi Assistant".into()),
+        instructions: config.instructions.unwrap_or_default().trim().to_string(),
+        memory_enabled: config.memory_enabled.unwrap_or(true),
     }
 }
 

@@ -751,9 +751,10 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         let mut router = CapabilityRouter::new(env, llm, governance)
             .with_event_sink(sink)
             .with_workflow_root(rag_root.join("workflow-sessions"));
-        let learner_memory_allowed = bound_tutor
-            .as_ref()
-            .is_none_or(|tutor| tutor.learner_memory_access);
+        let learner_memory_allowed = entry.assistant.memory_enabled
+            && bound_tutor
+                .as_ref()
+                .is_none_or(|tutor| tutor.learner_memory_access);
         let learner_memory_mode = if learner_memory_allowed {
             LearnerMemoryMode::InteractiveMutation
         } else {
@@ -818,6 +819,9 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                 source: tutor_memory_source,
                 mode: tutor_memory_mode,
             });
+        } else {
+            router =
+                router.with_product_instruction(assistant_product_instruction(&entry.assistant));
         }
         if entry.capability == "quiz" {
             let quiz_tool = CreateQuizTool::new(
@@ -1029,10 +1033,12 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
 
     match result {
         Ok(answer) => {
-            if should_record_chat_memory(
-                &entry.capability,
-                research_report_started.load(Ordering::SeqCst),
-            ) {
+            if entry.assistant.memory_enabled
+                && should_record_chat_memory(
+                    &entry.capability,
+                    research_report_started.load(Ordering::SeqCst),
+                )
+            {
                 let _ = memory.record_event(
                     MemoryEventCategory::Chat,
                     "answered",
@@ -1107,6 +1113,19 @@ fn tutor_product_instruction(tutor: &TutorProfile) -> String {
         tutor.name.trim(),
         tutor.soul_markdown.trim()
     )
+}
+
+fn assistant_product_instruction(assistant: &crate::session::AssistantSessionConfig) -> String {
+    let instructions = assistant.instructions.trim();
+    if instructions.is_empty() {
+        format!("Assistant name: {}", assistant.name.trim())
+    } else {
+        format!(
+            "Assistant name: {}\n\n## User-authored assistant instructions\n\n{}",
+            assistant.name.trim(),
+            instructions
+        )
+    }
 }
 
 fn should_record_chat_memory(capability: &str, research_report_started: bool) -> bool {

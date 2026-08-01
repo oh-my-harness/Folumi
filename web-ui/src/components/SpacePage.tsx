@@ -55,6 +55,7 @@ interface NotebookEntry {
   tags?: string[]
   links?: NotebookLink[]
   backlinks?: NotebookBacklink[]
+  revision?: string
 }
 
 interface NotebookLink {
@@ -142,7 +143,9 @@ export function SpacePage({
   const [activeNotebookDetail, setActiveNotebookDetail] = useState<NotebookEntry | null>(null)
   const [memoryFiles, setMemoryFiles] = useState<MemoryFile[]>([])
   const [editingNotebookId, setEditingNotebookId] = useState<string | null>(null)
+  const [recentlyDeletedNote, setRecentlyDeletedNote] = useState<NotebookEntry | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [editPath, setEditPath] = useState('')
   const [editMarkdown, setEditMarkdown] = useState('')
   const [editingMemoryPath, setEditingMemoryPath] = useState<string | null>(null)
   const [memoryDraft, setMemoryDraft] = useState('')
@@ -243,7 +246,7 @@ export function SpacePage({
       const res = await fetch(`/api/notebook/entries/${encodeURIComponent(entryId)}`)
       const data = await safeJson(res)
       if (!res.ok) throw new Error(errorMessage(data, res.status))
-      const entry = data.entry as NotebookEntry
+      const entry = { ...(data.entry as NotebookEntry), revision: data.revision as string }
       setActiveNotebookDetail(entry)
       setNotebookEntries((items) => items.map((item) => item.id === entry.id ? { ...item, ...entry } : item))
     } catch (err) {
@@ -395,7 +398,7 @@ export function SpacePage({
       })
       const data = await safeJson(res)
       if (!res.ok) throw new Error(errorMessage(data, res.status))
-      const entry = data.entry as NotebookEntry
+      const entry = { ...(data.entry as NotebookEntry), revision: data.revision as string }
       expandNotebookFolderPath(folderPath)
       setNotebookEntries((items) => [entry, ...items.filter((item) => item.id !== entry.id)])
       setActiveNotebookId(entry.id)
@@ -450,7 +453,7 @@ export function SpacePage({
       })
       const data = await safeJson(res)
       if (!res.ok) throw new Error(errorMessage(data, res.status))
-      const entry = data.entry as NotebookEntry
+      const entry = { ...(data.entry as NotebookEntry), revision: data.revision as string }
       setNotebookEntries((items) => [entry, ...items.filter((item) => item.id !== entry.id)])
       setActiveNotebookId(entry.id)
       setStatus(`Created linked note: ${entry.title}`)
@@ -468,11 +471,19 @@ export function SpacePage({
     setNotebookEntries((items) => items.filter((item) => item.id !== entry.id))
     setActiveNotebookId((current) => current === entry.id ? null : current)
     try {
+      let restorable = activeNotebookDetail?.id === entry.id ? activeNotebookDetail : entry
+      if (restorable.markdown === undefined) {
+        const detailResponse = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`)
+        const detailData = await safeJson(detailResponse)
+        if (!detailResponse.ok) throw new Error(errorMessage(detailData, detailResponse.status))
+        restorable = { ...(detailData.entry as NotebookEntry), revision: detailData.revision as string }
+      }
       const res = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await safeJson(res)
         throw new Error(errorMessage(data, res.status))
       }
+      setRecentlyDeletedNote(restorable)
       setStatus('Notebook entry deleted')
     } catch (err) {
       setNotebookEntries(previous)
@@ -480,15 +491,49 @@ export function SpacePage({
     }
   }
 
+  const restoreRecentlyDeletedNote = async () => {
+    if (!recentlyDeletedNote) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/notebook/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          space_id: recentlyDeletedNote.space_id,
+          entry_type: recentlyDeletedNote.entry_type,
+          title: recentlyDeletedNote.title,
+          path: recentlyDeletedNote.path,
+          markdown: recentlyDeletedNote.markdown ?? `# ${recentlyDeletedNote.title}\n`,
+          metadata: recentlyDeletedNote.metadata,
+          source_session_id: recentlyDeletedNote.source_session_id,
+          source_message_id: recentlyDeletedNote.source_message_id,
+        }),
+      })
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error(errorMessage(data, res.status))
+      const restored = { ...(data.entry as NotebookEntry), revision: data.revision as string }
+      setNotebookEntries((items) => [restored, ...items])
+      setActiveNotebookId(restored.id)
+      setRecentlyDeletedNote(null)
+      setStatus('Notebook entry restored')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const startEditNotebookEntry = (entry: NotebookEntry) => {
     setEditingNotebookId(entry.id)
     setEditTitle(entry.title)
+    setEditPath(entry.path ?? '')
     setEditMarkdown(entry.markdown ?? '')
   }
 
   const cancelEditNotebookEntry = () => {
     setEditingNotebookId(null)
     setEditTitle('')
+    setEditPath('')
     setEditMarkdown('')
   }
 
@@ -501,14 +546,26 @@ export function SpacePage({
     }
     setLoading(true)
     try {
+      let revision = entry.revision
+      if (!revision) {
+        const detailRes = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`)
+        const detailData = await safeJson(detailRes)
+        if (!detailRes.ok) throw new Error(errorMessage(detailData, detailRes.status))
+        revision = detailData.revision as string
+      }
       const res = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, markdown }),
+        body: JSON.stringify({
+          expected_revision: revision,
+          title,
+          path: editPath.trim() || `${title}.md`,
+          markdown,
+        }),
       })
       const data = await safeJson(res)
       if (!res.ok) throw new Error(errorMessage(data, res.status))
-      const updated = data.entry as NotebookEntry
+      const updated = { ...(data.entry as NotebookEntry), revision: data.revision as string }
       setNotebookEntries((items) => items.map((item) => item.id === updated.id ? updated : item))
       setActiveNotebookDetail(updated)
       setEditingNotebookId(null)
@@ -593,6 +650,14 @@ export function SpacePage({
           </button>
         </header>}
 
+        {recentlyDeletedNote && (
+          <div className="flex items-center gap-3 border-b border-amber-100 bg-amber-50 px-6 py-2 text-sm text-amber-900">
+            <span className="min-w-0 flex-1 truncate">{language === 'en-US' ? `Deleted “${recentlyDeletedNote.title}”` : `已删除“${recentlyDeletedNote.title}”`}</span>
+            <button type="button" className="rounded-md bg-white px-3 py-1.5 font-medium text-amber-800 shadow-sm" disabled={loading} onClick={() => void restoreRecentlyDeletedNote()}>{language === 'en-US' ? 'Undo' : '撤销'}</button>
+            <button type="button" className="rounded p-1 text-amber-700 hover:bg-amber-100" aria-label="Dismiss undo" onClick={() => setRecentlyDeletedNote(null)}><X size={15} /></button>
+          </div>
+        )}
+
         <NotebookTab
           entries={notebookEntries}
           folders={notebookFolders}
@@ -602,6 +667,7 @@ export function SpacePage({
           loading={loading}
           editingEntryId={editingNotebookId}
           editTitle={editTitle}
+          editPath={editPath}
           editMarkdown={editMarkdown}
           onSelectEntry={setActiveNotebookId}
           onToggleFolder={toggleNotebookFolder}
@@ -611,6 +677,7 @@ export function SpacePage({
           onStartEdit={startEditNotebookEntry}
           onCancelEdit={cancelEditNotebookEntry}
           onEditTitleChange={setEditTitle}
+          onEditPathChange={setEditPath}
           onEditMarkdownChange={setEditMarkdown}
           onSaveEntry={(entry) => void saveNotebookEntry(entry)}
           onCreateLinkedEntry={(title) => void createNotebookEntryFromLink(title)}
@@ -706,6 +773,7 @@ export function SpacePage({
             loading={loading}
             editingEntryId={editingNotebookId}
             editTitle={editTitle}
+            editPath={editPath}
             editMarkdown={editMarkdown}
             onSelectEntry={setActiveNotebookId}
             onToggleFolder={toggleNotebookFolder}
@@ -715,6 +783,7 @@ export function SpacePage({
             onStartEdit={startEditNotebookEntry}
             onCancelEdit={cancelEditNotebookEntry}
             onEditTitleChange={setEditTitle}
+            onEditPathChange={setEditPath}
             onEditMarkdownChange={setEditMarkdown}
             onSaveEntry={(entry) => void saveNotebookEntry(entry)}
             onCreateLinkedEntry={(title) => void createNotebookEntryFromLink(title)}
@@ -768,6 +837,7 @@ function NotebookTab({
   loading,
   editingEntryId,
   editTitle,
+  editPath,
   editMarkdown,
   onSelectEntry,
   onToggleFolder,
@@ -777,6 +847,7 @@ function NotebookTab({
   onStartEdit,
   onCancelEdit,
   onEditTitleChange,
+  onEditPathChange,
   onEditMarkdownChange,
   onSaveEntry,
   onCreateLinkedEntry,
@@ -791,6 +862,7 @@ function NotebookTab({
   loading: boolean
   editingEntryId: string | null
   editTitle: string
+  editPath: string
   editMarkdown: string
   onSelectEntry: (id: string) => void
   onToggleFolder: (folderPath: string) => void
@@ -800,6 +872,7 @@ function NotebookTab({
   onStartEdit: (entry: NotebookEntry) => void
   onCancelEdit: () => void
   onEditTitleChange: (value: string) => void
+  onEditPathChange: (value: string) => void
   onEditMarkdownChange: (value: string) => void
   onSaveEntry: (entry: NotebookEntry) => void
   onCreateLinkedEntry: (title: string) => void
@@ -901,11 +974,21 @@ function NotebookTab({
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-medium uppercase tracking-wide text-blue-600">{activeEntry.entry_type.replaceAll('_', ' ')}</div>
                 {isEditing ? (
-                  <input
-                    className={`${inputClassName} mt-2 max-w-2xl text-base font-semibold`}
-                    value={editTitle}
-                    onChange={(event) => onEditTitleChange(event.target.value)}
-                  />
+                  <div className="mt-2 grid max-w-2xl gap-2">
+                    <input
+                      className={`${inputClassName} text-base font-semibold`}
+                      value={editTitle}
+                      aria-label="Note title"
+                      onChange={(event) => onEditTitleChange(event.target.value)}
+                    />
+                    <input
+                      className={`${inputClassName} font-mono text-xs`}
+                      value={editPath}
+                      aria-label="Note path"
+                      placeholder="folder/note.md"
+                      onChange={(event) => onEditPathChange(event.target.value)}
+                    />
+                  </div>
                 ) : (
                   <h3 className="mt-1 truncate text-xl font-semibold text-gray-950">{activeEntry.title}</h3>
                 )}

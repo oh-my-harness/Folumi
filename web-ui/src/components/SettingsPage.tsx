@@ -39,7 +39,7 @@ import type {
 import { chooseDesktopDirectory, getDesktopDataDir, openDesktopDataDir } from '../api'
 import type { ProductGuideDestination } from '../productGuide'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
-import { MemoryPage } from './MemoryPage'
+import { UserMemoryPage } from './UserMemoryPage'
 import { ProductGuide } from './ProductGuide'
 
 interface Props {
@@ -597,8 +597,37 @@ export function SettingsPage({
           </div>
 
           {activeTab === 'assistant' && (
-            <div className="h-[calc(100vh-12rem)] min-h-[32rem] overflow-hidden rounded-lg border border-gray-200 bg-white">
-              <MemoryPage settings={settings} onSourceNavigate={onSourceNavigate} />
+            <div className="space-y-5">
+              <SettingsPanel
+                icon={Brain}
+                title={settings.language === 'en-US' ? 'Assistant profile' : '助手配置'}
+                description={settings.language === 'en-US'
+                  ? 'One assistant identity is used for every new conversation. These instructions cannot override safety or data permissions.'
+                  : '所有新会话使用同一个助手身份；这里的指令不能覆盖安全规则或数据权限。'}
+              >
+                <div className="grid gap-4">
+                  <Field label={settings.language === 'en-US' ? 'Assistant name' : '助手名称'}>
+                    <input className={inputClassName} value={settings.assistantName} onChange={(event) => update('assistantName', event.target.value)} />
+                  </Field>
+                  <Field label={settings.language === 'en-US' ? 'Behavior instructions' : '行为说明'}>
+                    <textarea
+                      className={`${inputClassName} min-h-28 resize-y`}
+                      value={settings.assistantInstructions}
+                      onChange={(event) => update('assistantInstructions', event.target.value)}
+                      placeholder={settings.language === 'en-US'
+                        ? 'For example: be concise, distinguish facts from suggestions, and prefer my saved terminology.'
+                        : '例如：回答简洁，区分事实与建议，优先使用我笔记中的术语。'}
+                    />
+                  </Field>
+                  <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                    <input className="mt-1" type="checkbox" checked={settings.memoryEnabled} onChange={(event) => update('memoryEnabled', event.target.checked)} />
+                    <span><span className="block text-sm font-medium text-gray-900">{settings.language === 'en-US' ? 'Use long-term memory' : '使用长期记忆'}</span><span className="mt-1 block text-xs leading-5 text-gray-500">{settings.language === 'en-US' ? 'When off, new sessions neither recall nor record User Memory. Existing memory remains available here for review or deletion.' : '关闭后，新会话不会读取或记录用户记忆；已有记忆仍保留在此，供查看或删除。'}</span></span>
+                  </label>
+                </div>
+              </SettingsPanel>
+              <div className="h-[calc(100vh-20rem)] min-h-[32rem] overflow-hidden rounded-lg border border-gray-200 bg-white">
+                <UserMemoryPage language={settings.language} enabled={settings.memoryEnabled} onSourceNavigate={onSourceNavigate} />
+              </div>
             </div>
           )}
 

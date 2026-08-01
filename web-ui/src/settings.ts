@@ -49,6 +49,9 @@ export interface SearchConfig {
 }
 
 export interface LlmSettings {
+  assistantName: string
+  assistantInstructions: string
+  memoryEnabled: boolean
   language: UiLanguage
   theme: ThemeId
   provider: LlmProvider
@@ -72,6 +75,9 @@ export interface LlmSettings {
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
 
 export const defaultLlmSettings: LlmSettings = {
+  assistantName: 'Folumi Assistant',
+  assistantInstructions: '',
+  memoryEnabled: true,
   language: 'zh-CN',
   theme: 'cool-light',
   provider: 'openai',
@@ -381,6 +387,13 @@ function normalizeLlmSettings(parsed: Partial<LlmSettings>): LlmSettings {
       : normalizeLlmProvider((parsed as { provider?: unknown }).provider),
     budgetLimitUsd: Number(parsed.budgetLimitUsd ?? defaultLlmSettings.budgetLimitUsd),
     requireApproval: Boolean(parsed.requireApproval),
+    assistantName: typeof parsed.assistantName === 'string' && parsed.assistantName.trim()
+      ? parsed.assistantName.trim()
+      : defaultLlmSettings.assistantName,
+    assistantInstructions: typeof parsed.assistantInstructions === 'string'
+      ? parsed.assistantInstructions
+      : '',
+    memoryEnabled: parsed.memoryEnabled !== false,
     language: normalizeUiLanguage((parsed as { language?: unknown }).language),
     theme: normalizeTheme((parsed as { theme?: unknown }).theme),
     llmConfigs,
