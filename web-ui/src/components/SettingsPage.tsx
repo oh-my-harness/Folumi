@@ -63,7 +63,7 @@ const providerOptions: { value: LlmProvider; label: string; description: string 
   },
 ]
 
-export type SettingsTab = 'assistant' | 'appearance' | 'llm' | 'embedding' | 'search' | 'notebook' | 'governance' | 'help'
+export type SettingsTab = 'appearance' | 'llm' | 'embedding' | 'search' | 'notebook' | 'governance' | 'help'
 type ConfigTestState = {
   status: 'running' | 'ok' | 'error'
   message: string
@@ -104,7 +104,6 @@ const settingsTabs: Array<{
   key: SettingsTab
   labelKey:
     | 'settings.tabs.appearance'
-    | 'settings.tabs.assistant'
     | 'settings.tabs.llm'
     | 'settings.tabs.embedding'
     | 'settings.tabs.search'
@@ -113,7 +112,6 @@ const settingsTabs: Array<{
     | 'settings.tabs.notebook'
   icon: LucideIcon
 }> = [
-  { key: 'assistant', labelKey: 'settings.tabs.assistant', icon: Brain },
   { key: 'appearance', labelKey: 'settings.tabs.appearance', icon: Palette },
   { key: 'llm', labelKey: 'settings.tabs.llm', icon: Brain },
   { key: 'embedding', labelKey: 'settings.tabs.embedding', icon: Database },
@@ -587,38 +585,10 @@ export function SettingsPage({
               </h2>
               <p className="mt-1 text-sm text-gray-600">{tabDescription(activeTab, t)}</p>
             </div>
-            {activeTab !== 'help' && activeTab !== 'assistant' && (
+            {activeTab !== 'help' && (
               <span className="ml-auto text-sm text-gray-500">{t('settings.saved')}</span>
             )}
           </div>
-
-          {activeTab === 'assistant' && (
-            <div className="space-y-5">
-              <SettingsPanel
-                icon={Brain}
-                title={settings.language === 'en-US' ? 'Assistant profile' : '助手配置'}
-                description={settings.language === 'en-US'
-                  ? 'One assistant identity is used for every new conversation. These instructions cannot override safety or data permissions.'
-                  : '所有新会话使用同一个助手身份；这里的指令不能覆盖安全规则或数据权限。'}
-              >
-                <div className="grid gap-4">
-                  <Field label={settings.language === 'en-US' ? 'Assistant name' : '助手名称'}>
-                    <input className={inputClassName} value={settings.assistantName} onChange={(event) => update('assistantName', event.target.value)} />
-                  </Field>
-                  <Field label={settings.language === 'en-US' ? 'Behavior instructions' : '行为说明'}>
-                    <textarea
-                      className={`${inputClassName} min-h-28 resize-y`}
-                      value={settings.assistantInstructions}
-                      onChange={(event) => update('assistantInstructions', event.target.value)}
-                      placeholder={settings.language === 'en-US'
-                        ? 'For example: be concise, distinguish facts from suggestions, and prefer my saved terminology.'
-                        : '例如：回答简洁，区分事实与建议，优先使用我笔记中的术语。'}
-                    />
-                  </Field>
-                </div>
-              </SettingsPanel>
-            </div>
-          )}
 
           {activeTab === 'appearance' && (
             <SettingsPanel
@@ -1348,7 +1318,6 @@ function ThemeOption({
 
 function tabDescription(tab: SettingsTab, t: (key: TranslationKey) => string) {
   const keyByTab: Record<SettingsTab, TranslationKey> = {
-    assistant: 'settings.assistant.description',
     appearance: 'settings.appearance.description',
     llm: 'settings.llm.description',
     embedding: 'settings.embedding.description',

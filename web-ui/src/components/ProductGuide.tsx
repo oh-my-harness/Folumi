@@ -262,10 +262,11 @@ const chineseCopy = {
     open: '打开 Notebook',
   },
   memory: {
-    title: '查看和更新记忆',
-    description: '用户记忆保存稳定事实和偏好，助手连续性保存承诺、待办和策略；两者都可见、可改、可关闭。',
+    title: '配置助手和记忆',
+    description: '记忆页面统一管理单一助手的身份与行为，以及可见、可改、可关闭的跨会话记忆。',
     open: '打开记忆',
     items: [
+      { icon: <Bot size={18} />, title: '助手配置', text: '设置所有新会话共用的助手名称和行为说明。' },
       { icon: <FileText size={18} />, title: '用户记忆', text: '记录经过确认的稳定事实、偏好和目标，并保留来源。' },
       { icon: <Database size={18} />, title: '助手连续性', text: '记录跨会话承诺、待办和有效策略，让单一助手能持续跟进。' },
       { icon: <Brain size={18} />, title: '用户控制', text: '可逐条检查、修改和遗忘，也可用总开关完全停用记忆。' },
@@ -327,10 +328,11 @@ const englishCopy: typeof chineseCopy = {
     open: 'Open Notebook',
   },
   memory: {
-    title: 'Inspect and update Memory',
-    description: 'User Memory keeps stable facts and preferences; Assistant Continuity keeps commitments, open loops, and strategies. Both remain visible and optional.',
+    title: 'Configure Assistant and Memory',
+    description: 'Memory manages the single Assistant identity and behavior together with visible, editable, optional cross-session context.',
     open: 'Open Memory',
     items: [
+      { icon: <Bot size={18} />, title: 'Assistant profile', text: 'Set the name and behavior instructions shared by new conversations.' },
       { icon: <FileText size={18} />, title: 'User Memory', text: 'Confirmed stable facts, preferences, and goals with visible provenance.' },
       { icon: <Database size={18} />, title: 'Assistant Continuity', text: 'Cross-session commitments, open loops, and successful strategies for one Assistant.' },
       { icon: <Brain size={18} />, title: 'User control', text: 'Inspect, edit, or forget individual items, or disable Memory completely.' },

@@ -29,6 +29,14 @@ test('Notebook and Memory are standalone workspaces while Knowledge Base stays R
   assert.doesNotMatch(memory, /LegacyMigrationPanel|\/api\/migration\/legacy/)
 })
 
+test('assistant profile is managed from Memory instead of Settings', () => {
+  assert.match(memory, /Assistant profile|助手配置/)
+  assert.match(memory, /assistantName/)
+  assert.match(memory, /assistantInstructions/)
+  assert.doesNotMatch(settings, /Assistant profile|助手配置|assistantName|assistantInstructions/)
+  assert.match(app, /onAssistantProfileChange/)
+})
+
 test('legacy data migration stays outside the active product boundary', () => {
   assert.doesNotMatch(backendMain, /migration_router|\/api\/migration\/legacy/)
   assert.doesNotMatch(backendRoutes, /pub mod migration/)

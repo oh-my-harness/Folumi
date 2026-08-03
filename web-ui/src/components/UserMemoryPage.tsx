@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Brain, Edit3, ExternalLink, RefreshCw, Save, Trash2, X } from 'lucide-react'
+import { Bot, Brain, Edit3, ExternalLink, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
 import { sourceTargetFromRaw } from './MarkdownMessage'
 
@@ -20,11 +20,22 @@ interface MemoryItem {
 interface Props {
   language: 'zh-CN' | 'en-US'
   enabled: boolean
+  assistantName: string
+  assistantInstructions: string
   onEnabledChange: (enabled: boolean) => void
+  onAssistantProfileChange: (profile: { name: string; instructions: string }) => void
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
 }
 
-export function UserMemoryPage({ language, enabled, onEnabledChange, onSourceNavigate }: Props) {
+export function UserMemoryPage({
+  language,
+  enabled,
+  assistantName,
+  assistantInstructions,
+  onEnabledChange,
+  onAssistantProfileChange,
+  onSourceNavigate,
+}: Props) {
   const [items, setItems] = useState<MemoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('')
@@ -95,7 +106,7 @@ export function UserMemoryPage({ language, enabled, onEnabledChange, onSourceNav
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Brain size={21} /></span>
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold text-gray-950">{language === 'en-US' ? 'Memory' : '记忆'}</h1>
-          <p className="mt-1 text-sm text-gray-500">{language === 'en-US' ? 'Review and control the long-term context the assistant may carry across conversations.' : '查看和控制助手可以跨会话延续的长期信息。'}</p>
+          <p className="mt-1 text-sm text-gray-500">{language === 'en-US' ? 'Configure the assistant and control the long-term context it may carry across conversations.' : '配置助手，并控制它可以跨会话延续的长期信息。'}</p>
         </div>
         <label className="flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm text-gray-700">
           <input type="checkbox" checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} />
@@ -111,7 +122,50 @@ export function UserMemoryPage({ language, enabled, onEnabledChange, onSourceNav
       </div>
       {status && <div className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{status}</div>}
 
-      <div className="mt-5 space-y-3">
+      <section className="mt-5 rounded-lg border border-gray-200 bg-white p-5">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><Bot size={19} /></span>
+          <div>
+            <h2 className="font-semibold text-gray-950">{language === 'en-US' ? 'Assistant profile' : '助手配置'}</h2>
+            <p className="mt-1 text-sm leading-6 text-gray-500">
+              {language === 'en-US'
+                ? 'Define the identity and behavior shared by new conversations. These instructions cannot override safety or data permissions.'
+                : '定义所有新会话共用的助手身份与行为偏好；这些说明不能覆盖安全规则或数据权限。'}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-4">
+          <label className="grid gap-1.5 text-sm font-medium text-gray-800">
+            {language === 'en-US' ? 'Assistant name' : '助手名称'}
+            <input
+              className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm font-normal outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              value={assistantName}
+              onChange={(event) => onAssistantProfileChange({ name: event.target.value, instructions: assistantInstructions })}
+            />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-gray-800">
+            {language === 'en-US' ? 'Behavior instructions' : '行为说明'}
+            <textarea
+              className="min-h-28 resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal leading-6 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              value={assistantInstructions}
+              onChange={(event) => onAssistantProfileChange({ name: assistantName, instructions: event.target.value })}
+              placeholder={language === 'en-US'
+                ? 'For example: be concise, distinguish facts from suggestions, and prefer my saved terminology.'
+                : '例如：回答简洁，区分事实与建议，优先使用我笔记中的术语。'}
+            />
+          </label>
+          <p className="text-xs text-gray-400">{language === 'en-US' ? 'Changes are saved automatically.' : '更改会自动保存。'}</p>
+        </div>
+      </section>
+
+      <div className="mt-6 flex items-end justify-between gap-4">
+        <div>
+          <h2 className="font-semibold text-gray-950">{language === 'en-US' ? 'Long-term memory' : '长期记忆'}</h2>
+          <p className="mt-1 text-sm text-gray-500">{language === 'en-US' ? 'Inspect, correct, or forget information retained across conversations.' : '检查、修正或遗忘跨会话保留的信息。'}</p>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-3">
         {!loading && items.length === 0 && <div className="rounded-lg border border-dashed border-gray-200 px-5 py-10 text-center text-sm text-gray-400">{language === 'en-US' ? 'No long-term memory yet.' : '还没有长期记忆。'}</div>}
         {items.map((item) => {
           const isEditing = editing?.marker === item.marker && editing.path === item.path

@@ -1442,7 +1442,14 @@ export default function App() {
           <UserMemoryPage
             language={llmSettings.language}
             enabled={llmSettings.memoryEnabled}
+            assistantName={llmSettings.assistantName}
+            assistantInstructions={llmSettings.assistantInstructions}
             onEnabledChange={(memoryEnabled) => handleSettingsChange({ ...llmSettings, memoryEnabled })}
+            onAssistantProfileChange={({ name, instructions }) => handleSettingsChange({
+              ...llmSettings,
+              assistantName: name,
+              assistantInstructions: instructions,
+            })}
             onSourceNavigate={handleSourceNavigate}
           />
         )}

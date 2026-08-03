@@ -73,8 +73,9 @@ The accepted workspace boundaries and change-control rule are recorded in
 
 ## 5. Memory and Continuity
 
-- **REQ-399** Memory shall be a standalone primary workspace for enabling,
-  reviewing, editing, and forgetting long-term memory.
+- **REQ-399** Memory shall be a standalone primary workspace for configuring
+  the single Assistant profile and for enabling, reviewing, editing, and
+  forgetting long-term memory.
 - **REQ-400** Long-term Memory shall be optional and controlled by a master
   switch.
 - **REQ-401** Users shall be able to inspect, edit, approve, reject, and forget
@@ -90,12 +91,15 @@ The accepted workspace boundaries and change-control rule are recorded in
 - **REQ-406** A product embedding Folumi components may disable built-in Memory
   or provide its own knowledge sources and policies without adopting Folumi's
   organization.
+- **REQ-407** Assistant name and behavior instructions shall be managed from
+  Memory rather than duplicated in Settings; they shall not override runtime
+  safety, tool approval, or data-access policy.
 
 ## 6. Settings, Privacy, and Portability
 
 - **REQ-600** Users shall configure LLM, embedding, search, appearance, Note
-  Vault, and tool governance through Settings; Memory policy and items shall be
-  managed from the standalone Memory workspace.
+  Vault, and tool governance through Settings; Assistant profile, Memory policy,
+  and Memory items shall be managed from the standalone Memory workspace.
 - **REQ-601** Product data shall remain local unless a configured provider or
   explicit external tool call requires transmission.
 - **REQ-602** The UI shall make current knowledge scope and long-term Memory

@@ -12,8 +12,10 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 ### Changed
 
 - Removed the legacy Tutor-continuity migration panel, import/export API, and
-  ZIP archive dependency; Folumi now leaves old teaching files untouched and
+  ZIP archive route; Folumi now leaves old teaching files untouched and
   outside the active product boundary.
+- Moved the single Assistant name and behavior configuration from Settings to
+  the standalone Memory workspace.
 - Promoted Notebook and Memory to standalone primary workspaces.
 - Limited Knowledge Base to RAG source-document management instead of mixing
   editable Notes into the same interface.

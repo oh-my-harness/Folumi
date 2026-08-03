@@ -39,14 +39,12 @@ export type TranslationKey =
   | 'settings.subtitle'
   | 'settings.saved'
   | 'settings.tabs.appearance'
-  | 'settings.tabs.assistant'
   | 'settings.tabs.llm'
   | 'settings.tabs.embedding'
   | 'settings.tabs.search'
   | 'settings.tabs.governance'
   | 'settings.tabs.help'
   | 'settings.appearance.title'
-  | 'settings.assistant.description'
   | 'settings.appearance.description'
   | 'settings.theme.title'
   | 'settings.theme.description'
@@ -105,14 +103,12 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.subtitle': '调整外观、配置模型服务、查看内置工具。',
     'settings.saved': '所有更改已保存',
     'settings.tabs.appearance': '外观',
-    'settings.tabs.assistant': '助手',
     'settings.tabs.llm': 'LLM',
     'settings.tabs.embedding': '嵌入模型',
     'settings.tabs.search': '搜索',
     'settings.tabs.governance': '能力',
     'settings.tabs.help': '帮助',
     'settings.appearance.title': '界面外观',
-    'settings.assistant.description': '管理所有新会话共用的助手身份与行为偏好。',
     'settings.appearance.description': '调整界面语言和视觉偏好。',
     'settings.theme.title': '主题色',
     'settings.theme.description': '选择应用框架、工作区和内容表面的整体配色。',
@@ -170,14 +166,12 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.subtitle': 'Adjust appearance, configure model services, and inspect built-in tools.',
     'settings.saved': 'All changes saved',
     'settings.tabs.appearance': 'Appearance',
-    'settings.tabs.assistant': 'Assistant',
     'settings.tabs.llm': 'LLM',
     'settings.tabs.embedding': 'Embedding',
     'settings.tabs.search': 'Search',
     'settings.tabs.governance': 'Capabilities',
     'settings.tabs.help': 'Help',
     'settings.appearance.title': 'Appearance',
-    'settings.assistant.description': 'Manage the assistant identity and behavior shared by new conversations.',
     'settings.appearance.description': 'Adjust interface language and visual preferences.',
     'settings.theme.title': 'Color theme',
     'settings.theme.description': 'Choose the palette used by the app frame, workspaces, and content surfaces.',

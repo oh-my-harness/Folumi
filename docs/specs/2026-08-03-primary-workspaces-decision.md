@@ -4,6 +4,9 @@
 >
 > Decision date: 2026-08-03
 >
+> Amended: 2026-08-03 — Assistant profile configuration moved from Settings
+> to Memory by explicit product request.
+>
 > Scope: Primary navigation and the product boundaries of Knowledge Base,
 > Notebook, Memory, and Settings
 
@@ -15,10 +18,10 @@ Folumi has five primary workspaces:
 2. **Knowledge Base** — read-only source documents and their RAG indexes.
 3. **Notebook** — recording, organizing, reading, and editing user-owned
    Markdown notes.
-4. **Memory** — enabling, reviewing, editing, and forgetting the assistant's
-   long-term memory.
-5. **Settings** — provider, retrieval, storage, governance, appearance, and
-   assistant-profile configuration.
+4. **Memory** — configuring the single Assistant profile and enabling,
+   reviewing, editing, and forgetting its long-term memory.
+5. **Settings** — provider, retrieval, storage, governance, and appearance
+   configuration.
 
 This decision supersedes the earlier contraction assumptions that:
 
@@ -53,6 +56,8 @@ or component consolidation without a new explicit product decision.
 ### Memory
 
 - Is a standalone primary workspace.
+- Contains the single Assistant name and behavior instructions used by new
+  conversations.
 - Contains the master switch and user-visible controls for inspecting, editing,
   and forgetting long-term memory.
 - Does not contain legacy Tutor/Quiz migration, import, or archive controls.
@@ -65,8 +70,8 @@ or component consolidation without a new explicit product decision.
 
 - May configure the Notebook Vault location and other storage behavior, but
   note content is managed in Notebook.
-- May configure the Assistant profile, but Memory content and its master switch
-  are managed in Memory.
+- Does not expose a duplicate Assistant profile; Assistant identity, behavior,
+  Memory content, and the Memory master switch are managed in Memory.
 - Must not become a substitute content workspace for Notebook or Memory.
 
 ## Data ownership
@@ -77,6 +82,7 @@ The navigation decision does not merge storage models:
 | --- | --- | --- |
 | Sources | Original imported documents | Read-only to Assistant tools; indexes are rebuildable derivatives |
 | Notes | User-owned Markdown | Explicit UI edits or bounded Notebook tools with revision checks |
+| Assistant profile | Product settings | User-managed only from Memory; applied to new runtime sessions |
 | Memory | Runtime-backed user and assistant continuity records | Visible user control plus runtime access and mutation policy |
 | Sessions | Runtime sessions | Conversation lifecycle and runtime persistence |
 
@@ -92,9 +98,10 @@ A change conforms to this decision only when all of the following remain true:
 - Knowledge Base has no Notes tab and no Memory management surface;
 - Notebook can be opened directly and supports its normal note-management
   workflow without first opening Knowledge Base;
-- Memory can be opened directly and exposes its master switch and item controls;
+- Memory can be opened directly and exposes Assistant profile, master switch,
+  and item controls;
 - source links open Knowledge Base, while note links open Notebook;
-- Settings contains configuration rather than the primary Notebook or Memory
+- Settings does not contain Assistant profile or the primary Notebook/Memory
   content-management experience; and
 - onboarding, help, README, manual, and product requirements describe the same
   information architecture.
