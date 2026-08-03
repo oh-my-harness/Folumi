@@ -380,9 +380,9 @@ History Recall；后者只检索 runtime Sessions，不复制会话正文或自�
 - [x] 在 Memory 内用“长期记忆 / 助手配置”两个选项卡分离两类操作；
 - [x] 明确显示每个会话正在使用的资料范围；
 - [x] 完成 Notes 创建、更新、移动、删除确认和恢复闭环；
-- [ ] 按修订提案实现 Saved Memory、冲突失效规则和全局作用域；旧 Tutor 私有连续性不读取、
+- [x] 按修订提案实现 Saved Memory、冲突失效规则和全局作用域；旧 Tutor 私有连续性不读取、
   不导入，也不静默合并到当前记忆；
-- [ ] 增加 Memory 总开关、逐项来源、编辑、完成、置顶和彻底遗忘；
+- [x] 增加 Memory 总开关、逐项来源、编辑、完成、置顶和彻底遗忘；
 - [ ] 在 runtime 跨 Session 检索边界可用后，实现默认关闭的 History Recall、临时对话和来源跳转；
 - [ ] 通过单独产品决策定义逻辑工作区后启用 workspace 作用域，不把 Knowledge Base、Notebook
   或单个 Session 当成工作区；

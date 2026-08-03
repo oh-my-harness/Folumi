@@ -8,6 +8,9 @@ use tower_http::cors::{Any, CorsLayer};
 
 mod knowledge_runtime;
 mod knowledge_store;
+mod memory_approval;
+mod memory_runtime;
+mod memory_store;
 mod notebook_store;
 mod notebook_tool;
 mod research_tool;
@@ -36,6 +39,9 @@ async fn main() -> anyhow::Result<()> {
     let settings = std::sync::Arc::new(settings_store::SettingsStore::new_with_path(
         config.data_dir.join("settings.json"),
     ));
+    let memory = std::sync::Arc::new(memory_store::MemoryStore::new_with_path(
+        config.data_dir.join("memory-v2.sqlite3"),
+    )?);
     let rag_root = config.data_dir.join("rag");
     let runtime_security = knowledge_runtime::AgentRuntimeSecurity::generate();
 
@@ -58,13 +64,14 @@ async fn main() -> anyhow::Result<()> {
             notebook.clone(),
         ))
         .merge(routes::settings::settings_router(settings.clone()))
+        .merge(routes::memory::memory_router(memory.clone()))
         .merge(routes::sessions::sessions_router(
             pool.clone(),
             knowledge.clone(),
         ))
         .merge(routes::ws::ws_router(
             pool.clone(),
-            routes::ws::WsDataStores::new(notebook.clone()),
+            routes::ws::WsDataStores::new(notebook.clone(), memory.clone()),
             runtime_security,
             rag_root,
         ))

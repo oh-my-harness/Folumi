@@ -75,9 +75,10 @@ The accepted workspace boundaries and change-control rule are recorded in
 
 > Transition status (2026-08-03): the former L1/L2/L3 activity-capture and
 > consolidation system is retired. REQ-400 through REQ-415 describe the
-> replacement product target. The revised direction is confirmed, but these
-> requirements are not active until the new Memory proposal is implemented.
-> Assistant Profile remains active.
+> replacement product target. Saved Memory, its global scope, lifecycle rules,
+> UI controls, and runtime mutation gate are active. History Recall remains
+> disabled until the runtime cross-Session contract exists; workspace scope
+> remains disabled until a separate product decision defines that entity.
 
 - **REQ-399** Memory shall be a standalone primary workspace for configuring
   the single Assistant profile and for enabling, reviewing, editing, and

@@ -33,7 +33,7 @@
 | Assistant | 基于 runtime session 的多轮对话，按需读取知识、引用来源并使用明确启用的工具。 |
 | Knowledge Base | 导入和管理只读资料，支持 RAG 检索、原文读取、证据引用和来源定位。 |
 | Notebook | 用户拥有的 Markdown 内容，可记录、管理、查看、链接、导入和导出；助手产出只有经用户确认才写入。 |
-| Memory | “助手配置”正常可用；旧长期记忆链路已退役，修订方案已确定“保存的记忆 + 历史检索”方向，实施完成前不进行记忆采集、召回或维护。 |
+| Memory | “保存的记忆”与“助手配置”可用；记忆默认关闭，只接受用户直接操作或逐次确认的助手写入。History Recall 与 workspace 作用域仍按设计门槛保持关闭。 |
 | Settings | 模型、embedding、搜索、数据目录、工具权限、外观和 Notebook 存储。 |
 
 目标主导航包含 **Assistant、Knowledge Base、Notebook、Memory、Settings**。Knowledge Base 只管理用于 RAG 的只读来源；Notebook 是记录、管理和查看 Markdown 笔记的独立工作区；Memory 统一承载助手身份、行为偏好和长期记忆控制。三个长期数据域保持清晰的数据边界。Quiz、Space、Student Profile、多 Tutor 和独立 Research 模式属于冻结范围。

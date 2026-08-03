@@ -168,6 +168,13 @@ interface TokenUsagePayload {
   source?: string
 }
 
+interface MemoryApprovalRequest {
+  requestId: string
+  sessionId: string
+  tool: 'memory_write' | 'memory_forget'
+  args: Record<string, unknown>
+}
+
 export default function App() {
   const [view, setView] = useState<AppView>('assistant')
   const [capability, setCapability] = useState<Capability>('chat')
@@ -202,6 +209,7 @@ export default function App() {
   const [budgetSpent, setBudgetSpent] = useState(0)
   const [budgetWarning, setBudgetWarning] = useState(false)
   const [running, setRunning] = useState(false)
+  const [memoryApproval, setMemoryApproval] = useState<MemoryApprovalRequest | null>(null)
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
   const [pinnedSessionIds, setPinnedSessionIds] = useState<Set<string>>(() => loadPinnedSessionIds())
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseOption[]>([])
@@ -446,7 +454,22 @@ export default function App() {
       } else if (event.type === 'status') {
         const payload = event.payload as Record<string, unknown>
         const kind = payload.kind as string
-        if (kind === 'budget_warning') {
+        if (kind === 'approval_request') {
+          const requestId = typeof payload.request_id === 'string' ? payload.request_id : ''
+          const tool = payload.tool === 'memory_forget' ? 'memory_forget' : 'memory_write'
+          if (requestId) {
+            setMemoryApproval({
+              requestId,
+              sessionId: sourceSessionId,
+              tool,
+              args: payload.args && typeof payload.args === 'object'
+                ? payload.args as Record<string, unknown>
+                : {},
+            })
+          }
+        } else if (kind === 'approval_response_received' || kind === 'approval_response_rejected') {
+          setMemoryApproval((current) => current?.requestId === payload.request_id ? null : current)
+        } else if (kind === 'budget_warning') {
           setBudgetWarning(true)
           setBudgetSpent((payload.spent_usd as number) ?? 0)
         } else if (kind === 'running') {
@@ -460,6 +483,7 @@ export default function App() {
               : typeof payload.capability === 'string' ? capabilityLabel(payload.capability) : undefined,
           })
         } else if (kind === 'done') {
+          setMemoryApproval(null)
           setRunning(false)
           updateRecentSessionRun(setRecentSessions, sourceSessionId, null)
           setLatestUsage((prev) => isTokenUsagePayload(payload.usage) ? payload.usage : prev)
@@ -479,6 +503,7 @@ export default function App() {
           updateRecentSessionRun(setRecentSessions, sourceSessionId, null)
           void hydrateSession(sourceSessionId, true)
         } else if (kind === 'stopped') {
+          setMemoryApproval(null)
           progressStreamingRef.current = ''
           pushStatus({
             kind: 'done',
@@ -501,6 +526,7 @@ export default function App() {
             detail: payload.reason === 'incomplete_tool_call' ? 'Recovered incomplete tool call history' : undefined,
           })
         } else if (kind === 'error') {
+          setMemoryApproval(null)
           progressStreamingRef.current = ''
           const message = typeof payload.message === 'string' ? payload.message : 'WebSocket error'
           pushStatus({ kind: 'error', label: 'Error', detail: message })
@@ -1406,12 +1432,12 @@ export default function App() {
             language={llmSettings.language}
             assistantName={llmSettings.assistantName}
             assistantInstructions={llmSettings.assistantInstructions}
+            onSessionNavigate={(sourceSessionId) => { void handleSelectSession(sourceSessionId) }}
             onAssistantProfileChange={({ name, instructions }) => handleSettingsChange({
               ...llmSettings,
               assistantName: name,
               assistantInstructions: instructions,
             })}
-            onSourceNavigate={handleSourceNavigate}
           />
         )}
 
@@ -1427,6 +1453,44 @@ export default function App() {
           />
         )}
       </div>
+
+      {memoryApproval && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4" role="dialog" aria-modal="true" aria-labelledby="memory-approval-title">
+          <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><UserMemoryApprovalIcon /></span>
+              <div>
+                <h2 id="memory-approval-title" className="font-semibold text-gray-950">{llmSettings.language === 'en-US'
+                  ? memoryApproval.tool === 'memory_write' ? 'Save this memory?' : 'Forget this memory?'
+                  : memoryApproval.tool === 'memory_write' ? '保存这条记忆吗？' : '遗忘这条记忆吗？'}</h2>
+                <p className="mt-1 text-sm leading-6 text-gray-500">{llmSettings.language === 'en-US'
+                  ? 'The assistant cannot change long-term memory until you approve this exact operation.'
+                  : '在你批准这次精确操作之前，助手无法更改长期记忆。'}</p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm">
+              {memoryApproval.tool === 'memory_write' ? (
+                <>
+                  <div className="mb-2 flex gap-2 text-xs text-gray-500"><span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">{String(memoryApproval.args.kind ?? 'preference')}</span><span>{llmSettings.language === 'en-US' ? 'Global scope' : '全局作用域'}</span></div>
+                  <p className="whitespace-pre-wrap leading-6 text-gray-900">{String(memoryApproval.args.content ?? '')}</p>
+                </>
+              ) : (
+                <p className="leading-6 text-red-700">{llmSettings.language === 'en-US' ? 'This removes the item body and recoverable revisions permanently.' : '这会永久移除条目正文及可恢复的历史版本。'}</p>
+              )}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="btn-secondary" type="button" onClick={() => {
+                send({ type: 'approval_response', request_id: memoryApproval.requestId, approved: false }, memoryApproval.sessionId)
+                setMemoryApproval(null)
+              }}>{llmSettings.language === 'en-US' ? 'Deny' : '拒绝'}</button>
+              <button className={memoryApproval.tool === 'memory_forget' ? 'inline-flex h-9 items-center rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700' : 'btn-primary'} type="button" onClick={() => {
+                send({ type: 'approval_response', request_id: memoryApproval.requestId, approved: true }, memoryApproval.sessionId)
+                setMemoryApproval(null)
+              }}>{llmSettings.language === 'en-US' ? 'Approve' : '批准'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {settingsHydrated && shouldShowOnboarding(llmSettings) && !onboardingOpen && (
         <OnboardingResumeButton onClick={openOnboarding} />
@@ -1472,6 +1536,10 @@ export default function App() {
     </div>
     </I18nProvider>
   )
+}
+
+function UserMemoryApprovalIcon() {
+  return <span className="text-lg leading-none">✦</span>
 }
 
 function dropTrailingTransientStatus(messages: Message[]) {

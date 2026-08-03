@@ -61,6 +61,23 @@ body {
   user-select: text;
 }
 
+.input {
+  @apply h-10 rounded-md border border-gray-300 bg-white px-3 text-sm font-normal outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100;
+}
+
+.btn-primary,
+.btn-secondary {
+  @apply inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.btn-primary {
+  @apply bg-blue-600 text-white hover:bg-blue-700;
+}
+
+.btn-secondary {
+  @apply border border-gray-300 bg-white text-gray-700 hover:bg-gray-50;
+}
+
 .app-shell {
   background: var(--app-frame);
   color: var(--text-primary);

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use llm_adapter::provider::Provider;
 use llm_harness_agent::Session;
+use llm_harness_runtime_memory::MemoryService;
 use llm_harness_types::{AgentMessage, ExecutionEnv, RunRequest, Tool};
 use tokio_util::sync::CancellationToken;
 
@@ -49,6 +50,7 @@ pub struct CapabilityRouter {
     pub governance: GovernanceConfig,
     pub event_sink: Option<SharedEventSink>,
     pub knowledge_runtime: Option<KnowledgeRuntime>,
+    pub memory_service: Option<Arc<MemoryService>>,
     pub web_search: Option<WebSearchConfig>,
     pub product_tools: Vec<Arc<dyn Tool>>,
     pub workflow_root: Option<PathBuf>,
@@ -64,6 +66,7 @@ impl CapabilityRouter {
             governance,
             event_sink: None,
             knowledge_runtime: None,
+            memory_service: None,
             web_search: None,
             product_tools: vec![],
             workflow_root: None,
@@ -86,6 +89,11 @@ impl CapabilityRouter {
 
     pub fn with_knowledge_runtime(mut self, runtime: KnowledgeRuntime) -> Self {
         self.knowledge_runtime = Some(runtime);
+        self
+    }
+
+    pub fn with_memory_service(mut self, service: Arc<MemoryService>) -> Self {
+        self.memory_service = Some(service);
         self
     }
 

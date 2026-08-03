@@ -1,10 +1,10 @@
 # Folumi 用户记忆系统重设计
 
-> 状态：修订提案（Revised Proposed）——产品方向已确认，尚未开始实施
+> 状态：已接受（Accepted）——Phase 1 Saved Memory 已于 2026-08-03 实现；Phase 2–4 仍待实施
 >
 > 决策日期：2026-08-03
 >
-> 最近修订：2026-08-03——加入历史检索、作用域、冲突失效规则和 SQLite 存储边界
+> 最近修订：2026-08-03——完成 Saved Memory 基线；历史检索与 workspace 作用域继续按框架和产品决策门槛保持关闭
 >
 > 替代范围：早期设计与实施计划中描述的 L1/L2/L3 记忆模型及记忆整理工作流
 
@@ -349,15 +349,21 @@ API 只是产品界面边界。Agent 侧继续使用 runtime Knowledge/Memory/Se
 
 ### Phase 1：Saved Memory 基线
 
-- SQLite schema、FTS5、CAS、幂等与数据擦除测试；
-- 只开放 `global` 作用域；
-- `fact`、`preference`、`goal`、`continuity` 四种类型；
-- 显式新增、编辑、置顶、完成、重新确认和遗忘；
-- `topic_key`、冲突确认、原子 supersede、过期过滤；
-- runtime Memory/Knowledge 适配与 mutation gate；
-- Memory 页面和来源检查，不启用自动提取。
+- [x] SQLite schema、FTS5、CAS、幂等与数据擦除测试；
+- [x] 只开放 `global` 作用域；
+- [x] `fact`、`preference`、`goal`、`continuity` 四种类型；
+- [x] 显式新增、编辑、置顶、完成、重新确认和遗忘；
+- [x] `topic_key`、冲突确认、原子 supersede、过期过滤；
+- [x] runtime Memory/Knowledge 适配与 mutation gate；
+- [x] Memory 页面和来源检查，不启用自动提取。
+
+实现说明：Saved Memory 默认关闭。开启后，新 run 才挂载 runtime 官方
+Knowledge/Memory 能力；助手只有在用户明确要求记住或遗忘时才可提出 mutation，且
+最终写入内容仍需在界面中逐次确认。产品 API 的直接编辑仍使用 revision/CAS 与冲突规则。
 
 ### Phase 2：History Recall
+
+状态：待 runtime 提供稳定的跨 Session 搜索与精确 turn 投影契约，当前开关不可开启。
 
 - 先补齐或确认 runtime 跨 Session 搜索/投影边界；
 - 历史检索独立开关，默认关闭；
@@ -367,6 +373,8 @@ API 只是产品界面边界。Agent 侧继续使用 runtime Knowledge/Memory/Se
 - 不把历史片段自动提升为 Saved Memory。
 
 ### Phase 3：Workspace Scope
+
+状态：待单独产品决策定义逻辑工作区实体，当前写入只接受 `global`。
 
 - 先通过单独产品决策定义逻辑工作区实体及生命周期；
 - 启用工作区记忆、Session 绑定、作用域切换与删除策略；

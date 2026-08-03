@@ -38,6 +38,7 @@ serde_yaml = "0.9"
 sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 notify = "8"
+rusqlite = { version = "0.40.1", default-features = false, features = ["bundled", "chrono", "serde_json"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }

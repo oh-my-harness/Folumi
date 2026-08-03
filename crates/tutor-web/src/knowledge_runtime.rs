@@ -7,6 +7,18 @@ use llm_harness_runtime_knowledge::{
     KnowledgeError, KnowledgeResourceRef, KnowledgeSource,
 };
 
+use crate::memory_approval::WebMemoryApprovalCoordinator;
+use crate::memory_runtime::{
+    SavedMemoryKnowledgeSource, USER_MEMORY_PRINCIPAL_ATTRIBUTE, USER_MEMORY_PROFILE_ATTRIBUTE,
+    USER_MEMORY_SOURCE_ID, assemble_saved_memory_service,
+};
+use crate::memory_store::MemoryStore;
+
+pub(crate) struct UserMemoryRuntimeInput {
+    pub store: Arc<MemoryStore>,
+    pub approver: Arc<WebMemoryApprovalCoordinator>,
+}
+
 #[derive(Clone)]
 pub struct AgentRuntimeSecurity {
     evidence_authority: Arc<EvidenceAuthority>,
@@ -33,24 +45,47 @@ impl AgentRuntimeSecurity {
     }
 }
 
-pub(crate) fn install_agent_knowledge(
+pub(crate) fn install_agent_knowledge_and_memory(
     mut router: tutor_agent::CapabilityRouter,
     course_source: Option<Arc<dyn KnowledgeSource>>,
+    user_memory: Option<UserMemoryRuntimeInput>,
     security: &AgentRuntimeSecurity,
 ) -> tutor_agent::Result<tutor_agent::CapabilityRouter> {
-    let Some(source) = course_source else {
+    if course_source.is_none() && user_memory.is_none() {
         return Ok(router);
-    };
-    let citation_policy = KnowledgeCitationPolicy::builder()
-        .source(
+    }
+    let access_control = agent_knowledge_access_control();
+    let mut sources = Vec::new();
+    let mut citation_builder = KnowledgeCitationPolicy::builder();
+    if let Some(source) = course_source {
+        sources.push(source);
+        citation_builder = citation_builder.source(
             tutor_rag::COURSE_KNOWLEDGE_SOURCE_ID,
             KnowledgeCitationRequirement::Required,
+        );
+    }
+    if let Some(input) = user_memory {
+        let source = Arc::new(SavedMemoryKnowledgeSource::new(input.store.clone()));
+        let service = assemble_saved_memory_service(
+            source.clone(),
+            input.store,
+            access_control.clone(),
+            input.approver,
         )
+        .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?;
+        sources.push(source as Arc<dyn KnowledgeSource>);
+        citation_builder = citation_builder.source(
+            USER_MEMORY_SOURCE_ID,
+            KnowledgeCitationRequirement::Optional,
+        );
+        router = router.with_memory_service(Arc::new(service));
+    }
+    let citation_policy = citation_builder
         .build()
         .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?;
     let runtime = tutor_agent::assemble_knowledge_runtime(
-        vec![source],
-        agent_knowledge_access_control(),
+        sources,
+        access_control,
         security.evidence_authority(),
         tutor_agent::agent_knowledge_evidence_provider_id(),
         citation_policy,
@@ -84,7 +119,7 @@ impl KnowledgeAuthorizer for AgentKnowledgeAuthorizer {
                 KnowledgeResourceRef::Source { source_id, .. } => source_id,
                 KnowledgeResourceRef::Item(reference) => &reference.source_id,
             };
-            let allowed = source_id == tutor_rag::COURSE_KNOWLEDGE_SOURCE_ID
+            let course_allowed = source_id == tutor_rag::COURSE_KNOWLEDGE_SOURCE_ID
                 && matches!(
                     action,
                     KnowledgeAction::Discover | KnowledgeAction::Search | KnowledgeAction::Read
@@ -94,7 +129,26 @@ impl KnowledgeAuthorizer for AgentKnowledgeAuthorizer {
                     .attributes
                     .get(tutor_rag::KNOWLEDGE_BASE_SCOPE_ATTRIBUTE)
                     .is_some_and(|kb| !kb.trim().is_empty());
-            Ok(if allowed {
+            let memory_profile = access
+                .scope
+                .attributes
+                .get(USER_MEMORY_PROFILE_ATTRIBUTE)
+                .map(String::as_str);
+            let memory_allowed = source_id == USER_MEMORY_SOURCE_ID
+                && access
+                    .scope
+                    .attributes
+                    .get(USER_MEMORY_PRINCIPAL_ATTRIBUTE)
+                    .is_some_and(|subject| subject == &access.principal.subject)
+                && match action {
+                    KnowledgeAction::Discover | KnowledgeAction::Search | KnowledgeAction::Read => {
+                        matches!(memory_profile, Some("read_only" | "interactive_mutation"))
+                    }
+                    KnowledgeAction::Write | KnowledgeAction::Delete => {
+                        memory_profile == Some("interactive_mutation")
+                    }
+                };
+            Ok(if course_allowed || memory_allowed {
                 AuthorizationDecision::Allow
             } else {
                 AuthorizationDecision::Deny

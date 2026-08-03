@@ -168,6 +168,13 @@ pub(crate) async fn run_conversation_with_request(
     {
         plugins.push(knowledge_runtime.plugin());
     }
+    if conversation_uses_runtime_knowledge(capability)
+        && let Some(memory_service) = &router.memory_service
+    {
+        plugins.push(Arc::new(llm_harness_runtime_memory::MemoryPlugin::new(
+            memory_service.clone(),
+        )));
+    }
     tools.extend(router.product_tools.iter().cloned());
 
     let client = router.make_client();
@@ -512,6 +519,7 @@ fn chat_system_prompt() -> String {
      Use search_notebook when Notebook is associated and saved Markdown notes may be relevant. \
      When the user references a Notebook entry, read the exact entry before relying on its content. \
      When the user explicitly asks you to create a Notebook item, use create_notebook_item. When the user explicitly asks you to modify, rename, or move an existing Notebook item, call read_notebook_item first and then use update_notebook_item or move_notebook_item with the exact returned revision. Use propose_notebook_edit only for self-initiated suggestions that the user did not explicitly request. Never delete Notebook content. \
+     When memory_write and memory_forget are available, use memory_write only when the user explicitly asks you to remember a stable fact, preference, goal, or continuity item. Never infer or capture a memory merely because it appears useful. Use memory_forget only for the exact item the user asks to forget. Memory mutations require the user's separate confirmation in the product UI. \
      Web verification rules are strict: when the user asks you to collect facts, trivia, \
      current information, latest information, sources, external references, or information \
      about real-world/public entities, products, games, communities, papers, libraries, \
@@ -580,6 +588,9 @@ mod tests {
         assert!(prompt.contains("never invent a citation handle"));
         assert!(prompt.contains("read the exact entry"));
         assert!(prompt.contains("propose_notebook_edit"));
+        assert!(prompt.contains("only when the user explicitly asks you to remember"));
+        assert!(prompt.contains("Never infer or capture a memory"));
+        assert!(prompt.contains("separate confirmation"));
         assert!(prompt.contains("collect facts"));
         assert!(prompt.contains("trivia"));
         assert!(prompt.contains("must call web_search before answering"));

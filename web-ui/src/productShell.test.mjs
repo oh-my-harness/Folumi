@@ -14,6 +14,8 @@ const backendRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/mo
 const notebookRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/notebook.rs', import.meta.url), 'utf8')
 const knowledgeRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/knowledge.rs', import.meta.url), 'utf8')
 const websocketRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/ws.rs', import.meta.url), 'utf8')
+const memoryStore = readFileSync(new URL('../../crates/tutor-web/src/memory_store.rs', import.meta.url), 'utf8')
+const memoryRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/memory.rs', import.meta.url), 'utf8')
 const runtimeWorkflows = readFileSync(new URL('../../crates/tutor-agent/src/runtime_workflow.rs', import.meta.url), 'utf8')
 
 test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, and Settings', () => {
@@ -39,8 +41,10 @@ test('assistant profile is managed from Memory instead of Settings', () => {
   assert.match(memory, /assistantInstructions/)
   assert.match(memory, /useState<'memory' \| 'assistant'>\('memory'\)/)
   assert.match(memory, /role="tablist"/)
-  assert.match(memory, /id="memory-tab"/)
-  assert.match(memory, /id="assistant-profile-tab"/)
+  assert.match(memory, /id="memory"/)
+  assert.match(memory, /id="assistant-profile"/)
+  assert.match(memory, /id=\{`\$\{id\}-tab`\}/)
+  assert.match(memory, /onSessionNavigate/)
   assert.doesNotMatch(settings, /Assistant profile|助手配置|assistantName|assistantInstructions/)
   assert.match(app, /onAssistantProfileChange/)
 })
@@ -50,12 +54,16 @@ test('legacy data migration stays outside the active product boundary', () => {
   assert.doesNotMatch(backendRoutes, /pub mod migration/)
 })
 
-test('retired layered memory has no active capture or consolidation path', () => {
+test('retired layered memory is replaced by explicit revisioned Saved Memory', () => {
   const activeBackend = [backendMain, notebookRoutes, knowledgeRoutes, websocketRoutes, runtimeWorkflows].join('\n')
   assert.doesNotMatch(activeBackend, /MemoryEventCategory|record_event|memory_workflow|L1\/|L2\/|L3\//)
-  assert.match(memory, /长期记忆正在重新设计|Long-term memory is being redesigned/)
-  assert.doesNotMatch(memory, /\/api\/memory\/items|file_revision|marker/)
-  assert.doesNotMatch(app, /approval_request|approval_response|ApprovalDialog/)
+  assert.match(memory, /Saved Memory|保存的记忆/)
+  assert.match(memory, /\/api\/memory\/items/)
+  assert.match(memoryRoutes, /revision/)
+  assert.match(memoryStore, /memory-v2|memory_items|superseded|memory_tombstones/)
+  assert.doesNotMatch(memory, /file_revision|marker|L1\/|L2\/|L3\//)
+  assert.match(app, /approval_request|approval_response/)
+  assert.match(backendRoutes, /pub mod memory/)
 })
 
 test('research is a chat task action instead of a capability menu', () => {

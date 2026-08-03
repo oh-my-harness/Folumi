@@ -10,13 +10,14 @@
 > Amended: 2026-08-03 — Memory uses separate Long-term Memory and Assistant
 > Profile tabs, with Long-term Memory as the default.
 >
-> Amended: 2026-08-03 — The obsolete layered Memory pipeline was retired. The
-> Long-term Memory tab remains as a redesign placeholder until the replacement
-> is implemented; Assistant Profile remains available.
+> Amended: 2026-08-03 — The obsolete layered Memory pipeline was retired and
+> replaced by the first Saved Memory implementation; Assistant Profile remains
+> a separate tab.
 >
 > Amended: 2026-08-03 — The replacement proposal now defines separate Saved
 > Memory and opt-in History Recall, with global/workspace scopes and explicit
-> conflict/expiry rules. Implementation remains pending.
+> conflict/expiry rules. Saved Memory is implemented; History Recall and
+> workspace scope remain gated by their explicit prerequisites.
 >
 > Scope: Primary navigation and the product boundaries of Knowledge Base,
 > Notebook, Memory, and Settings
@@ -71,8 +72,9 @@ or component consolidation without a new explicit product decision.
   the default and owns the master switch plus item controls; **Assistant
   Profile** owns the name and behavior instructions used by new conversations.
 - Does not contain legacy Tutor/Quiz migration, import, or archive controls.
-- Does not capture Assistant, Notebook, or Knowledge Base activity while the
-  revised replacement long-term-memory design awaits implementation.
+- Does not automatically capture Assistant, Notebook, or Knowledge Base
+  activity. Saved Memory is created by direct user action or by a separately
+  confirmed assistant mutation.
 - Keeps provenance visible when available.
 - Continues to use runtime access control and mutation gates; a more prominent
   UI does not expand agent authority.
@@ -110,9 +112,11 @@ A change conforms to this decision only when all of the following remain true:
 - Knowledge Base has no Notes tab and no Memory management surface;
 - Notebook can be opened directly and supports its normal note-management
   workflow without first opening Knowledge Base;
-- Memory can be opened directly, defaults to Long-term Memory, and exposes a
-  separate Assistant Profile tab; during the redesign interval the Long-term
-  Memory tab clearly reports that capture and recall are unavailable;
+- Memory can be opened directly, defaults to Long-term Memory, exposes a
+  separate Assistant Profile tab, and provides visible Saved Memory controls;
+- History Recall remains visibly unavailable until the runtime cross-session
+  boundary is implemented, and workspace-scoped writes remain disabled until
+  a logical workspace product decision exists;
 - source links open Knowledge Base, while note links open Notebook;
 - Settings does not contain Assistant profile or the primary Notebook/Memory
   content-management experience; and

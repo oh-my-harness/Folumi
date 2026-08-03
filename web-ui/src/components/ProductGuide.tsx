@@ -263,11 +263,11 @@ const chineseCopy = {
   },
   memory: {
     title: '配置助手和记忆',
-    description: '旧长期记忆链路已退役，新方案正在评审；当前仍可管理单一助手的身份和行为。',
+    description: '显式保存的长期记忆已经启用；历史检索等待 runtime 提供跨会话检索边界。',
     open: '打开记忆',
     items: [
       { icon: <Bot size={18} />, title: '助手配置', text: '设置所有新会话共用的助手名称和行为说明。' },
-      { icon: <Brain size={18} />, title: '长期记忆', text: '当前暂停采集、召回和维护，等待新条目模型完成评审。' },
+      { icon: <Brain size={18} />, title: '长期记忆', text: '管理事实、偏好、目标和连续性事项；写入始终由你明确发起或确认。' },
     ],
   },
 }
@@ -327,11 +327,11 @@ const englishCopy: typeof chineseCopy = {
   },
   memory: {
     title: 'Configure Assistant and Memory',
-    description: 'The old long-term-memory pipeline is retired and its replacement is under review. Assistant Profile remains available.',
+    description: 'Explicit Saved Memory is available. History Recall waits for the runtime cross-session recall boundary.',
     open: 'Open Memory',
     items: [
       { icon: <Bot size={18} />, title: 'Assistant profile', text: 'Set the name and behavior instructions shared by new conversations.' },
-      { icon: <Brain size={18} />, title: 'Long-term memory', text: 'Capture, recall, and maintenance are paused while the new item model is reviewed.' },
+      { icon: <Brain size={18} />, title: 'Long-term memory', text: 'Manage facts, preferences, goals, and continuity items with explicit user control.' },
     ],
   },
 }
