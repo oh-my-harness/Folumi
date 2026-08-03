@@ -75,10 +75,10 @@ The accepted workspace boundaries and change-control rule are recorded in
 
 > Transition status (2026-08-03): the former L1/L2/L3 activity-capture and
 > consolidation system is retired. REQ-400 through REQ-415 describe the
-> replacement product target. Saved Memory, its global scope, lifecycle rules,
+> replacement product target. Global Saved Memory, its lifecycle rules,
 > UI controls, and runtime mutation gate are active. History Recall remains
-> disabled until the runtime cross-Session contract exists; workspace scope
-> remains disabled until a separate product decision defines that entity.
+> disabled until the runtime cross-Session contract exists. Runtime Sessions
+> own conversation-local continuity and are not Saved Memory scopes.
 
 - **REQ-399** Memory shall be a standalone primary workspace for configuring
   the single Assistant profile and for enabling, reviewing, editing, and
@@ -99,12 +99,11 @@ The accepted workspace boundaries and change-control rule are recorded in
   to remember something, confirms an assistant suggestion, or adds an item in
   the Memory UI. Ordinary conversation, Notebook, and Knowledge Base activity
   shall not create Saved Memory.
-- **REQ-405** Saved Memory shall support global and logical-workspace scopes.
-  Until a separate product decision defines the logical workspace entity and
-  lifecycle, only global scope shall be enabled; Knowledge Base IDs, Notebook
-  paths, navigation pages, and individual Session IDs shall not be treated as
-  workspaces.
-- **REQ-406** Same-scope items about the same topic shall follow explicit
+- **REQ-405** Saved Memory shall be global. Runtime Sessions shall own
+  conversation-local continuity and may be referenced as provenance, but shall
+  not be duplicated as a Saved Memory scope. Knowledge Base IDs, Notebook
+  paths, and navigation pages shall not define Memory partitions.
+- **REQ-406** Items about the same topic shall follow explicit
   conflict and lifecycle rules: equivalent content refreshes confirmation,
   contradictions atomically supersede the old item after confirmation, and
   resolved, superseded, expired, or forgotten items do not participate in

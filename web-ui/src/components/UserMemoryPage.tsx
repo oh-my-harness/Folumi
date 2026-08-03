@@ -30,8 +30,6 @@ interface MemorySourceRef {
 
 interface MemoryItem {
   id: string
-  scope_type: 'global' | 'workspace'
-  scope_id?: string | null
   kind: MemoryKind
   content: string
   topic_key?: string | null
@@ -293,7 +291,7 @@ export function UserMemoryPage({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="font-semibold text-gray-950">{english ? 'Memory items' : '记忆条目'}</h2>
-                <p className="mt-1 text-sm text-gray-500">{english ? `${items.length} saved items · global scope` : `共 ${items.length} 条 · 当前仅开放全局作用域`}</p>
+                <p className="mt-1 text-sm text-gray-500">{english ? `${items.length} saved items` : `共 ${items.length} 条`}</p>
               </div>
               <div className="flex gap-2">
                 <button className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm text-gray-700 hover:bg-gray-50" type="button" onClick={() => void exportMemory()} disabled={busy || loading}><Download size={15} />{english ? 'Export' : '导出'}</button>

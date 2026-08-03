@@ -133,7 +133,7 @@ Memory。
 - 自动记忆不作为首版默认能力。
 - 每条记忆都可查看来源、编辑、遗忘和关闭后续使用。
 - 历史检索默认关闭，不能自动把旧对话晋升为保存的记忆；临时对话不读写记忆，也不进入未来历史索引。
-- 保存的记忆预留全局和逻辑工作区作用域，但在工作区实体正式定义前只启用全局作用域。
+- 保存的记忆是全局长期条目；会话内连续性由 runtime Session 负责，Session 只作为记忆来源而不是另一种记忆作用域。
 
 ### 4.6 不维护旧产品的双轨兼容
 
@@ -380,12 +380,11 @@ History Recall；后者只检索 runtime Sessions，不复制会话正文或自�
 - [x] 在 Memory 内用“长期记忆 / 助手配置”两个选项卡分离两类操作；
 - [x] 明确显示每个会话正在使用的资料范围；
 - [x] 完成 Notes 创建、更新、移动、删除确认和恢复闭环；
-- [x] 按修订提案实现 Saved Memory、冲突失效规则和全局作用域；旧 Tutor 私有连续性不读取、
+- [x] 按修订提案实现全局 Saved Memory 和冲突失效规则；旧 Tutor 私有连续性不读取、
   不导入，也不静默合并到当前记忆；
 - [x] 增加 Memory 总开关、逐项来源、编辑、完成、置顶和彻底遗忘；
 - [ ] 在 runtime 跨 Session 检索边界可用后，实现默认关闭的 History Recall、临时对话和来源跳转；
-- [ ] 通过单独产品决策定义逻辑工作区后启用 workspace 作用域，不把 Knowledge Base、Notebook
-  或单个 Session 当成工作区；
+- [x] 明确不引入 workspace 记忆作用域；runtime Session 负责会话内连续性，并仅作为 Saved Memory 的来源引用；
 - [ ] 使用 ContextAttachment 支持临时资料，但不默认自动召回（runtime
   尚无一等临时附件边界，已记录到 `docs/framework-feedback.md` 和
   [llm-harness-runtime#101](https://github.com/oh-my-harness/llm-harness-runtime/issues/101)，产品侧不建设平行实现）。

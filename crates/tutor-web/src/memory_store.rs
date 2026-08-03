@@ -5,34 +5,9 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const MAX_CONTENT_CHARS: usize = 1_200;
 const MAX_TOPIC_KEY_CHARS: usize = 120;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum MemoryScopeType {
-    #[default]
-    Global,
-    Workspace,
-}
-
-impl MemoryScopeType {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Global => "global",
-            Self::Workspace => "workspace",
-        }
-    }
-
-    fn parse(value: &str) -> rusqlite::Result<Self> {
-        match value {
-            "global" => Ok(Self::Global),
-            "workspace" => Ok(Self::Workspace),
-            _ => Err(invalid_column("scope_type", value)),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -157,8 +132,6 @@ pub struct MemorySourceRef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MemoryItem {
     pub id: String,
-    pub scope_type: MemoryScopeType,
-    pub scope_id: Option<String>,
     pub kind: MemoryKind,
     pub content: String,
     pub topic_key: Option<String>,
@@ -188,9 +161,6 @@ pub enum ConflictAction {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateMemoryItem {
-    #[serde(default)]
-    pub scope_type: MemoryScopeType,
-    pub scope_id: Option<String>,
     pub kind: MemoryKind,
     pub content: String,
     pub topic_key: Option<String>,
@@ -258,6 +228,50 @@ pub struct MemoryStore {
     path: PathBuf,
 }
 
+fn migrate_v1_to_v2(connection: &mut Connection) -> Result<(), MemoryStoreError> {
+    connection.pragma_update(None, "foreign_keys", "OFF")?;
+    connection.execute_batch(
+        r#"
+        BEGIN IMMEDIATE;
+        DROP INDEX IF EXISTS memory_items_recall;
+        DROP INDEX IF EXISTS memory_items_topic;
+        CREATE TABLE memory_items_v2 (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL CHECK(kind IN ('fact', 'preference', 'goal', 'continuity')),
+            content TEXT NOT NULL,
+            topic_key TEXT,
+            status TEXT NOT NULL CHECK(status IN ('active', 'resolved', 'superseded')),
+            priority TEXT NOT NULL CHECK(priority IN ('normal', 'pinned')),
+            origin TEXT NOT NULL CHECK(origin IN ('user_explicit', 'assistant_suggested')),
+            provenance TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_confirmed_at TEXT NOT NULL,
+            valid_until TEXT,
+            resolved_at TEXT,
+            revision TEXT NOT NULL
+        );
+        INSERT INTO memory_items_v2(
+            id, kind, content, topic_key, status, priority, origin, provenance,
+            created_at, updated_at, last_confirmed_at, valid_until, resolved_at, revision
+        )
+        SELECT id, kind, content, topic_key, status, priority, origin, provenance,
+               created_at, updated_at, last_confirmed_at, valid_until, resolved_at, revision
+        FROM memory_items;
+        DROP TABLE memory_items;
+        ALTER TABLE memory_items_v2 RENAME TO memory_items;
+        CREATE INDEX memory_items_recall
+            ON memory_items(status, priority, updated_at);
+        CREATE INDEX memory_items_topic
+            ON memory_items(topic_key, status);
+        PRAGMA user_version = 2;
+        COMMIT;
+        "#,
+    )?;
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+    Ok(())
+}
+
 impl MemoryStore {
     pub fn new_with_path(path: impl Into<PathBuf>) -> Result<Self, MemoryStoreError> {
         let store = Self { path: path.into() };
@@ -278,14 +292,22 @@ impl MemoryStore {
     }
 
     fn initialize(&self) -> Result<(), MemoryStoreError> {
-        let connection = self.open()?;
+        let mut connection = self.open()?;
+        let current_version: i64 =
+            connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if current_version > SCHEMA_VERSION {
+            return Err(MemoryStoreError::Validation(format!(
+                "memory database schema {current_version} is newer than supported schema {SCHEMA_VERSION}"
+            )));
+        }
+        if current_version == 1 {
+            migrate_v1_to_v2(&mut connection)?;
+        }
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS memory_items (
                 id TEXT PRIMARY KEY,
-                scope_type TEXT NOT NULL CHECK(scope_type IN ('global', 'workspace')),
-                scope_id TEXT,
                 kind TEXT NOT NULL CHECK(kind IN ('fact', 'preference', 'goal', 'continuity')),
                 content TEXT NOT NULL,
                 topic_key TEXT,
@@ -298,14 +320,12 @@ impl MemoryStore {
                 last_confirmed_at TEXT NOT NULL,
                 valid_until TEXT,
                 resolved_at TEXT,
-                revision TEXT NOT NULL,
-                CHECK((scope_type = 'global' AND scope_id IS NULL) OR
-                      (scope_type = 'workspace' AND scope_id IS NOT NULL))
+                revision TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS memory_items_recall
-                ON memory_items(scope_type, scope_id, status, priority, updated_at);
+                ON memory_items(status, priority, updated_at);
             CREATE INDEX IF NOT EXISTS memory_items_topic
-                ON memory_items(scope_type, scope_id, topic_key, status);
+                ON memory_items(topic_key, status);
 
             CREATE TABLE IF NOT EXISTS memory_sources (
                 memory_id TEXT NOT NULL REFERENCES memory_items(id) ON DELETE CASCADE,
@@ -437,7 +457,7 @@ impl MemoryStore {
     pub fn list(&self, filter: &MemoryListFilter) -> Result<Vec<MemoryItem>, MemoryStoreError> {
         let connection = self.open()?;
         let mut statement = connection.prepare(
-            "SELECT id, scope_type, scope_id, kind, content, topic_key, status, priority, origin,
+            "SELECT id, kind, content, topic_key, status, priority, origin,
                     provenance, created_at, updated_at, last_confirmed_at, valid_until,
                     resolved_at, revision
              FROM memory_items
@@ -572,14 +592,12 @@ impl MemoryStore {
         let revision = uuid::Uuid::new_v4().to_string();
         transaction.execute(
             "INSERT INTO memory_items(
-                id, scope_type, scope_id, kind, content, topic_key, status, priority, origin,
+                id, kind, content, topic_key, status, priority, origin,
                 provenance, created_at, updated_at, last_confirmed_at, valid_until,
                 resolved_at, revision
-             ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7, ?8, ?9, ?10, ?10, ?10, ?11, NULL, ?12)",
+             ) VALUES(?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, ?8, ?8, ?8, ?9, NULL, ?10)",
             params![
                 id,
-                input.scope_type.as_str(),
-                input.scope_id,
                 input.kind.as_str(),
                 input.content,
                 input.topic_key,
@@ -653,14 +671,7 @@ impl MemoryStore {
         } else {
             patch.valid_until.or(current.valid_until)
         };
-        validate_values(
-            current.scope_type,
-            current.scope_id.as_deref(),
-            kind,
-            &content,
-            topic_key.as_deref(),
-            valid_until,
-        )?;
+        validate_values(kind, &content, topic_key.as_deref(), valid_until)?;
         if status == MemoryStatus::Resolved
             && !matches!(kind, MemoryKind::Goal | MemoryKind::Continuity)
         {
@@ -675,13 +686,7 @@ impl MemoryStore {
         }
         if status == MemoryStatus::Active
             && let Some(topic) = topic_key.as_deref()
-            && let Some(existing) = find_active_topic(
-                &transaction,
-                current.scope_type,
-                current.scope_id.as_deref(),
-                topic,
-                Some(id),
-            )?
+            && let Some(existing) = find_active_topic(&transaction, topic, Some(id))?
         {
             return Err(MemoryStoreError::Conflict {
                 existing: Box::new(existing),
@@ -752,10 +757,7 @@ impl MemoryStore {
 fn validate_create(input: &mut CreateMemoryItem) -> Result<(), MemoryStoreError> {
     input.content = input.content.trim().replace("\r\n", "\n");
     input.topic_key = normalize_optional(input.topic_key.take());
-    input.scope_id = normalize_optional(input.scope_id.take());
     validate_values(
-        input.scope_type,
-        input.scope_id.as_deref(),
         input.kind,
         &input.content,
         input.topic_key.as_deref(),
@@ -764,19 +766,11 @@ fn validate_create(input: &mut CreateMemoryItem) -> Result<(), MemoryStoreError>
 }
 
 fn validate_values(
-    scope_type: MemoryScopeType,
-    scope_id: Option<&str>,
     _kind: MemoryKind,
     content: &str,
     topic_key: Option<&str>,
     valid_until: Option<DateTime<Utc>>,
 ) -> Result<(), MemoryStoreError> {
-    if scope_type != MemoryScopeType::Global || scope_id.is_some() {
-        return Err(MemoryStoreError::Validation(
-            "workspace scope is reserved until a logical workspace product decision is implemented"
-                .into(),
-        ));
-    }
     let chars = content.chars().count();
     if chars == 0 || chars > MAX_CONTENT_CHARS {
         return Err(MemoryStoreError::Validation(format!(
@@ -814,17 +808,10 @@ fn find_equivalent(
 ) -> Result<Option<MemoryItem>, MemoryStoreError> {
     let mut statement = transaction.prepare(
         "SELECT id FROM memory_items
-         WHERE scope_type = ?1 AND scope_id IS ?2 AND kind = ?3 AND status = 'active'",
+         WHERE kind = ?1 AND status = 'active'",
     )?;
     let ids = statement
-        .query_map(
-            params![
-                input.scope_type.as_str(),
-                input.scope_id,
-                input.kind.as_str()
-            ],
-            |row| row.get::<_, String>(0),
-        )?
+        .query_map([input.kind.as_str()], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     let expected = normalized_content(&input.content);
     for id in ids {
@@ -851,29 +838,21 @@ fn find_topic_conflict(
     let Some(topic) = input.topic_key.as_deref() else {
         return Ok(None);
     };
-    find_active_topic(
-        transaction,
-        input.scope_type,
-        input.scope_id.as_deref(),
-        topic,
-        None,
-    )
+    find_active_topic(transaction, topic, None)
 }
 
 fn find_active_topic(
     connection: &Connection,
-    scope_type: MemoryScopeType,
-    scope_id: Option<&str>,
     topic: &str,
     exclude_id: Option<&str>,
 ) -> Result<Option<MemoryItem>, MemoryStoreError> {
     let id = connection
         .query_row(
             "SELECT id FROM memory_items
-             WHERE scope_type = ?1 AND scope_id IS ?2 AND topic_key = ?3 AND status = 'active'
-               AND (?4 IS NULL OR id != ?4)
+             WHERE topic_key = ?1 AND status = 'active'
+               AND (?2 IS NULL OR id != ?2)
              LIMIT 1",
-            params![scope_type.as_str(), scope_id, topic, exclude_id],
+            params![topic, exclude_id],
             |row| row.get::<_, String>(0),
         )
         .optional()?;
@@ -905,33 +884,30 @@ fn reconfirm_equivalent(
 }
 
 fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryItem> {
-    let scope_type = MemoryScopeType::parse(&row.get::<_, String>(1)?)?;
-    let kind = MemoryKind::from_column(&row.get::<_, String>(3)?)?;
-    let status = MemoryStatus::parse(&row.get::<_, String>(6)?)?;
-    let priority = MemoryPriority::parse(&row.get::<_, String>(7)?)?;
-    let origin = MemoryOrigin::parse(&row.get::<_, String>(8)?)?;
-    let provenance_text = row.get::<_, String>(9)?;
+    let kind = MemoryKind::from_column(&row.get::<_, String>(1)?)?;
+    let status = MemoryStatus::parse(&row.get::<_, String>(4)?)?;
+    let priority = MemoryPriority::parse(&row.get::<_, String>(5)?)?;
+    let origin = MemoryOrigin::parse(&row.get::<_, String>(6)?)?;
+    let provenance_text = row.get::<_, String>(7)?;
     let provenance = serde_json::from_str(&provenance_text)
         .map_err(|error| invalid_json_column("provenance", error))?;
-    let valid_until = parse_optional_time(row.get::<_, Option<String>>(13)?, "valid_until")?;
+    let valid_until = parse_optional_time(row.get::<_, Option<String>>(11)?, "valid_until")?;
     Ok(MemoryItem {
         id: row.get(0)?,
-        scope_type,
-        scope_id: row.get(2)?,
         kind,
-        content: row.get(4)?,
-        topic_key: row.get(5)?,
+        content: row.get(2)?,
+        topic_key: row.get(3)?,
         status,
         priority,
         origin,
         source_refs: Vec::new(),
         provenance,
-        created_at: parse_time(&row.get::<_, String>(10)?, "created_at")?,
-        updated_at: parse_time(&row.get::<_, String>(11)?, "updated_at")?,
-        last_confirmed_at: parse_time(&row.get::<_, String>(12)?, "last_confirmed_at")?,
+        created_at: parse_time(&row.get::<_, String>(8)?, "created_at")?,
+        updated_at: parse_time(&row.get::<_, String>(9)?, "updated_at")?,
+        last_confirmed_at: parse_time(&row.get::<_, String>(10)?, "last_confirmed_at")?,
         valid_until,
-        resolved_at: parse_optional_time(row.get::<_, Option<String>>(14)?, "resolved_at")?,
-        revision: row.get(15)?,
+        resolved_at: parse_optional_time(row.get::<_, Option<String>>(12)?, "resolved_at")?,
+        revision: row.get(13)?,
         supersedes: None,
         expired: valid_until.is_some_and(|value| value <= Utc::now()),
     })
@@ -940,7 +916,7 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryItem> {
 fn get_item(connection: &Connection, id: &str) -> Result<MemoryItem, MemoryStoreError> {
     let mut item = connection
         .query_row(
-            "SELECT id, scope_type, scope_id, kind, content, topic_key, status, priority, origin,
+            "SELECT id, kind, content, topic_key, status, priority, origin,
                     provenance, created_at, updated_at, last_confirmed_at, valid_until,
                     resolved_at, revision
              FROM memory_items WHERE id = ?1",
@@ -1125,8 +1101,6 @@ mod tests {
 
     fn input(content: &str, topic_key: Option<&str>) -> CreateMemoryItem {
         CreateMemoryItem {
-            scope_type: MemoryScopeType::Global,
-            scope_id: None,
             kind: MemoryKind::Preference,
             content: content.into(),
             topic_key: topic_key.map(str::to_string),
@@ -1138,6 +1112,58 @@ mod tests {
             idempotency_key: None,
             conflict_action: ConflictAction::Reject,
         }
+    }
+
+    #[test]
+    fn migrates_v1_items_without_exposing_scope_columns() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("memory.sqlite3");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE memory_items (
+                    id TEXT PRIMARY KEY,
+                    scope_type TEXT NOT NULL,
+                    scope_id TEXT,
+                    kind TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    topic_key TEXT,
+                    status TEXT NOT NULL,
+                    priority TEXT NOT NULL,
+                    origin TEXT NOT NULL,
+                    provenance TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_confirmed_at TEXT NOT NULL,
+                    valid_until TEXT,
+                    resolved_at TEXT,
+                    revision TEXT NOT NULL
+                );
+                INSERT INTO memory_items VALUES(
+                    'memory-a', 'global', NULL, 'preference', 'Prefers Chinese.',
+                    'response_language', 'active', 'normal', 'user_explicit', '{}',
+                    '2026-08-03T00:00:00Z', '2026-08-03T00:00:00Z',
+                    '2026-08-03T00:00:00Z', NULL, NULL, 'revision-a'
+                );
+                PRAGMA user_version = 1;
+                "#,
+            )
+            .unwrap();
+        drop(connection);
+
+        let store = MemoryStore::new_with_path(&path).unwrap();
+        assert_eq!(store.get("memory-a").unwrap().content, "Prefers Chinese.");
+        let connection = store.open().unwrap();
+        let columns = connection
+            .prepare("SELECT name FROM pragma_table_info('memory_items')")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(!columns.iter().any(|column| column == "scope_type"));
+        assert!(!columns.iter().any(|column| column == "scope_id"));
     }
 
     #[test]
@@ -1258,15 +1284,8 @@ mod tests {
     }
 
     #[test]
-    fn workspace_scope_and_history_recall_fail_closed() {
+    fn history_recall_fails_closed() {
         let (_directory, store) = store();
-        let mut workspace = input("Project fact", None);
-        workspace.scope_type = MemoryScopeType::Workspace;
-        workspace.scope_id = Some("project-a".into());
-        assert!(matches!(
-            store.create(workspace),
-            Err(MemoryStoreError::Validation(_))
-        ));
         assert!(store.update_settings(true, true).is_err());
     }
 }

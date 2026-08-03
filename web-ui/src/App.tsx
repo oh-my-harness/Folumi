@@ -1471,7 +1471,7 @@ export default function App() {
             <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm">
               {memoryApproval.tool === 'memory_write' ? (
                 <>
-                  <div className="mb-2 flex gap-2 text-xs text-gray-500"><span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">{String(memoryApproval.args.kind ?? 'preference')}</span><span>{llmSettings.language === 'en-US' ? 'Global scope' : '全局作用域'}</span></div>
+                  <div className="mb-2 flex gap-2 text-xs text-gray-500"><span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">{String(memoryApproval.args.kind ?? 'preference')}</span></div>
                   <p className="whitespace-pre-wrap leading-6 text-gray-900">{String(memoryApproval.args.content ?? '')}</p>
                 </>
               ) : (

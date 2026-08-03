@@ -165,7 +165,6 @@ fn approval_presentation(mutation: &MemoryMutation) -> (&'static str, serde_json
                 "content": write.content,
                 "kind": write.kind,
                 "valid_until": write.expires_at,
-                "scope_type": "global",
             }),
         ),
         MemoryMutation::Delete { reference } => (
@@ -217,7 +216,6 @@ mod tests {
         assert_eq!(tool, "memory_write");
         assert_eq!(args["content"], "请记住我偏好中文。");
         assert_eq!(args["kind"], "preference");
-        assert_eq!(args["scope_type"], "global");
         assert!(args["valid_until"].is_null());
     }
 

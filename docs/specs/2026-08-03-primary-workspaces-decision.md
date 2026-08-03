@@ -14,10 +14,11 @@
 > replaced by the first Saved Memory implementation; Assistant Profile remains
 > a separate tab.
 >
-> Amended: 2026-08-03 — The replacement proposal now defines separate Saved
-> Memory and opt-in History Recall, with global/workspace scopes and explicit
-> conflict/expiry rules. Saved Memory is implemented; History Recall and
-> workspace scope remain gated by their explicit prerequisites.
+> Amended: 2026-08-03 — The replacement proposal now defines global Saved
+> Memory and opt-in History Recall with explicit conflict/expiry rules. Saved
+> Memory is implemented; History Recall remains gated by the runtime
+> cross-Session recall prerequisite. Runtime Sessions, rather than a product
+> workspace entity, own conversation-local continuity.
 >
 > Scope: Primary navigation and the product boundaries of Knowledge Base,
 > Notebook, Memory, and Settings
@@ -115,8 +116,8 @@ A change conforms to this decision only when all of the following remain true:
 - Memory can be opened directly, defaults to Long-term Memory, exposes a
   separate Assistant Profile tab, and provides visible Saved Memory controls;
 - History Recall remains visibly unavailable until the runtime cross-session
-  boundary is implemented, and workspace-scoped writes remain disabled until
-  a logical workspace product decision exists;
+  boundary is implemented; Saved Memory remains global, while Session IDs are
+  provenance and recall boundaries rather than Memory scopes;
 - source links open Knowledge Base, while note links open Notebook;
 - Settings does not contain Assistant profile or the primary Notebook/Memory
   content-management experience; and

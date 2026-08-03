@@ -1,10 +1,10 @@
 # Folumi 用户记忆系统重设计
 
-> 状态：已接受（Accepted）——Phase 1 Saved Memory 已于 2026-08-03 实现；Phase 2–4 仍待实施
+> 状态：已接受（Accepted）——Phase 1 Saved Memory 已于 2026-08-03 实现；Phase 2–3 仍待实施
 >
 > 决策日期：2026-08-03
 >
-> 最近修订：2026-08-03——完成 Saved Memory 基线；历史检索与 workspace 作用域继续按框架和产品决策门槛保持关闭
+> 最近修订：2026-08-03——Saved Memory 收敛为全局长期条目；会话内连续性由 runtime Session 负责，历史检索继续按框架能力门槛保持关闭
 >
 > 替代范围：早期设计与实施计划中描述的 L1/L2/L3 记忆模型及记忆整理工作流
 
@@ -89,11 +89,9 @@ Folumi 已将“记忆”作为独立、由用户控制的一级工作区。旧�
 | 字段 | 用途 |
 | --- | --- |
 | `id` | 稳定且不透明的条目标识 |
-| `scope_type` | `global` 或 `workspace` |
-| `scope_id` | 工作区作用域的稳定 ID；全局条目为空 |
 | `kind` | `fact`、`preference`、`goal` 或 `continuity` |
 | `content` | 面向用户展示的简洁正文 |
-| `topic_key` | 可选；同一作用域内识别同一主题、处理冲突的稳定键 |
+| `topic_key` | 可选；在全局记忆集合中识别同一主题、处理冲突的稳定键 |
 | `status` | `active`、`resolved` 或 `superseded` |
 | `priority` | `normal` 或 `pinned` |
 | `origin` | `user_explicit` 或 `assistant_suggested` |
@@ -117,23 +115,13 @@ Folumi 已将“记忆”作为独立、由用户控制的一级工作区。旧�
 
 旧提案中的 `commitment` 与 `open_loop` 合并为 `continuity`，用状态表达是否完成；`strategy` 归入 Assistant Profile。类型只用于组织、过滤和检索，不决定物理存储位置。
 
-## 6. 作用域
+## 6. 全局记忆与 Session 边界
 
-### 6.1 两级作用域
+Saved Memory 是用户级全局长期条目，可用于所有开启 Memory 的非临时会话。产品模型、数据库、API 和界面不提供 `workspace`、`scope_type` 或 `scope_id`，也不把 Knowledge Base、Notebook、导航页面或 Session ID 变成隐式记忆分区。
 
-- `global`：可用于所有非临时会话，适合称呼、长期偏好和跨项目目标；
-- `workspace`：只在当前逻辑工作上下文中可用，适合某个项目、客户或主题下的约定与连续性事项。
+runtime Session 负责会话内连续性。Session turn 可以作为一条 Saved Memory 的来源引用；用户开启 History Recall 后，也可以按权限从旧 Sessions 中检索原始对话。但 Session 不是 Saved Memory 作用域：把同一内容再复制成“session-scoped memory”会制造两份权威来源，并与 runtime 的 compaction、删除和生命周期规则冲突。
 
-`workspace` 是未来独立的产品级逻辑实体，能够关联多个 runtime Sessions 和用户选择的资料范围。它**不是**侧边栏页面、Knowledge Base ID、Notebook 路径或单个 runtime Session ID，不能借作用域之名重新合并 Knowledge Base、Notebook 与 Memory。
-
-Folumi 当前尚无稳定的逻辑工作区实体，因此第一实施阶段只允许创建 `global` 条目，但数据库、API 和检索契约从第一天保留 `scope_type` / `scope_id`。工作区实体及其创建、切换、删除和数据保留规则通过单独产品决策落地后，再启用 `workspace` 写入。
-
-### 6.2 可见性与覆盖规则
-
-- 普通会话可见全局条目；绑定工作区的会话可见“全局 + 当前工作区”条目；
-- 冲突检测只在同一作用域、同一 `topic_key` 内执行；不同工作区之间互不可见，也不互相判定冲突；
-- 当前工作区条目与全局条目主题相同时，两者都保留，但召回时工作区条目优先，并向模型标明作用域；
-- 删除工作区时必须由单独确认决定其记忆是级联遗忘、导出，还是转为全局；不得静默转移。
+如果以后出现真正需要跨多个 Sessions 隔离长期记忆的产品场景，必须先重新定义用户模型、生命周期与删除语义，而不是预留字段或直接拿 Session ID 代替。该能力不属于当前路线图。
 
 ## 7. 写入、冲突与失效规则
 
@@ -156,16 +144,16 @@ Folumi 当前尚无稳定的逻辑工作区实体，因此第一实施阶段只�
 - 无法可靠确定主题时可以留空，此时系统只做幂等去重，不自动判定语义冲突；
 - 用户可以在冲突处理界面选择“替代旧条目”或“作为不同主题保留”。
 
-### 7.3 同一作用域内的写入决策
+### 7.3 同一主题的写入决策
 
-同一 `scope + topic_key` 出现新内容时，在一个事务中执行：
+同一 `topic_key` 出现新内容时，在一个事务中执行：
 
 - **内容等价**：不新建重复条目，只更新 `last_confirmed_at`、来源和 revision；
 - **内容明确矛盾**：新条目成为 `active`，旧条目标记为 `superseded`，并通过关系记录 `supersedes`；确认界面必须同时展示新旧内容；
 - **内容只是补充**：更新现有条目或作为独立主题保存，不得未经确认丢失旧信息；
 - **关系不确定**：不写入，要求用户选择替代、合并或并存。
 
-跨作用域的同主题条目不互相替代。工作区条目可以在召回时遮蔽全局条目，但全局记录仍保持有效。
+`topic_key` 为空时系统只做正文幂等去重，不推断语义冲突；用户仍可在界面中手动编辑或遗忘条目。
 
 ### 7.4 生命周期
 
@@ -207,7 +195,7 @@ runtime Session 始终是历史正文的唯一权威来源。Folumi 可以维护
 ```text
 当前问题
   -> 权限与临时会话检查
-  -> 作用域、Session 状态和时间过滤
+  -> Session 权限、生命周期和时间过滤
   -> 候选检索（首版 FTS；必要时再评估向量检索）
   -> 相关性、时间和多样性重排
   -> 严格的片段数与 token 预算
@@ -215,7 +203,7 @@ runtime Session 始终是历史正文的唯一权威来源。Folumi 可以维护
   -> 将来源明确的历史片段交给本轮上下文构建
 ```
 
-搜索摘要只能帮助选择候选，不能替代精确读取。默认排除当前 Session、临时会话、已删除会话和不属于当前作用域的会话。排序应综合文本相关性、最近时间和主题多样性，避免一段很长的旧会话占满上下文。
+搜索摘要只能帮助选择候选，不能替代精确读取。默认排除当前 Session、临时会话、已删除会话和当前用户无权访问的会话。排序应综合文本相关性、最近时间和主题多样性，避免一段很长的旧会话占满上下文。
 
 第一版先使用 SQLite FTS5。只有离线评测证明关键词检索明显不足时才增加 Embedding；启用远程 Embedding 前必须说明哪些历史文本会发送给服务商。
 
@@ -236,14 +224,13 @@ runtime Session 始终是历史正文的唯一权威来源。Folumi 可以维护
 一次普通回答按以下顺序处理连续性信息：
 
 1. 当前 runtime Session 的直接上下文；
-2. 当前作用域内相关的 Saved Memory；
+2. 相关的全局 Saved Memory；
 3. 用户开启后，按需进行 History Recall；
 4. 用户明确选择的 Knowledge Base Sources 和 Notebook Notes。
 
-这不是把四类正文全部塞进 prompt。每个来源都先经过权限、作用域、状态和预算过滤：
+这不是把四类正文全部塞进 prompt。每个来源都先经过权限、生命周期、状态和预算过滤：
 
-- Saved Memory 只召回 `active`、未过期条目；`pinned` 提高排序但不绕过相关性和作用域；
-- 工作区记忆优先于同主题全局记忆；
+- Saved Memory 只召回 `active`、未过期条目；`pinned` 提高排序但不绕过相关性；
 - History Recall 只在当前问题需要跨会话连续性时调用；
 - 搜索命中后必须精确读取正文和 revision/turn；
 - 每类来源都有独立数量与 token 上限，总预算由 runtime 上下文构建统一控制；
@@ -258,7 +245,7 @@ runtime Session 始终是历史正文的唯一权威来源。Folumi 可以维护
 
 ```text
 memory_items
-  id, scope_type, scope_id, kind, content, topic_key,
+  id, kind, content, topic_key,
   status, priority, origin, created_at, updated_at,
   last_confirmed_at, valid_until, resolved_at, revision
 
@@ -279,7 +266,7 @@ memory_items_fts
   memory_id, content, topic_key
 
 session_recall_projection
-  session_id, turn_id, scope_type, scope_id, occurred_at, content_hash
+  session_id, turn_id, occurred_at, content_hash
 
 session_recall_fts
   session_id, turn_id, token postings
@@ -291,7 +278,7 @@ session_recall_fts
 - schema version 和前向迁移；不导入旧 L1/L2/L3 文件；
 - 单事务 CAS 写入、替代、完成和遗忘；
 - 稳定且不透明的 ID；
-- 对作用域、类型、内容长度、来源、时间和状态转换进行失败即关闭的校验；
+- 对类型、内容长度、来源、时间和状态转换进行失败即关闭的校验；
 - FTS 索引与权威表在同一事务中更新；
 - 删除/遗忘后的索引清理和可验证数据擦除；
 - 数据库备份与恢复，但不能借备份功能静默恢复用户已经遗忘的正文。
@@ -302,16 +289,16 @@ session_recall_fts
 
 页面继续使用两个页级选项卡：
 
-1. **长期记忆**（默认）：Memory 总开关、Saved Memory 列表、作用域/类型/状态筛选、来源、编辑、置顶、完成、遗忘、历史检索开关与隐私说明；
+1. **长期记忆**（默认）：Memory 总开关、Saved Memory 列表、类型/状态筛选、来源、编辑、置顶、完成、遗忘、历史检索开关与隐私说明；
 2. **助手配置**：助手名称和行为说明，不受 Memory 总开关影响，对新会话生效。
 
-长期记忆列表默认展示有效条目，可切换查看已完成、已替代和已过期条目。冲突替代时必须并排展示新旧内容、作用域和来源。界面不出现 L1/L2/L3、Markdown 文件、物理路径或“整理记忆”任务。
+长期记忆列表默认展示有效条目，可切换查看已完成、已替代和已过期条目。冲突替代时必须并排展示新旧内容和来源。界面不出现 L1/L2/L3、Markdown 文件、物理路径或“整理记忆”任务。
 
 ### 11.2 建议 API
 
 Saved Memory：
 
-- `GET /api/memory/items`：按作用域、类型和状态列出条目；
+- `GET /api/memory/items`：按类型和状态列出条目；
 - `POST /api/memory/items`：用户在界面中明确新增；
 - `PATCH /api/memory/items/:id`：使用 revision 修改、置顶、完成或重新确认；
 - `DELETE /api/memory/items/:id`：使用 revision 遗忘并清除正文；
@@ -350,7 +337,7 @@ API 只是产品界面边界。Agent 侧继续使用 runtime Knowledge/Memory/Se
 ### Phase 1：Saved Memory 基线
 
 - [x] SQLite schema、FTS5、CAS、幂等与数据擦除测试；
-- [x] 只开放 `global` 作用域；
+- [x] Saved Memory 固定为用户级全局长期条目，不暴露 scope 字段；
 - [x] `fact`、`preference`、`goal`、`continuity` 四种类型；
 - [x] 显式新增、编辑、置顶、完成、重新确认和遗忘；
 - [x] `topic_key`、冲突确认、原子 supersede、过期过滤；
@@ -376,16 +363,7 @@ Memory 页面还提供有效期修改、显式重新确认和 JSON 导出；导�
 - 建立离线评测集，记录相关率、错误召回率、延迟和上下文占用；
 - 不把历史片段自动提升为 Saved Memory。
 
-### Phase 3：Workspace Scope
-
-状态：待单独产品决策定义逻辑工作区实体，当前写入只接受 `global`。
-
-- 先通过单独产品决策定义逻辑工作区实体及生命周期；
-- 启用工作区记忆、Session 绑定、作用域切换与删除策略；
-- 实现“全局 + 当前工作区”召回和工作区优先规则；
-- 验证不同工作区之间无召回、索引和 mutation 越权。
-
-### Phase 4：受控增强
+### Phase 3：受控增强
 
 - 助手可以提出候选记忆，但未经确认不进入召回；
 - 评测 FTS 后再决定是否增加本地或远程 Embedding；
@@ -397,13 +375,13 @@ Memory 页面还提供有效期修改、显式重新确认和 JSON 导出；导�
 - 活动生产代码中不存在 L1/L2/L3 事件记录或整理工作流；
 - Notebook、知识库操作和普通聊天不会自动创建 Saved Memory；
 - 保存的记忆可查看、修改、置顶、完成、重新确认和彻底遗忘；
-- 同一作用域、同一主题的明确冲突通过单事务替代，旧条目不再被召回；
+- 同一主题的明确冲突通过单事务替代，旧条目不再被召回；
 - 已完成、已替代、已过期和已删除条目不会进入正常召回；
 - revision 不匹配时不覆盖，确认内容和最终 mutation 完全一致；
 - History Recall 默认关闭，开启后只检索允许的 runtime Sessions，并能定位到精确来源；
 - 删除 Session 或开启临时对话不会留下可检索的历史正文；
 - History Recall 不自动创建 Saved Memory；
-- 全局与工作区作用域遵守可见性和覆盖规则，不把 KB、Notebook 或 Session ID 当成工作区；
+- Saved Memory 没有 workspace 或 Session scope；Session 内容由 runtime 管理，仅在明确确认后形成独立的全局条目；
 - 关闭 Memory 后新 run 不挂载记忆和历史能力，但 Assistant Profile 与已有数据保持不变；
 - Memory、历史和 Sources 各有独立预算，Memory 不会弱化知识引用要求；
 - 旧分层文件不会影响新系统，也不会被应用静默迁移或删除；
@@ -416,6 +394,6 @@ Memory 页面还提供有效期修改、显式重新确认和 JSON 导出；导�
 - 默认开启历史检索或自动记忆；
 - 未经用户确认把候选内容写入 Saved Memory；
 - 新增隐藏层级、后台整理、图记忆或复杂自动合并；
-- 改变工作区作用域的数据隔离或删除规则；
+- 新增长期记忆分区、项目级记忆或 Session scope；
 - 重新读取、迁移或导入旧 L1/L2/L3 文件；
 - 将 Session 正文、Notebook 或 Knowledge Base 内容静默复制到 Memory store。

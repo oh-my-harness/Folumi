@@ -21,8 +21,8 @@ use llm_harness_types::DataBlock;
 use tokio_util::sync::CancellationToken;
 
 use crate::memory_store::{
-    ConflictAction, CreateMemoryItem, MemoryKind, MemoryOrigin, MemoryPriority, MemoryScopeType,
-    MemorySourceRef, MemoryStore, MemoryStoreError,
+    ConflictAction, CreateMemoryItem, MemoryKind, MemoryOrigin, MemoryPriority, MemorySourceRef,
+    MemoryStore, MemoryStoreError,
 };
 
 pub const USER_MEMORY_SOURCE_ID: &str = "folumi.user-memory";
@@ -142,7 +142,6 @@ impl KnowledgeSource for SavedMemoryKnowledgeSource {
                         updated_at: Some(item.updated_at),
                         metadata: BTreeMap::from([
                             ("kind".into(), serde_json::json!(item.kind)),
-                            ("scope_type".into(), serde_json::json!(item.scope_type)),
                             ("priority".into(), serde_json::json!(item.priority)),
                         ]),
                     })
@@ -202,7 +201,6 @@ impl KnowledgeSource for SavedMemoryKnowledgeSource {
                 truncated,
                 metadata: BTreeMap::from([
                     ("kind".into(), serde_json::json!(item.kind)),
-                    ("scope_type".into(), serde_json::json!(item.scope_type)),
                     ("topic_key".into(), serde_json::json!(item.topic_key)),
                 ]),
             })
@@ -262,8 +260,6 @@ impl RuntimeMemoryStore for SavedMemoryWriteStore {
             let item = self
                 .store
                 .create(CreateMemoryItem {
-                    scope_type: MemoryScopeType::Global,
-                    scope_id: None,
                     kind,
                     content: write.content,
                     topic_key: None,
