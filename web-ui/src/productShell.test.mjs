@@ -5,11 +5,12 @@ import test from 'node:test'
 const sidebar = readFileSync(new URL('./components/Sidebar.tsx', import.meta.url), 'utf8')
 const composer = readFileSync(new URL('./components/ChatBox.tsx', import.meta.url), 'utf8')
 const onboarding = readFileSync(new URL('./components/OnboardingDialog.tsx', import.meta.url), 'utf8')
-const migration = readFileSync(new URL('./components/LegacyMigrationPanel.tsx', import.meta.url), 'utf8')
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const knowledge = readFileSync(new URL('./components/KnowledgeBasePage.tsx', import.meta.url), 'utf8')
 const settings = readFileSync(new URL('./components/SettingsPage.tsx', import.meta.url), 'utf8')
 const memory = readFileSync(new URL('./components/UserMemoryPage.tsx', import.meta.url), 'utf8')
+const backendMain = readFileSync(new URL('../../crates/tutor-web/src/main.rs', import.meta.url), 'utf8')
+const backendRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/mod.rs', import.meta.url), 'utf8')
 
 test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, and Settings', () => {
   assert.match(sidebar, /export type AppView = 'assistant' \| 'knowledge' \| 'notebook' \| 'memory' \| 'settings'/)
@@ -25,7 +26,12 @@ test('Notebook and Memory are standalone workspaces while Knowledge Base stays R
   assert.match(app, /view === 'memory'/)
   assert.doesNotMatch(knowledge, /NotesPage|Search Sources and Notes/)
   assert.doesNotMatch(settings, /UserMemoryPage|LegacyMigrationPanel/)
-  assert.match(memory, /LegacyMigrationPanel/)
+  assert.doesNotMatch(memory, /LegacyMigrationPanel|\/api\/migration\/legacy/)
+})
+
+test('legacy data migration stays outside the active product boundary', () => {
+  assert.doesNotMatch(backendMain, /migration_router|\/api\/migration\/legacy/)
+  assert.doesNotMatch(backendRoutes, /pub mod migration/)
 })
 
 test('research is a chat task action instead of a capability menu', () => {
@@ -42,10 +48,4 @@ test('onboarding teaches model, knowledge, and asking without legacy hierarchy',
 test('note references use the notes-only API and no Space picker contract', () => {
   assert.match(composer, /\/api\/notebook\/mentions/)
   assert.doesNotMatch(composer, /\/api\/space\/mentions|Space picker|spaceMention/)
-})
-
-test('legacy teaching data is retired through explicit import or export', () => {
-  assert.match(migration, /\/api\/migration\/legacy\/continuity/)
-  assert.match(migration, /\/api\/migration\/legacy\/export\.zip/)
-  assert.match(migration, /selected/)
 })

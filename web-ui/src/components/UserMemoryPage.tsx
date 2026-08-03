@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { Brain, Edit3, ExternalLink, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
 import { sourceTargetFromRaw } from './MarkdownMessage'
-import { LegacyMigrationPanel } from './LegacyMigrationPanel'
 
 interface MemoryItem {
   path: string
@@ -137,9 +136,6 @@ export function UserMemoryPage({ language, enabled, onEnabledChange, onSourceNav
         })}
       </div>
 
-      <div className="mt-8 border-t border-gray-200 pt-6">
-        <LegacyMigrationPanel language={language} />
-      </div>
     </section>
   )
 }

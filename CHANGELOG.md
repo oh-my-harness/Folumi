@@ -11,6 +11,9 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ### Changed
 
+- Removed the legacy Tutor-continuity migration panel, import/export API, and
+  ZIP archive dependency; Folumi now leaves old teaching files untouched and
+  outside the active product boundary.
 - Promoted Notebook and Memory to standalone primary workspaces.
 - Limited Knowledge Base to RAG source-document management instead of mixing
   editable Notes into the same interface.
@@ -30,11 +33,11 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
   confirmation with an immediate restore action.
 - Established Folumi as the local-first personal knowledge assistant product,
   with Assistant, Sources, Notes, Memory, and Settings as the target scope.
-- Froze Quiz, Space, Student Profile, multi-Tutor, and standalone Research
-  development pending explicit export and migration paths.
+- Retired Quiz, Space, Student Profile, multi-Tutor, and standalone Research
+  from the active product boundary.
 - Updated desktop and user-facing branding to Folumi while retaining the
-  existing application identifier, data directory, and storage keys until the
-  one-time data migration is implemented.
+  existing application identifier, data directory, and storage keys so
+  supported user data remains discoverable.
 - Renamed only untouched built-in Tutor Agent usage guides to Folumi; customized
   guide profiles and Soul content remain unchanged.
 

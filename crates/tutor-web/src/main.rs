@@ -76,10 +76,6 @@ async fn main() -> anyhow::Result<()> {
             runtime_security.clone(),
             config.data_dir.join("workflow-sessions").join("memory"),
         ))
-        .merge(routes::migration::migration_router(
-            config.data_dir.clone(),
-            memory.clone(),
-        ))
         .merge(routes::settings::settings_router(settings.clone()))
         .merge(routes::sessions::sessions_router(
             pool.clone(),

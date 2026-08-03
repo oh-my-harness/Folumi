@@ -43,8 +43,8 @@ Use this checklist after running:
 - [ ] Create, edit, move, delete, and restore a Note; confirm all paths remain inside the configured Vault.
 - [ ] Turn Memory off and confirm a new conversation neither recalls nor proposes long-term Memory.
 - [ ] Turn Memory on, review one item, edit it, then forget it.
-- [ ] Preview legacy Tutor continuity, import one selected item twice, and confirm Assistant Continuity contains only one copy.
-- [ ] Download the legacy archive and confirm it contains any existing Tutor definitions and Quiz data without reactivating either feature.
+- [ ] Confirm Memory contains no legacy Tutor/Quiz migration or archive controls.
+- [ ] Confirm requests to `/api/migration/legacy` return `404 Not Found`.
 - [ ] Close and restart the app.
 - [ ] Confirm sessions, Sources, Notes, and Memory still exist after restart.
 - [ ] Record the child `tutor-web` PID, close the app normally, and confirm that

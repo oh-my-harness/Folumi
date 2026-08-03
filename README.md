@@ -4,7 +4,7 @@
 [`llm-harness-runtime`](https://github.com/oh-my-harness/llm-harness-runtime)
 构建的本地优先个人知识助手。它围绕知识来源、Markdown 笔记和用户可控记忆，帮助用户与自己的长期资料持续对话。
 
-当前代码由 `llm-tutor` 演进而来，产品界面和运行路径已经收缩为单一助手、知识来源、Markdown 笔记与用户可控记忆。旧 Tutor 连续性可经用户预览后迁入 Assistant Continuity，Quiz 与旧 Tutor 定义则通过一次性归档导出保留。
+当前代码由 `llm-tutor` 演进而来，产品界面和运行路径已经收缩为单一助手、知识来源、Markdown 笔记与用户可控记忆。旧 Tutor、Quiz 及其数据迁移或归档入口已退出产品运行路径。
 
 > 当前版本：`0.3.5`
 >
@@ -156,7 +156,7 @@ scripts              开发、版本、桌面构建和 QA 脚本。
 <repo>/.llm-tutor/
 ```
 
-当前版本暂不改目录名、应用标识符或持久化键，避免已有用户的数据被操作系统视为另一套应用数据。旧产品数据通过显式的一次性迁移或归档导出处理，详见[旧产品数据迁移清单](./docs/migrations/2026-08-01-legacy-product-data-inventory.md)。
+当前版本暂不改目录名、应用标识符或持久化键，避免已有用户的数据被操作系统视为另一套应用数据。Folumi 不提供旧 Tutor/Quiz 数据的迁移或归档接口，也不会读取或删除对应旧文件；需要保留时请直接备份应用数据目录。
 
 可通过环境变量或后端参数覆盖：
 
@@ -254,7 +254,7 @@ GitHub 发布工作流在 `v*` 标签和手动 `workflow_dispatch` 下构建 Win
 - API Key 暂存于本地 JSON，系统钥匙串尚未实现。
 - Linux 安装包和自动更新尚未实现。
 - RAG 切分、引用验证和桌面安装包 QA 仍需持续完善。
-- 旧 Tutor 连续性需要用户显式选择后迁入 Assistant Continuity；Quiz 与 Tutor 定义只提供归档导出，不再参与运行。
+- 旧 Tutor/Quiz 数据不再提供应用内迁移或归档能力，遗留文件只会原地保留并被 Folumi 忽略。
 
 更多用户侧说明见 [使用手册](./MANUAL.md)。
 

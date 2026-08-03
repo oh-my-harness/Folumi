@@ -134,8 +134,8 @@ Memory。
 
 ### 4.6 不维护旧产品的双轨兼容
 
-收缩采用一次明确迁移：保留用户数据的导出和必要转换，但不长期维护新旧导航、两套
-Capability 模型或隐藏的教学工作流。
+收缩采用直接切换：继续支持目标产品的数据域，旧教学数据文件不主动删除，但产品不提供
+迁移、导入、归档，也不维护新旧导航、两套 Capability 模型或隐藏的教学工作流。
 
 ## 5. 目标信息架构
 
@@ -201,7 +201,7 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 
 ### 5.5 记忆
 
-记忆页面独立负责总开关、记忆列表、来源检查、编辑、遗忘和旧数据迁移。Memory 的读取和
+记忆页面独立负责总开关、记忆列表、来源检查、编辑和遗忘。Memory 的读取和
 变更仍通过 runtime access control 与 mutation gate，不因提升为一级页面而放宽权限。
 
 ### 5.6 设置
@@ -335,7 +335,7 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 - [x] 重构 AppView 与 Sidebar；
 - [x] Knowledge Base 保持为只包含 RAG Sources 的独立页面；
 - [x] Notebook 作为记录、管理和查看笔记的独立一级页面；
-- [x] Memory 作为记忆开关、审阅、编辑、遗忘和迁移的独立一级页面；
+- [x] Memory 作为记忆开关、审阅、编辑和遗忘的独立一级页面；
 - [x] Research 改为聊天任务动作；
 - [x] 删除 Capability 模式选择器中的 Quiz、Research 和 Organize；
 - [x] 重写首次引导和空状态。
@@ -363,8 +363,8 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 - [x] 将多 Tutor 收缩成一个 Assistant Profile；
 - [x] 明确显示每个会话正在使用的资料范围；
 - [x] 完成 Notes 创建、更新、移动、删除确认和恢复闭环；
-- [x] 将 Learner/Tutor Memory 迁移为 User Memory + Assistant Continuity（新会话使用
-  User Memory；旧 Tutor 连续性由用户预览、选择后幂等迁入，不静默合并不同 Tutor 的私有数据）；
+- [x] 新会话统一使用 User Memory + Assistant Continuity；旧 Tutor 私有连续性不读取、
+  不导入，也不静默合并到当前记忆；
 - [x] 增加 Memory 总开关、逐项来源、编辑和遗忘；
 - [ ] 使用 ContextAttachment 支持临时资料，但不默认自动召回（runtime
   尚无一等临时附件边界，已记录到 `docs/framework-feedback.md` 和
@@ -377,7 +377,7 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 
 一句话：新闭环通过桌面验收后，直接删除教学平台遗留代码，不保留隐藏双轨。
 
-- [x] 提供 Quiz、旧 Tutor 定义等必要数据的一次性归档导出；
+- [x] 删除 Quiz、旧 Tutor 数据迁移和归档导出能力，遗留文件原地保留但不参与运行；
 - [x] 删除 Quiz workflow、UI、API、存储和恢复逻辑；
 - [x] 删除 Space 页面和聚合模型，以 Notes 接口替代产品侧聚合入口；
 - [x] 删除多 Tutor 管理、交接和教学专属状态；
@@ -387,21 +387,16 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 
 验收：仓库只包含目标产品实际使用的能力，旧教学模块不再增加构建、测试和维护成本。
 
-## 10. 数据迁移与删除策略
+## 10. 数据保留与旧功能删除策略
 
-产品收缩不能以丢失用户数据为代价，但数据迁移不等于永久兼容旧产品。
+产品收缩继续保护目标数据域，但不为旧教学模型维护迁移能力：
 
-建议采用：
-
-1. 发布一个带完整导出的过渡版本；
-2. Quiz 导出为 JSON/Markdown，不导入新产品；
-3. Student Profile 中明确的偏好和目标，经用户预览后迁入 User Memory；
-4. Tutor 私有连续性中仍有效的事项，经用户选择后迁入 Assistant Continuity；
-5. Notebook 文件原样保留，只调整产品入口和索引；
-6. Knowledge Base 原始文档保留，允许按新 schema 重建派生索引；
-7. 迁移完成后删除旧读取路径，不维护双写。
-
-所有自动迁移必须先备份，并记录 schema version、迁移结果和失败恢复方式。
+1. Sessions、Settings、Notebook 文件和 Knowledge Base 原始文档继续保留；
+2. 已位于统一 runtime Memory 后端的数据继续由独立记忆页面管理；
+3. Tutor 私有连续性、Quiz、Student Profile 与旧 workflow 数据不读取、不转换、不导出；
+4. Folumi 不主动删除这些遗留文件，需要保留时由用户直接备份应用数据目录；
+5. 派生索引可从权威 Sources 重建；
+6. 不提供旧读取路径、迁移 API、双写或隐藏兼容入口。
 
 ## 11. 质量与验收指标
 
@@ -482,12 +477,12 @@ Bring your knowledge to light.
 - 桌面产品名和图标；
 - Tauri bundle identifier；
 - 前端标题与本地化文案；
-- 默认数据目录和迁移；
+- 默认数据目录兼容性；
 - GitHub 仓库说明与 README；
 - Rust crate 中确实面向产品的命名。
 
-runtime crate、Knowledge/Memory 协议和内部通用类型不随品牌重命名。旧数据目录可以做一次
-明确迁移和回滚备份，但不长期双写。Git 历史中保留旧名称是正常的审计记录，不做破坏性的
+runtime crate、Knowledge/Memory 协议和内部通用类型不随品牌重命名。旧数据目录继续保留
+现有键，不提供产品内迁移或双写。Git 历史中保留旧名称是正常的审计记录，不做破坏性的
 历史重写。
 
 ## 14. 最终验收场景

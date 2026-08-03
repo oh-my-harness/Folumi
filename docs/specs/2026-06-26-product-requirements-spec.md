@@ -74,7 +74,7 @@ The accepted workspace boundaries and change-control rule are recorded in
 ## 5. Memory and Continuity
 
 - **REQ-399** Memory shall be a standalone primary workspace for enabling,
-  reviewing, editing, forgetting, and migrating long-term memory.
+  reviewing, editing, and forgetting long-term memory.
 - **REQ-400** Long-term Memory shall be optional and controlled by a master
   switch.
 - **REQ-401** Users shall be able to inspect, edit, approve, reject, and forget
@@ -91,19 +91,7 @@ The accepted workspace boundaries and change-control rule are recorded in
   or provide its own knowledge sources and policies without adopting Folumi's
   organization.
 
-## 6. Legacy Data Retirement
-
-- **REQ-500** The product shall preview active legacy Tutor continuity without
-  modifying legacy files.
-- **REQ-501** Only user-selected legacy continuity items shall be imported into
-  Assistant Continuity.
-- **REQ-502** Repeating the same continuity import shall not create duplicates.
-- **REQ-503** Legacy Quiz data and Tutor definitions shall be available as a
-  one-time ZIP archive.
-- **REQ-504** The retirement boundary shall not introduce fallback reads,
-  dual-write behavior, or active legacy product routes.
-
-## 7. Settings, Privacy, and Portability
+## 6. Settings, Privacy, and Portability
 
 - **REQ-600** Users shall configure LLM, embedding, search, appearance, Note
   Vault, and tool governance through Settings; Memory policy and items shall be
@@ -112,10 +100,10 @@ The accepted workspace boundaries and change-control rule are recorded in
   explicit external tool call requires transmission.
 - **REQ-602** The UI shall make current knowledge scope and long-term Memory
   behavior understandable to the user.
-- **REQ-603** Sources, Notes, settings, sessions, and legacy archives shall have
-  explicit preservation or export behavior.
+- **REQ-603** Sources, Notes, settings, sessions, and Memory shall have explicit
+  preservation or export behavior.
 
-## 8. Runtime Boundary
+## 7. Runtime Boundary
 
 - **REQ-700** Folumi shall use `llm-harness-runtime` for sessions, context,
   tools, hooks, trace, compaction, Knowledge, and Memory behavior rather than
@@ -126,15 +114,14 @@ The accepted workspace boundaries and change-control rule are recorded in
   first-class runtime contract exists; ephemeral body content shall not be
   restored as durable session knowledge.
 
-## 9. Acceptance Gates
+## 8. Acceptance Gates
 
 - **REQ-800** Rust workspace tests shall pass on the supported stable toolchain.
 - **REQ-801** Frontend tests and production build shall pass.
 - **REQ-802** The desktop package shall build and pass install-and-launch smoke
   QA before a release is published.
 - **REQ-803** Active code search shall find no Quiz workflow, multi-Tutor store,
-  Tutor private-memory runtime, Space route, or retired capability branch.
-- **REQ-804** Migration tests shall cover preview, selected idempotent import,
-  due-date preservation, and archive contents.
+  Tutor private-memory runtime, Space route, retired capability branch, or
+  legacy migration/import/export route.
 - **REQ-805** File-watcher tests shall wait for both indexed content and exposed
   watcher status instead of relying on fixed timing assumptions.

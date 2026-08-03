@@ -15,8 +15,8 @@ Folumi has five primary workspaces:
 2. **Knowledge Base** — read-only source documents and their RAG indexes.
 3. **Notebook** — recording, organizing, reading, and editing user-owned
    Markdown notes.
-4. **Memory** — enabling, reviewing, editing, forgetting, and migrating the
-   assistant's long-term memory.
+4. **Memory** — enabling, reviewing, editing, and forgetting the assistant's
+   long-term memory.
 5. **Settings** — provider, retrieval, storage, governance, appearance, and
    assistant-profile configuration.
 
@@ -54,7 +54,8 @@ or component consolidation without a new explicit product decision.
 
 - Is a standalone primary workspace.
 - Contains the master switch and user-visible controls for inspecting, editing,
-  forgetting, and migrating long-term memory.
+  and forgetting long-term memory.
+- Does not contain legacy Tutor/Quiz migration, import, or archive controls.
 - Keeps provenance visible when available.
 - Continues to use runtime access control and mutation gates; a more prominent
   UI does not expand agent authority.
