@@ -175,6 +175,7 @@ pub(crate) async fn run_conversation_with_request(
             memory_service.clone(),
         )));
     }
+    plugins.extend(router.runtime_plugins.iter().cloned());
     tools.extend(router.product_tools.iter().cloned());
 
     let client = router.make_client();

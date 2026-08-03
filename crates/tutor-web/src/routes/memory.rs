@@ -13,13 +13,15 @@ use crate::memory_store::{
     CreateMemoryItem, MemoryItem, MemoryKind, MemoryListFilter, MemoryOrigin, MemorySettings,
     MemoryStatus, MemoryStore, MemoryStoreError, UpdateMemoryItem,
 };
+use crate::session::SessionPool;
 
 #[derive(Clone)]
 struct MemoryState {
     store: Arc<MemoryStore>,
+    sessions: Arc<SessionPool>,
 }
 
-pub fn memory_router(store: Arc<MemoryStore>) -> Router {
+pub fn memory_router(store: Arc<MemoryStore>, sessions: Arc<SessionPool>) -> Router {
     Router::new()
         .route("/api/memory/items", get(list_items).post(create_item))
         .route(
@@ -31,7 +33,7 @@ pub fn memory_router(store: Arc<MemoryStore>) -> Router {
             get(get_settings).patch(update_settings),
         )
         .route("/api/memory/export.json", get(export_memory))
-        .with_state(MemoryState { store })
+        .with_state(MemoryState { store, sessions })
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,14 +126,42 @@ async fn update_settings(
         Ok(settings) => settings,
         Err(error) => return error_response(error),
     };
-    match state.store.update_settings(
-        input.enabled.unwrap_or(current.enabled),
+    let enabled = input.enabled.unwrap_or(current.enabled);
+    let history_recall_enabled = if enabled {
         input
             .history_recall_enabled
-            .unwrap_or(current.history_recall_enabled),
-    ) {
+            .unwrap_or(current.history_recall_enabled)
+    } else {
+        false
+    };
+    if history_recall_enabled != current.history_recall_enabled
+        && let Err(error) = state
+            .sessions
+            .synchronize_history_recall(history_recall_enabled)
+            .await
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                code: "history_recall_sync",
+                error: format!("failed to update runtime Session recall: {error}"),
+                latest: None,
+                existing: None,
+            }),
+        )
+            .into_response();
+    }
+    match state.store.update_settings(enabled, history_recall_enabled) {
         Ok(settings) => (StatusCode::OK, Json(settings)).into_response(),
-        Err(error) => error_response(error),
+        Err(error) => {
+            if history_recall_enabled != current.history_recall_enabled {
+                let _ = state
+                    .sessions
+                    .synchronize_history_recall(current.history_recall_enabled)
+                    .await;
+            }
+            error_response(error)
+        }
     }
 }
 
@@ -241,7 +271,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let store =
             Arc::new(MemoryStore::new_with_path(directory.path().join("memory.sqlite3")).unwrap());
-        (directory, memory_router(store))
+        let sessions = SessionPool::new_with_root(directory.path().join("sessions"));
+        (directory, memory_router(store, sessions))
     }
 
     async fn response_json(response: Response) -> serde_json::Value {
@@ -377,7 +408,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn history_recall_setting_fails_closed() {
+    async fn history_recall_setting_updates_runtime_sessions() {
         let (_directory, app) = app();
         let response = app
             .oneshot(
@@ -390,7 +421,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(response_json(response).await["code"], "validation");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(response).await["history_recall_enabled"],
+            true
+        );
     }
 }

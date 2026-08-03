@@ -1,10 +1,19 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use llm_harness_agent::{
-    JsonlSessionRepo, Session, SessionRepo,
+    JsonlSessionRepo, ObservedSessionRepo, Plugin, Session, SessionDurability,
+    SessionMutationObserver, SessionRecallPolicy, SessionRecallSettings, SessionRepo,
     session::{CreateSessionOptions, ListSessionOptions, SessionEntryPayload, SessionMetadata},
+};
+use llm_harness_runtime_knowledge::KnowledgeSource;
+use llm_harness_runtime_session_recall::{
+    HistoryRecallPlugin, HistoryRecallPluginConfig, InMemorySessionRecallIndex, SessionRecallIndex,
+    SessionRecallKnowledgeSource, SessionRecallProjector, SessionRecallService,
 };
 use llm_harness_types::{
     AgentMessage, AssistantMessageKind, ContentBlock, EntryId, SessionError, TokenUsage,
@@ -144,7 +153,11 @@ pub struct SessionPool {
     active_runs: Mutex<HashMap<String, ActiveRunRecord>>,
     product_metadata: Mutex<HashMap<String, ProductSessionMetadata>>,
     product_metadata_path: PathBuf,
-    repo: Arc<JsonlSessionRepo>,
+    repo: Arc<dyn SessionRepo>,
+    history_recall_source: Arc<SessionRecallKnowledgeSource>,
+    history_recall_projector: Arc<SessionRecallProjector>,
+    history_recall_enabled: AtomicBool,
+    history_recall_update: tokio::sync::Mutex<()>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -175,17 +188,128 @@ impl SessionPool {
     }
 
     pub fn new_with_root(root: impl Into<PathBuf>) -> Arc<Self> {
+        Self::new_with_root_and_history_recall(root, false)
+    }
+
+    pub fn new_with_root_and_history_recall(
+        root: impl Into<PathBuf>,
+        history_recall_enabled: bool,
+    ) -> Arc<Self> {
         let root = root.into();
         std::fs::create_dir_all(&root).expect("failed to create runtime session directory");
         let product_metadata_path = root.join("product-metadata.json");
         let product_metadata = read_product_metadata(&product_metadata_path).unwrap_or_default();
+        let authority: Arc<dyn SessionRepo> = Arc::new(JsonlSessionRepo::new(root));
+        let index: Arc<dyn SessionRecallIndex> = Arc::new(InMemorySessionRecallIndex::new());
+        let projector = Arc::new(SessionRecallProjector::new(
+            authority.clone(),
+            index.clone(),
+        ));
+        let observer: Arc<dyn SessionMutationObserver> = projector.clone();
+        let repo: Arc<dyn SessionRepo> =
+            Arc::new(ObservedSessionRepo::new(authority.clone(), observer));
+        let service = Arc::new(SessionRecallService::new(
+            authority,
+            index,
+            crate::knowledge_runtime::agent_knowledge_access_control(),
+        ));
         Arc::new(Self {
             sessions: Mutex::new(HashMap::new()),
             active_runs: Mutex::new(HashMap::new()),
             product_metadata: Mutex::new(product_metadata),
             product_metadata_path,
-            repo: Arc::new(JsonlSessionRepo::new(root)),
+            repo,
+            history_recall_source: Arc::new(SessionRecallKnowledgeSource::new(service)),
+            history_recall_projector: projector,
+            history_recall_enabled: AtomicBool::new(history_recall_enabled),
+            history_recall_update: tokio::sync::Mutex::new(()),
         })
+    }
+
+    pub fn history_recall_enabled(&self) -> bool {
+        self.history_recall_enabled.load(Ordering::SeqCst)
+    }
+
+    pub fn history_recall_plugin(&self) -> Arc<dyn Plugin> {
+        Arc::new(
+            HistoryRecallPlugin::new(
+                self.history_recall_source.clone(),
+                HistoryRecallPluginConfig::default(),
+            )
+            .expect("default History Recall limits are valid"),
+        )
+    }
+
+    pub fn history_recall_knowledge_source(&self) -> Arc<dyn KnowledgeSource> {
+        Arc::new(crate::knowledge_runtime::NavigableSessionRecallSource::new(
+            self.history_recall_source.clone(),
+        ))
+    }
+
+    pub async fn synchronize_history_recall(&self, enabled: bool) -> anyhow::Result<()> {
+        let _guard = self.history_recall_update.lock().await;
+        let sessions = self.repo.list(ListSessionOptions::default()).await?;
+        for metadata in sessions {
+            let knowledge_base_id = self
+                .product_metadata
+                .lock()
+                .unwrap()
+                .get(&metadata.id)
+                .and_then(|product| product.kb.as_deref().map(str::to_string));
+            let settings = if enabled {
+                SessionRecallSettings {
+                    durability: metadata.durability,
+                    lifecycle: metadata.lifecycle,
+                    policy: SessionRecallPolicy::Enabled,
+                    scope: Some(crate::knowledge_runtime::session_recall_scope(
+                        knowledge_base_id.as_deref(),
+                    )),
+                }
+            } else {
+                SessionRecallSettings {
+                    durability: metadata.durability,
+                    lifecycle: metadata.lifecycle,
+                    policy: SessionRecallPolicy::Disabled,
+                    scope: None,
+                }
+            };
+            Session::new(self.repo.open(&metadata.id).await?)
+                .update_recall_settings(settings)
+                .await?;
+        }
+        self.history_recall_projector
+            .rebuild(CancellationToken::new())
+            .await?;
+        self.history_recall_enabled.store(enabled, Ordering::SeqCst);
+        Ok(())
+    }
+
+    pub async fn refresh_history_recall_scope(
+        &self,
+        session_id: &str,
+    ) -> Result<(), llm_harness_types::SessionError> {
+        if !self.history_recall_enabled() {
+            return Ok(());
+        }
+        let _guard = self.history_recall_update.lock().await;
+        let knowledge_base_id = self
+            .product_metadata
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .and_then(|product| product.kb.as_deref().map(str::to_string));
+        let session = Session::new(self.repo.open(session_id).await?);
+        let metadata = session.metadata().await?;
+        session
+            .update_recall_settings(SessionRecallSettings {
+                durability: metadata.durability,
+                lifecycle: metadata.lifecycle,
+                policy: SessionRecallPolicy::Enabled,
+                scope: Some(crate::knowledge_runtime::session_recall_scope(
+                    knowledge_base_id.as_deref(),
+                )),
+            })
+            .await
     }
 
     /// Create a runtime-backed session and return its ID.
@@ -215,6 +339,7 @@ impl SessionPool {
         &self,
         config: SessionCreateConfig,
     ) -> Result<String, llm_harness_types::SessionError> {
+        let _recall_guard = self.history_recall_update.lock().await;
         let SessionCreateConfig {
             capability,
             kb,
@@ -231,6 +356,15 @@ impl SessionPool {
                 initial_model: llm.as_ref().map(|config| config.model.clone()),
                 initial_thinking_level: None,
                 initial_tools: vec![],
+                durability: Some(SessionDurability::Durable),
+                recall_policy: if self.history_recall_enabled() {
+                    SessionRecallPolicy::Enabled
+                } else {
+                    SessionRecallPolicy::Disabled
+                },
+                recall_scope: self
+                    .history_recall_enabled()
+                    .then(|| crate::knowledge_runtime::session_recall_scope(kb.as_deref())),
             })
             .await?;
         let meta = storage.metadata().await?;
@@ -1061,13 +1195,8 @@ pub fn message_role(message: &llm_harness_types::AgentMessage) -> Option<&'stati
 
 impl Default for SessionPool {
     fn default() -> Self {
-        Self {
-            sessions: Mutex::new(HashMap::new()),
-            active_runs: Mutex::new(HashMap::new()),
-            product_metadata: Mutex::new(HashMap::new()),
-            product_metadata_path: PathBuf::from(".llm-tutor/session-product-metadata.json"),
-            repo: Arc::new(JsonlSessionRepo::new(".llm-tutor/sessions")),
-        }
+        let pool = Self::new_with_root(".llm-tutor/sessions");
+        Arc::try_unwrap(pool).unwrap_or_else(|_| unreachable!("new SessionPool has one owner"))
     }
 }
 
@@ -1106,6 +1235,7 @@ fn token_usage_from_runtime_trace(data: &serde_json::Value) -> Option<TokenUsage
         cache_read_tokens: u32_from_json(payload.get("cache_read_tokens")),
         cache_creation_tokens: u32_from_json(payload.get("cache_write_tokens")),
         reasoning_tokens: u32_from_json(payload.get("reasoning_tokens")),
+        provenance: Default::default(),
     })
 }
 
@@ -1119,6 +1249,8 @@ fn u32_from_json(value: Option<&serde_json::Value>) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use llm_harness_runtime_knowledge::{KnowledgeAccessContext, PrincipalRef};
+    use llm_harness_runtime_session_recall::SessionRecallSearchRequest;
 
     fn test_pool() -> Arc<SessionPool> {
         SessionPool::new_with_root(
@@ -1138,6 +1270,81 @@ mod tests {
         let entry = entry.unwrap();
         assert_eq!(entry.capability, "chat");
         assert_eq!(entry.id, id);
+    }
+
+    #[tokio::test]
+    async fn history_recall_projects_enabled_sessions_and_excludes_current_session() {
+        let root = std::env::temp_dir().join(format!(
+            "llm-tutor-history-recall-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let pool = SessionPool::new_with_root_and_history_recall(root, true);
+        let source_id = pool
+            .create("chat", None, false, None, None, None)
+            .await
+            .unwrap();
+        let current_id = pool
+            .create("chat", None, false, None, None, None)
+            .await
+            .unwrap();
+        let source_session = pool.open_runtime_session(&source_id).await.unwrap();
+        source_session
+            .append_message(tutor_agent::chat::user_message(
+                "My launch phrase is silver comet.",
+            ))
+            .await
+            .unwrap();
+        source_session
+            .append_message(tutor_agent::chat::assistant_message(
+                "I will remember the launch phrase for this conversation.",
+            ))
+            .await
+            .unwrap();
+
+        let scope = crate::knowledge_runtime::session_recall_scope(None);
+        let access = KnowledgeAccessContext::new(
+            crate::knowledge_runtime::agent_knowledge_scope(None),
+            PrincipalRef::new(crate::knowledge_runtime::LOCAL_USER_ID, "local_user"),
+        );
+        let hits = pool
+            .history_recall_source
+            .service()
+            .search(
+                &access,
+                SessionRecallSearchRequest {
+                    query: "silver comet".into(),
+                    scope,
+                    exclude_session_id: Some(current_id),
+                    limit: 3,
+                    max_snippet_bytes: 600,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].reference.session_id, source_id);
+        assert!(hits[0].snippet.contains("silver comet"));
+
+        pool.synchronize_history_recall(false).await.unwrap();
+        let disabled_hits = pool
+            .history_recall_source
+            .service()
+            .search(
+                &access,
+                SessionRecallSearchRequest {
+                    query: "silver comet".into(),
+                    scope: crate::knowledge_runtime::session_recall_scope(None),
+                    exclude_session_id: None,
+                    limit: 3,
+                    max_snippet_bytes: 600,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(disabled_hits.is_empty());
     }
 
     #[tokio::test]
@@ -1229,7 +1436,8 @@ mod tests {
         assert_eq!(usage.output_tokens, 5);
         assert_eq!(usage.cache_read_tokens, 3);
         assert_eq!(usage.cache_creation_tokens, 2);
-        assert_eq!(usage.total_tokens(), 22);
+        // Runtime reports cache token categories as subsets of gross input.
+        assert_eq!(usage.total_tokens(), 17);
     }
 
     #[test]

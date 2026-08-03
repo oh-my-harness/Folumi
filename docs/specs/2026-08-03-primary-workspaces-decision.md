@@ -16,8 +16,8 @@
 >
 > Amended: 2026-08-03 — The replacement proposal now defines global Saved
 > Memory and opt-in History Recall with explicit conflict/expiry rules. Saved
-> Memory is implemented; History Recall remains gated by the runtime
-> cross-Session recall prerequisite. Runtime Sessions, rather than a product
+> Memory and the opt-in runtime History Recall baseline are implemented.
+> Runtime Sessions, rather than a product
 > workspace entity, own conversation-local continuity.
 >
 > Scope: Primary navigation and the product boundaries of Knowledge Base,
@@ -115,8 +115,9 @@ A change conforms to this decision only when all of the following remain true:
   workflow without first opening Knowledge Base;
 - Memory can be opened directly, defaults to Long-term Memory, exposes a
   separate Assistant Profile tab, and provides visible Saved Memory controls;
-- History Recall remains visibly unavailable until the runtime cross-session
-  boundary is implemented; Saved Memory remains global, while Session IDs are
+- History Recall remains visibly separate and disabled by default, uses the
+  runtime cross-session boundary when enabled, and never promotes recalled
+  turns into Saved Memory; Saved Memory remains global, while Session IDs are
   provenance and recall boundaries rather than Memory scopes;
 - source links open Knowledge Base, while note links open Notebook;
 - Settings does not contain Assistant profile or the primary Notebook/Memory

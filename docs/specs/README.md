@@ -7,8 +7,9 @@ Current product and runtime-facing specs live here.
   architecture decision that keeps Knowledge Base RAG-only and preserves
   Notebook and Memory as standalone primary workspaces.
 - `2026-08-03-user-memory-redesign.md` is the accepted Memory design. Its global
-  Saved Memory baseline is implemented; opt-in History Recall remains gated by
-  the runtime cross-Session recall prerequisite.
+  Saved Memory is implemented. The opt-in runtime History Recall baseline is
+  integrated; temporary conversations, persistent local FTS, automatic-recall
+  source presentation, and offline evaluation remain Phase 2 follow-up work.
 - `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
   design and remains only as historical context.
 - `2026-07-15-persistent-tutor-design.md` defines persistent tutor identity,

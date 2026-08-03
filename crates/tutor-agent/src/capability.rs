@@ -3,7 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use llm_adapter::provider::Provider;
-use llm_harness_agent::Session;
+use llm_harness_agent::{Plugin, Session};
 use llm_harness_runtime_memory::MemoryService;
 use llm_harness_types::{AgentMessage, ExecutionEnv, RunRequest, Tool};
 use tokio_util::sync::CancellationToken;
@@ -53,6 +53,7 @@ pub struct CapabilityRouter {
     pub memory_service: Option<Arc<MemoryService>>,
     pub web_search: Option<WebSearchConfig>,
     pub product_tools: Vec<Arc<dyn Tool>>,
+    pub runtime_plugins: Vec<Arc<dyn Plugin>>,
     pub workflow_root: Option<PathBuf>,
     pub product_instruction: Option<String>,
     client: Option<Arc<dyn Provider>>,
@@ -69,6 +70,7 @@ impl CapabilityRouter {
             memory_service: None,
             web_search: None,
             product_tools: vec![],
+            runtime_plugins: vec![],
             workflow_root: None,
             product_instruction: None,
             client: None,
@@ -104,6 +106,11 @@ impl CapabilityRouter {
 
     pub fn with_product_tool(mut self, tool: Arc<dyn Tool>) -> Self {
         self.product_tools.push(tool);
+        self
+    }
+
+    pub fn with_runtime_plugin(mut self, plugin: Arc<dyn Plugin>) -> Self {
+        self.runtime_plugins.push(plugin);
         self
     }
 

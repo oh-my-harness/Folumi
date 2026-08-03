@@ -4,7 +4,7 @@ Folumi 是一个本地优先的个人知识助手。它把长期资料分成三�
 
 - **Sources**：只读的原始资料，供检索、阅读和引用；
 - **Notes**：用户拥有的 Markdown 笔记，可直接编辑和导出；
-- **Memory**：管理用户确认的长期条目与助手配置；可选历史检索尚未开放。
+- **Memory**：管理用户确认的长期条目与助手配置，并可选择开启只读的历史检索。
 
 产品只有一个助手，不需要创建或选择 Tutor，也没有 Quiz、Space、Student Profile 或独立 Research 模式。
 
@@ -66,10 +66,12 @@ Memory 页面默认打开“长期记忆”选项卡。Saved Memory 默认关闭
 ### 4.2 Saved Memory 与 History Recall
 
 - Saved Memory 只保存用户明确要求或确认的事实、偏好、目标和连续性事项；
-- History Recall 是默认关闭的独立能力，只读检索 runtime Sessions，不会自动形成 Saved Memory；当前 runtime 尚无稳定的跨 Session 检索投影，因此界面显示但不可开启；
+- History Recall 是默认关闭的独立能力。先开启 Memory，再开启“历史检索”后，新 run 会通过 runtime 的派生索引只读检索符合权限和生命周期条件的旧 Sessions；检索结果不会自动形成 Saved Memory；
+- 当前实现使用 runtime 的内存投影，并在应用启动或设置切换时从 Session 权威数据重建；删除 Session 会通过 runtime observer 使派生结果失效；
+- 对模型主动执行的历史读取，来源可跳转到对应会话；自动注入的召回片段尚不能在产品 trace 中直接展示来源，持久本地 FTS、临时对话和离线召回评测仍属于 Phase 2 后续工作；
 - 每条 Saved Memory 是独立可见、带生命周期的全局产品条目，不再使用 L1/L2/L3 文件层次；
 - 同一主题的冲突条目会在确认后替代旧条目；完成、已替代和过期内容不参与正常召回；
-- 当前会话内容仍属于 runtime Session；临时对话不读写记忆，也不进入历史检索索引；
+- 当前会话内容仍属于 runtime Session；临时对话的完整隔离能力尚未开放；
 - Session 负责会话内连续性，也可以作为 Saved Memory 的来源，但不是 Saved Memory 的另一种作用域。
 
 开启 Saved Memory 后，新一轮助手运行可以按需检索有效条目。只有用户明确要求“记住”或“忘记”时，助手才可提出变更；界面会展示最终内容并要求逐次确认，拒绝后不会写入。直接在 Memory 页面操作同样遵守冲突、revision 和彻底遗忘规则。
@@ -107,7 +109,7 @@ cargo run -p tutor-web -- --data-dir "D:\FolumiData"
 - 文档无法检索：检查导入状态与 embedding 配置，必要时重试或重建索引；
 - 引用打不开：确认原始文件仍存在，并在知识库中重新处理来源；
 - 外部 Vault 不更新：确认目录权限后手动刷新；文件监听状态会显示最近刷新结果；
-- 不希望使用记忆：关闭 Memory 总开关即可让新 run 不挂载记忆能力；已有条目仍保留并可在页面中逐项彻底遗忘。History Recall 当前不可开启。
+- 不希望使用记忆：关闭 Memory 总开关即可让新 run 不挂载 Saved Memory 或 History Recall；已有条目仍保留并可在页面中逐项彻底遗忘。
 
 ## 7. 当前边界
 

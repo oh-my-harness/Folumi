@@ -64,3 +64,35 @@ test('ignores failed or unverified knowledge read payloads', () => {
     },
   }), [])
 })
+
+test('maps a runtime history read to its source conversation', () => {
+  const citations = knowledgeCitationsFromTrace({
+    kind: 'tool_result',
+    tool: 'knowledge_read',
+    ok: true,
+    details: {
+      citation: {
+        handle: '[K:run-scope:2]',
+        reference: {
+          source_id: 'session_recall',
+          item_id: 'runtime-opaque-reference',
+          revision: '7',
+        },
+      },
+      uri: 'chat:session-a:user-entry-a',
+      truncated: false,
+    },
+  })
+
+  assert.deepEqual(citations, [{
+    index: 0,
+    source: 'session-a',
+    text: 'Runtime 历史检索来源 [K:run-scope:2]',
+    kind: 'rag',
+    title: '历史对话 · session-a',
+    kb: undefined,
+    documentId: undefined,
+    chunkId: undefined,
+    rawSource: 'chat:session-a:user-entry-a',
+  }])
+})

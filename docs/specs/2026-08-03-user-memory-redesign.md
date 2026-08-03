@@ -1,10 +1,10 @@
 # Folumi 用户记忆系统重设计
 
-> 状态：已接受（Accepted）——Phase 1 Saved Memory 已于 2026-08-03 实现；Phase 2–3 仍待实施
+> 状态：已接受（Accepted）——Phase 1 Saved Memory 已实现；Phase 2 History Recall 基线已接入，剩余增强项仍在推进
 >
 > 决策日期：2026-08-03
 >
-> 最近修订：2026-08-03——Saved Memory 收敛为全局长期条目；会话内连续性由 runtime Session 负责，历史检索继续按框架能力门槛保持关闭
+> 最近修订：2026-08-03——Saved Memory 收敛为全局长期条目；会话内连续性由 runtime Session 负责；默认关闭的历史检索已接入 runtime Session Recall
 >
 > 替代范围：早期设计与实施计划中描述的 L1/L2/L3 记忆模型及记忆整理工作流
 
@@ -353,15 +353,24 @@ Memory 页面还提供有效期修改、显式重新确认和 JSON 导出；导�
 
 ### Phase 2：History Recall
 
-状态：待 runtime 提供稳定的跨 Session 搜索与精确 turn 投影契约，当前开关不可开启；
-上游跟踪见 [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104)。
+状态：进行中。runtime 的跨 Session 搜索与精确 turn 投影契约已在
+[llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104)
+及 draft PR #105 中形成，Folumi 已完成第一轮下游接入和边界验证。
 
-- 先补齐或确认 runtime 跨 Session 搜索/投影边界；
-- 历史检索独立开关，默认关闭；
-- 临时对话；
-- 本地 FTS 候选检索、精确 turn 读取、来源跳转和删除失效；
-- 建立离线评测集，记录相关率、错误召回率、延迟和上下文占用；
-- 不把历史片段自动提升为 Saved Memory。
+- [x] 确认并接入 runtime 跨 Session 搜索、可重建投影和精确 turn 读取边界；
+- [x] 历史检索独立开关，默认关闭；Memory 总开关关闭时不运行；
+- [ ] 临时对话；
+- [ ] 持久本地 FTS 候选索引；当前先使用 runtime 内存投影并在启动时重建；
+- [x] runtime observer 驱动的 Session 更新和删除失效；
+- [x] 模型主动执行 `knowledge_read` 时提供精确会话/turn 来源跳转；
+- [ ] 自动注入的历史片段在产品 trace 中展示可跳转来源；
+- [ ] 建立离线评测集，记录相关率、错误召回率、延迟和上下文占用；
+- [x] 不把历史片段自动提升为 Saved Memory。
+
+当前集成限制记录在 `docs/framework-feedback.md`：runtime 目前从完整
+`KnowledgeAccessContext.scope` 推导 Recall scope，因此 Folumi 的知识库选择也会参与
+精确 scope 匹配；自动注入插件保留引用但尚未向产品 trace 暴露。产品不会为绕过这些限制
+另建 Session 正文库或上下文拼装链路。
 
 ### Phase 3：受控增强
 

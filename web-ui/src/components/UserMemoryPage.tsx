@@ -127,14 +127,14 @@ export function UserMemoryPage({
     })
   }, [items, kindFilter, query, statusFilter])
 
-  const updateMemorySettings = async (enabled: boolean) => {
+  const updateMemorySettings = async (patch: Partial<MemorySettings>) => {
     setBusy(true)
     setError('')
     try {
       const response = await fetch('/api/memory/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify(patch),
       })
       if (!response.ok) throw new Error(await apiError(response))
       setSettings(await response.json() as MemorySettings)
@@ -281,7 +281,7 @@ export function UserMemoryPage({
               </div>
               <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-gray-700">
                 <span>{settings.enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}</span>
-                <input className="peer sr-only" type="checkbox" checked={settings.enabled} disabled={busy || loading} onChange={(event) => void updateMemorySettings(event.target.checked)} />
+                <input className="peer sr-only" type="checkbox" checked={settings.enabled} disabled={busy || loading} onChange={(event) => void updateMemorySettings({ enabled: event.target.checked })} />
                 <span className="relative h-6 w-11 rounded-full bg-gray-300 transition peer-checked:bg-blue-600 peer-disabled:opacity-60 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
               </label>
             </div>
@@ -359,7 +359,14 @@ export function UserMemoryPage({
           </section>
 
           <section className="rounded-xl border border-gray-200 bg-gray-50 p-5">
-            <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-200 text-gray-600"><History size={18} /></span><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-gray-900">{english ? 'History Recall' : '历史检索'}</h2><Badge text={english ? 'Not available yet' : '暂未开放'} tone="muted" /></div><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'The runtime does not yet provide the required cross-session recall projection. This stays off instead of creating a second conversation store.' : 'runtime 尚未提供所需的跨会话检索投影。该能力保持关闭，不在产品侧复制第二套会话仓库。'}</p></div></div>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex max-w-3xl items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700"><History size={18} /></span><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-gray-900">{english ? 'History Recall' : '历史检索'}</h2><Badge text={english ? 'Runtime powered' : '由 runtime 提供'} tone="blue" /></div><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'When enabled, relevant turns from other eligible durable sessions can be added to the current run as read-only context. Conversation bodies remain in runtime Sessions and never become Saved Memory automatically.' : '开启后，runtime 可以把其他符合权限的持久会话片段作为只读上下文提供给当前 run。会话正文仍只保存在 runtime Session 中，不会自动变成 Saved Memory。'}</p>{!settings.enabled && <p className="mt-2 text-xs text-amber-700">{english ? 'Enable Memory first to use History Recall.' : '请先开启 Memory，再启用历史检索。'}</p>}</div></div>
+              <label className={`flex items-center gap-3 text-sm font-medium ${settings.enabled ? 'cursor-pointer text-gray-700' : 'cursor-not-allowed text-gray-400'}`}>
+                <span>{settings.history_recall_enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}</span>
+                <input className="peer sr-only" type="checkbox" checked={settings.history_recall_enabled} disabled={busy || loading || !settings.enabled} onChange={(event) => void updateMemorySettings({ history_recall_enabled: event.target.checked })} />
+                <span className="relative h-6 w-11 rounded-full bg-gray-300 transition peer-checked:bg-blue-600 peer-disabled:opacity-60 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
+              </label>
+            </div>
           </section>
         </div>
       ) : (

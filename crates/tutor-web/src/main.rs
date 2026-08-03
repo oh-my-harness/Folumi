@@ -26,7 +26,6 @@ async fn main() -> anyhow::Result<()> {
         spawn_stdin_close_watchdog();
     }
     std::fs::create_dir_all(&config.data_dir)?;
-    let pool = session::SessionPool::new_with_root(config.data_dir.join("sessions"));
     let knowledge = knowledge_store::KnowledgeStore::new_with_path(
         config.data_dir.join("knowledge-bases.json"),
     );
@@ -42,6 +41,13 @@ async fn main() -> anyhow::Result<()> {
     let memory = std::sync::Arc::new(memory_store::MemoryStore::new_with_path(
         config.data_dir.join("memory-v2.sqlite3"),
     )?);
+    let memory_settings = memory.settings()?;
+    let pool = session::SessionPool::new_with_root_and_history_recall(
+        config.data_dir.join("sessions"),
+        memory_settings.history_recall_enabled,
+    );
+    pool.synchronize_history_recall(memory_settings.history_recall_enabled)
+        .await?;
     let rag_root = config.data_dir.join("rag");
     let runtime_security = knowledge_runtime::AgentRuntimeSecurity::generate();
 
@@ -64,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
             notebook.clone(),
         ))
         .merge(routes::settings::settings_router(settings.clone()))
-        .merge(routes::memory::memory_router(memory.clone()))
+        .merge(routes::memory::memory_router(memory.clone(), pool.clone()))
         .merge(routes::sessions::sessions_router(
             pool.clone(),
             knowledge.clone(),

@@ -383,7 +383,8 @@ History Recall；后者只检索 runtime Sessions，不复制会话正文或自�
 - [x] 按修订提案实现全局 Saved Memory 和冲突失效规则；旧 Tutor 私有连续性不读取、
   不导入，也不静默合并到当前记忆；
 - [x] 增加 Memory 总开关、逐项来源、编辑、完成、置顶和彻底遗忘；
-- [ ] 在 runtime 跨 Session 检索边界可用后，实现默认关闭的 History Recall、临时对话和来源跳转；
+- [x] 接入默认关闭的 runtime History Recall 基线，包括可重建投影、精确 turn 读取、删除失效和模型主动读取的会话来源跳转；
+- [ ] 完成临时对话、持久本地 FTS、自动召回 trace 来源展示和离线评测；
 - [x] 明确不引入 workspace 记忆作用域；runtime Session 负责会话内连续性，并仅作为 Saved Memory 的来源引用；
 - [ ] 使用 ContextAttachment 支持临时资料，但不默认自动召回（runtime
   尚无一等临时附件边界，已记录到 `docs/framework-feedback.md` 和

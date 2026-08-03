@@ -565,6 +565,14 @@ async fn update_session(
         }
     }
 
+    if let Err(error) = pool.refresh_history_recall_scope(&id).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": error.to_string() })),
+        )
+            .into_response();
+    }
+
     (
         StatusCode::OK,
         Json(serde_json::json!({ "id": id, "updated": true })),

@@ -1,11 +1,18 @@
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
+use llm_harness_agent::SessionRecallScope;
 use llm_harness_runtime_knowledge::{
     AuthorizationDecision, EvidenceAuthority, KnowledgeAccessContext, KnowledgeAccessControl,
     KnowledgeAction, KnowledgeAuthorizer, KnowledgeCitationPolicy, KnowledgeCitationRequirement,
-    KnowledgeError, KnowledgeResourceRef, KnowledgeSource,
+    KnowledgeContent, KnowledgeError, KnowledgeReadRequest, KnowledgeRequestContext,
+    KnowledgeResourceRef, KnowledgeScope, KnowledgeSearchProjection, KnowledgeSource,
+    KnowledgeSourceDescriptor, SourceSearchPage, SourceSearchRequest,
 };
+use llm_harness_runtime_session_recall::{
+    SESSION_RECALL_SOURCE_ID, SessionRecallKnowledgeSource, SessionRecallRef,
+};
+use tokio_util::sync::CancellationToken;
 
 use crate::memory_approval::WebMemoryApprovalCoordinator;
 use crate::memory_runtime::{
@@ -14,9 +21,98 @@ use crate::memory_runtime::{
 };
 use crate::memory_store::MemoryStore;
 
+pub(crate) const LOCAL_USER_ID: &str = "local-user";
+
+pub(crate) fn agent_knowledge_scope(knowledge_base_id: Option<&str>) -> KnowledgeScope {
+    let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
+    scope.tenant = Some(LOCAL_USER_ID.into());
+    if let Some(knowledge_base_id) = knowledge_base_id {
+        scope.attributes.insert(
+            tutor_rag::KNOWLEDGE_BASE_SCOPE_ATTRIBUTE.into(),
+            knowledge_base_id.to_string(),
+        );
+    }
+    // These values describe the trusted local-user boundary. Whether Saved
+    // Memory is installed for a run remains controlled independently.
+    scope.attributes.insert(
+        USER_MEMORY_PROFILE_ATTRIBUTE.into(),
+        "interactive_mutation".into(),
+    );
+    scope
+        .attributes
+        .insert(USER_MEMORY_PRINCIPAL_ATTRIBUTE.into(), LOCAL_USER_ID.into());
+    scope
+}
+
+pub(crate) fn session_recall_scope(knowledge_base_id: Option<&str>) -> SessionRecallScope {
+    let scope = agent_knowledge_scope(knowledge_base_id);
+    SessionRecallScope {
+        namespace: scope.namespace,
+        tenant: scope.tenant,
+        project: scope.project,
+        attributes: scope.attributes,
+    }
+}
+
 pub(crate) struct UserMemoryRuntimeInput {
     pub store: Arc<MemoryStore>,
     pub approver: Arc<WebMemoryApprovalCoordinator>,
+}
+
+/// Adds product navigation metadata without changing runtime recall authority,
+/// indexing, filtering, or exact-read behavior.
+pub(crate) struct NavigableSessionRecallSource {
+    inner: Arc<SessionRecallKnowledgeSource>,
+}
+
+impl NavigableSessionRecallSource {
+    pub(crate) fn new(inner: Arc<SessionRecallKnowledgeSource>) -> Self {
+        Self { inner }
+    }
+
+    fn source_uri(reference: &llm_harness_runtime_knowledge::KnowledgeRef) -> Option<String> {
+        SessionRecallRef::decode(&reference.item_id)
+            .ok()
+            .map(|reference| format!("chat:{}:{}", reference.session_id, reference.user_entry_id))
+    }
+}
+
+impl KnowledgeSource for NavigableSessionRecallSource {
+    fn descriptor(&self) -> &KnowledgeSourceDescriptor {
+        self.inner.descriptor()
+    }
+
+    fn search_projection(&self) -> KnowledgeSearchProjection {
+        self.inner.search_projection()
+    }
+
+    fn search<'a>(
+        &'a self,
+        ctx: KnowledgeRequestContext<'a>,
+        request: SourceSearchRequest,
+        abort: CancellationToken,
+    ) -> BoxFuture<'a, Result<SourceSearchPage, KnowledgeError>> {
+        Box::pin(async move {
+            let mut page = self.inner.search(ctx, request, abort).await?;
+            for hit in &mut page.hits {
+                hit.uri = Self::source_uri(&hit.reference);
+            }
+            Ok(page)
+        })
+    }
+
+    fn read<'a>(
+        &'a self,
+        ctx: KnowledgeRequestContext<'a>,
+        request: KnowledgeReadRequest,
+        abort: CancellationToken,
+    ) -> BoxFuture<'a, Result<KnowledgeContent, KnowledgeError>> {
+        Box::pin(async move {
+            let mut content = self.inner.read(ctx, request, abort).await?;
+            content.uri = Self::source_uri(&content.reference);
+            Ok(content)
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -49,9 +145,10 @@ pub(crate) fn install_agent_knowledge_and_memory(
     mut router: tutor_agent::CapabilityRouter,
     course_source: Option<Arc<dyn KnowledgeSource>>,
     user_memory: Option<UserMemoryRuntimeInput>,
+    history_recall_source: Option<Arc<dyn KnowledgeSource>>,
     security: &AgentRuntimeSecurity,
 ) -> tutor_agent::Result<tutor_agent::CapabilityRouter> {
-    if course_source.is_none() && user_memory.is_none() {
+    if course_source.is_none() && user_memory.is_none() && history_recall_source.is_none() {
         return Ok(router);
     }
     let access_control = agent_knowledge_access_control();
@@ -79,6 +176,13 @@ pub(crate) fn install_agent_knowledge_and_memory(
             KnowledgeCitationRequirement::Optional,
         );
         router = router.with_memory_service(Arc::new(service));
+    }
+    if let Some(source) = history_recall_source {
+        sources.push(source);
+        citation_builder = citation_builder.source(
+            SESSION_RECALL_SOURCE_ID,
+            KnowledgeCitationRequirement::Optional,
+        );
     }
     let citation_policy = citation_builder
         .build()
@@ -148,11 +252,44 @@ impl KnowledgeAuthorizer for AgentKnowledgeAuthorizer {
                         memory_profile == Some("interactive_mutation")
                     }
                 };
-            Ok(if course_allowed || memory_allowed {
-                AuthorizationDecision::Allow
-            } else {
-                AuthorizationDecision::Deny
-            })
+            let history_recall_allowed = source_id == SESSION_RECALL_SOURCE_ID
+                && matches!(
+                    action,
+                    KnowledgeAction::Discover | KnowledgeAction::Search | KnowledgeAction::Read
+                );
+            Ok(
+                if course_allowed || memory_allowed || history_recall_allowed {
+                    AuthorizationDecision::Allow
+                } else {
+                    AuthorizationDecision::Deny
+                },
+            )
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use llm_harness_runtime_session_recall::{SessionRecallRef, to_knowledge_ref};
+    use llm_harness_types::EntryId;
+
+    use super::NavigableSessionRecallSource;
+
+    #[test]
+    fn history_reference_becomes_a_navigable_chat_uri() {
+        let user_entry_id = EntryId::new();
+        let reference = to_knowledge_ref(&SessionRecallRef {
+            session_id: "session-a".into(),
+            user_entry_id,
+            assistant_entry_id: Some(EntryId::new()),
+            branch_leaf_id: EntryId::new(),
+            revision: 4,
+        })
+        .unwrap();
+
+        assert_eq!(
+            NavigableSessionRecallSource::source_uri(&reference),
+            Some(format!("chat:session-a:{user_entry_id}"))
+        );
     }
 }

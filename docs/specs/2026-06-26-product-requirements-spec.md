@@ -76,8 +76,8 @@ The accepted workspace boundaries and change-control rule are recorded in
 > Transition status (2026-08-03): the former L1/L2/L3 activity-capture and
 > consolidation system is retired. REQ-400 through REQ-415 describe the
 > replacement product target. Global Saved Memory, its lifecycle rules,
-> UI controls, and runtime mutation gate are active. History Recall remains
-> disabled until the runtime cross-Session contract exists. Runtime Sessions
+> UI controls, and runtime mutation gate are active. The default-off History
+> Recall baseline now uses the runtime cross-Session contract. Runtime Sessions
 > own conversation-local continuity and are not Saved Memory scopes.
 
 - **REQ-399** Memory shall be a standalone primary workspace for configuring

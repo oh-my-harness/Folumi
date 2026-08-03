@@ -5,7 +5,6 @@ use std::sync::{
 };
 
 use crate::memory_approval::{ApprovalResponseOutcome, WebMemoryApprovalCoordinator};
-use crate::memory_runtime::{USER_MEMORY_PRINCIPAL_ATTRIBUTE, USER_MEMORY_PROFILE_ATTRIBUTE};
 use crate::memory_store::MemoryStore;
 use crate::notebook_store::NotebookStore;
 use crate::notebook_tool::{
@@ -27,11 +26,10 @@ use axum::{
 };
 use futures::{SinkExt, StreamExt, future::BoxFuture};
 use llm_harness_runtime_audit_jsonl::JsonlAuditSink;
-use llm_harness_runtime_knowledge::{
-    KnowledgeAccessContext, KnowledgeScope, KnowledgeSource, PrincipalRef,
-};
+use llm_harness_runtime_knowledge::{KnowledgeAccessContext, KnowledgeSource, PrincipalRef};
 use llm_harness_runtime_memory::MemorySessionId;
 use llm_harness_runtime_sandbox_os::OsEnv;
+use llm_harness_runtime_session_recall::HistoryRecallRequest;
 use llm_harness_types::RunRequest;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
@@ -432,29 +430,14 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
 }
 
 fn agent_knowledge_access_context(
-    session_id: &str,
     knowledge_base_id: Option<&str>,
     memory_enabled: bool,
 ) -> KnowledgeAccessContext {
-    let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
-    scope.project = Some(session_id.to_string());
-    if let Some(knowledge_base_id) = knowledge_base_id {
-        scope.attributes.insert(
-            tutor_rag::KNOWLEDGE_BASE_SCOPE_ATTRIBUTE.into(),
-            knowledge_base_id.to_string(),
-        );
-    }
-    if memory_enabled {
-        scope.attributes.insert(
-            USER_MEMORY_PROFILE_ATTRIBUTE.into(),
-            "interactive_mutation".into(),
-        );
-        scope
-            .attributes
-            .insert(USER_MEMORY_PRINCIPAL_ATTRIBUTE.into(), "local-user".into());
-    }
-    let mut access =
-        KnowledgeAccessContext::new(scope, PrincipalRef::new("local-user", "local_user"));
+    let scope = crate::knowledge_runtime::agent_knowledge_scope(knowledge_base_id);
+    let mut access = KnowledgeAccessContext::new(
+        scope,
+        PrincipalRef::new(crate::knowledge_runtime::LOCAL_USER_ID, "local_user"),
+    );
     access.authorization_version = Some(format!(
         "local-user:agent-knowledge:v1:saved-memory:{}",
         if memory_enabled {
@@ -471,14 +454,17 @@ fn agent_run_request(
     session_id: &str,
     knowledge_base_id: Option<&str>,
     memory_enabled: bool,
+    history_recall_enabled: bool,
 ) -> tutor_agent::Result<RunRequest> {
     let mut request = RunRequest::from_text(content);
-    if knowledge_base_id.is_some() || memory_enabled {
+    if knowledge_base_id.is_some() || memory_enabled || history_recall_enabled {
         request = request.with_extension(agent_knowledge_access_context(
-            session_id,
             knowledge_base_id,
             memory_enabled,
         ));
+    }
+    if history_recall_enabled {
+        request = request.with_extension(HistoryRecallRequest::new(session_id));
     }
     let runtime_session_id = MemorySessionId::new(session_id)
         .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?;
@@ -623,10 +609,11 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             }
             _ => None,
         };
-        let memory_enabled = memory
+        let memory_settings = memory
             .settings()
-            .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?
-            .enabled;
+            .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?;
+        let memory_enabled = memory_settings.enabled;
+        let history_recall_enabled = memory_enabled && memory_settings.history_recall_enabled;
         let user_memory =
             memory_enabled.then(|| crate::knowledge_runtime::UserMemoryRuntimeInput {
                 store: memory.clone(),
@@ -636,8 +623,12 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             router,
             course_source,
             user_memory,
+            history_recall_enabled.then(|| pool.history_recall_knowledge_source()),
             &runtime_security,
         )?;
+        if history_recall_enabled {
+            router = router.with_runtime_plugin(pool.history_recall_plugin());
+        }
         if entry.capability == "research" {
             let workflow_router = router.clone();
             router = router
@@ -663,6 +654,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             &entry.id,
             entry.kb.as_deref(),
             memory_enabled,
+            history_recall_enabled,
         )?;
         let answer = router
             .run_request_with_session_cancel(
@@ -887,14 +879,16 @@ fn llm_config_for_session(config: Option<LlmSessionConfig>) -> tutor_agent::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory_runtime::USER_MEMORY_PROFILE_ATTRIBUTE;
     use crate::notebook_store::{NotebookEntryInput, NotebookEntryType};
 
     #[test]
     fn agent_knowledge_access_is_scoped_to_session_resources() {
-        let access = agent_knowledge_access_context("session-a", Some("kb-a"), true);
+        let access = agent_knowledge_access_context(Some("kb-a"), true);
 
         assert_eq!(access.scope.namespace, tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
-        assert_eq!(access.scope.project.as_deref(), Some("session-a"));
+        assert_eq!(access.scope.tenant.as_deref(), Some("local-user"));
+        assert!(access.scope.project.is_none());
         assert_eq!(
             access
                 .scope
@@ -921,7 +915,8 @@ mod tests {
 
     #[test]
     fn ordinary_agent_request_carries_typed_knowledge_context() {
-        let request = agent_run_request("hello".into(), "session-a", Some("kb-a"), true).unwrap();
+        let request =
+            agent_run_request("hello".into(), "session-a", Some("kb-a"), true, true).unwrap();
 
         assert!(request.extensions.get::<KnowledgeAccessContext>().is_some());
         assert_eq!(
@@ -929,6 +924,13 @@ mod tests {
                 .extensions
                 .get::<MemorySessionId>()
                 .map(MemorySessionId::as_str),
+            Some("session-a")
+        );
+        assert_eq!(
+            request
+                .extensions
+                .get::<HistoryRecallRequest>()
+                .map(|request| request.current_session_id.as_str()),
             Some("session-a")
         );
     }

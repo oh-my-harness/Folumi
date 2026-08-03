@@ -440,10 +440,9 @@ impl MemoryStore {
         enabled: bool,
         history_recall_enabled: bool,
     ) -> Result<MemorySettings, MemoryStoreError> {
-        if history_recall_enabled {
+        if history_recall_enabled && !enabled {
             return Err(MemoryStoreError::Validation(
-                "history recall is unavailable until the runtime session recall boundary exists"
-                    .into(),
+                "history recall requires Memory to be enabled".into(),
             ));
         }
         let connection = self.open()?;
@@ -1284,8 +1283,14 @@ mod tests {
     }
 
     #[test]
-    fn history_recall_fails_closed() {
+    fn history_recall_requires_memory_and_can_be_enabled() {
         let (_directory, store) = store();
-        assert!(store.update_settings(true, true).is_err());
+        assert!(store.update_settings(false, true).is_err());
+        assert!(
+            store
+                .update_settings(true, true)
+                .unwrap()
+                .history_recall_enabled
+        );
     }
 }

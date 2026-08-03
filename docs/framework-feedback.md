@@ -20,24 +20,35 @@
 
 ## Friction Points
 
-- **SessionRepo lacks a first-class cross-session recall/search projection**
+- **Validated 2026-08-03: runtime Session Recall is consumable, with follow-up API gaps**
   - Checked against the product pin `ee97890` on 2026-08-03 while revising the
     Folumi memory proposal.
   - Tracked upstream as
     [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104).
-  - `SessionRepo` supports create, get, list, fork, and delete, but exposes no
-    cross-session text/semantic search, stable turn-level result reference, or
-    projection invalidation contract for deleted, archived, or temporary
-    sessions.
-  - Folumi needs opt-in History Recall without copying Session bodies into a
-    second product-owned history repository or manually injecting retrieved
-    text through a parallel prompt path.
-  - Suggestion: provide a runtime-owned `SessionRecallSource` or explicitly
-    blessed projection interface that can index authorized Session turns,
-    return stable session/turn refs, perform exact reads through the Session
-    authority, receive deletion/privacy invalidations, and feed bounded results
-    into runtime context construction. The derived index should remain
-    rebuildable and must not become a second conversation authority.
+  - Draft PR #105 commit `4df283e` adds `ObservedSessionRepo`,
+    `SessionRecallProjector`, `SessionRecallKnowledgeSource`, and
+    `HistoryRecallPlugin`. Folumi now consumes that contract: Session remains
+    authoritative, the index is rebuildable, exact reads revalidate authority,
+    deletion/update invalidation flows through the observer, and recalled text
+    is injected ephemerally with bounded budgets.
+  - Downstream `tutor-web --lib` compilation succeeds. The draft PR's current
+    Ubuntu and Windows CI failures occur while fetching the private
+    `llm-api-adapter` revision (HTTP 401), before Recall tests execute.
+  - Follow-up: `SessionRecallScope` is derived by exact copying of the complete
+    `KnowledgeAccessContext.scope`. An application that uses scope attributes
+    for an independently selected Knowledge Base therefore also partitions
+    conversation recall by that Knowledge Base. A dedicated trusted Recall
+    scope extension or runtime-owned matcher would let products keep History
+    Recall security boundaries independent from unrelated Knowledge routing.
+  - Follow-up: the automatic plugin retains accepted references only in private
+    run state. Product trace/events cannot currently expose those references
+    for a source jump. Please expose bounded accepted references through a
+    typed run extension, trace event, or observational hook; model-driven
+    `knowledge_read` already supports a normal citation/source path.
+  - Follow-up: the current runtime implementation ships an in-memory index.
+    A runtime-owned persistent local FTS implementation would avoid a full
+    startup rebuild without moving Session bodies or indexing authority into
+    the product repository.
 
 - **Knowledge search requires model-provided source routing when multiple sources are visible**
   - Reproduced in the desktop app on 2026-07-30 with Learner Memory and Tutor

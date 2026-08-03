@@ -30,13 +30,19 @@ export function knowledgeCitationsFromTrace(payload: Record<string, unknown>): K
   if (!handle || (!itemId && !uri)) return []
 
   const target = knowledgeTargetFromUri(uri)
-  const source = target?.documentId || itemId || uri || 'Course knowledge'
-  const title = target?.chunkId ? `${source} · ${target.chunkId}` : source
+  const source = target?.documentId || target?.sessionId || itemId || uri || 'Knowledge source'
+  const title = target?.chunkId
+    ? `${source} · ${target.chunkId}`
+    : target?.sessionId
+      ? `历史对话 · ${target.sessionId}`
+      : source
 
   return [{
     index: 0,
     source,
-    text: `Verified course evidence ${handle}`,
+    text: target?.sessionId
+      ? `Runtime 历史检索来源 ${handle}`
+      : `Verified course evidence ${handle}`,
     kind: 'rag',
     title,
     kb: target?.kb,
@@ -47,6 +53,11 @@ export function knowledgeCitationsFromTrace(payload: Record<string, unknown>): K
 }
 
 function knowledgeTargetFromUri(uri: string | undefined) {
+  if (uri?.startsWith('chat:')) {
+    const [, sessionId, messageId] = uri.split(':')
+    if (!sessionId?.trim()) return undefined
+    return { sessionId, messageId }
+  }
   if (!uri?.startsWith('kb:')) return undefined
   const parts = uri.split(':')
   if (parts.length !== 4 || parts.some((part) => !part.trim())) return undefined
