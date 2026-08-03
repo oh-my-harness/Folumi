@@ -201,7 +201,8 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 
 ### 5.5 记忆
 
-记忆页面独立负责助手名称与行为说明、总开关、记忆列表、来源检查、编辑和遗忘。Memory 的读取和
+记忆页面使用两个选项卡：“长期记忆”默认打开，负责总开关、记忆列表、来源检查、编辑和遗忘；
+“助手配置”负责名称与行为说明。Memory 的读取和
 变更仍通过 runtime access control 与 mutation gate，不因提升为一级页面而放宽权限。
 
 ### 5.6 设置
@@ -362,6 +363,7 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 
 - [x] 将多 Tutor 收缩成一个 Assistant Profile；
 - [x] 将 Assistant Profile 的名称和行为配置归入独立 Memory 页面；
+- [x] 在 Memory 内用“长期记忆 / 助手配置”两个选项卡分离两类操作；
 - [x] 明确显示每个会话正在使用的资料范围；
 - [x] 完成 Notes 创建、更新、移动、删除确认和恢复闭环；
 - [x] 新会话统一使用 User Memory + Assistant Continuity；旧 Tutor 私有连续性不读取、

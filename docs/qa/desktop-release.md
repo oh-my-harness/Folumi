@@ -42,7 +42,7 @@ Use this checklist after running:
 - [ ] Reference one exact Note in Assistant and confirm the agent reads it on demand.
 - [ ] Create, edit, move, delete, and restore a Note; confirm all paths remain inside the configured Vault.
 - [ ] Turn Memory off and confirm a new conversation neither recalls nor proposes long-term Memory.
-- [ ] Change the Assistant name and behavior instructions from Memory, then confirm a new conversation uses the updated profile and Settings has no duplicate Assistant tab.
+- [ ] Confirm Memory defaults to the Long-term Memory tab, then switch to Assistant Profile, change the name and behavior instructions, and verify a new conversation uses them while Settings has no duplicate Assistant tab.
 - [ ] Turn Memory on, review one item, edit it, then forget it.
 - [ ] Confirm Memory contains no legacy Tutor/Quiz migration or archive controls.
 - [ ] Confirm requests to `/api/migration/legacy` return `404 Not Found`.

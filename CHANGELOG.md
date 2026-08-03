@@ -16,6 +16,8 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
   outside the active product boundary.
 - Moved the single Assistant name and behavior configuration from Settings to
   the standalone Memory workspace.
+- Split Memory into Long-term Memory and Assistant Profile tabs, keeping
+  Long-term Memory as the default view.
 - Promoted Notebook and Memory to standalone primary workspaces.
 - Limited Knowledge Base to RAG source-document management instead of mixing
   editable Notes into the same interface.

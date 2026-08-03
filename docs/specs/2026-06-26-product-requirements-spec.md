@@ -75,7 +75,9 @@ The accepted workspace boundaries and change-control rule are recorded in
 
 - **REQ-399** Memory shall be a standalone primary workspace for configuring
   the single Assistant profile and for enabling, reviewing, editing, and
-  forgetting long-term memory.
+  forgetting long-term memory. These responsibilities shall be separated into
+  Assistant Profile and Long-term Memory tabs, with Long-term Memory selected
+  by default.
 - **REQ-400** Long-term Memory shall be optional and controlled by a master
   switch.
 - **REQ-401** Users shall be able to inspect, edit, approve, reject, and forget

@@ -7,6 +7,9 @@
 > Amended: 2026-08-03 — Assistant profile configuration moved from Settings
 > to Memory by explicit product request.
 >
+> Amended: 2026-08-03 — Memory uses separate Long-term Memory and Assistant
+> Profile tabs, with Long-term Memory as the default.
+>
 > Scope: Primary navigation and the product boundaries of Knowledge Base,
 > Notebook, Memory, and Settings
 
@@ -56,10 +59,9 @@ or component consolidation without a new explicit product decision.
 ### Memory
 
 - Is a standalone primary workspace.
-- Contains the single Assistant name and behavior instructions used by new
-  conversations.
-- Contains the master switch and user-visible controls for inspecting, editing,
-  and forgetting long-term memory.
+- Uses two page-level tabs instead of one mixed form: **Long-term Memory** is
+  the default and owns the master switch plus item controls; **Assistant
+  Profile** owns the name and behavior instructions used by new conversations.
 - Does not contain legacy Tutor/Quiz migration, import, or archive controls.
 - Keeps provenance visible when available.
 - Continues to use runtime access control and mutation gates; a more prominent
@@ -98,8 +100,8 @@ A change conforms to this decision only when all of the following remain true:
 - Knowledge Base has no Notes tab and no Memory management surface;
 - Notebook can be opened directly and supports its normal note-management
   workflow without first opening Knowledge Base;
-- Memory can be opened directly and exposes Assistant profile, master switch,
-  and item controls;
+- Memory can be opened directly, defaults to Long-term Memory, and exposes a
+  separate Assistant Profile tab;
 - source links open Knowledge Base, while note links open Notebook;
 - Settings does not contain Assistant profile or the primary Notebook/Memory
   content-management experience; and

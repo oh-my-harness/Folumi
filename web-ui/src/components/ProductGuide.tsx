@@ -263,7 +263,7 @@ const chineseCopy = {
   },
   memory: {
     title: '配置助手和记忆',
-    description: '记忆页面统一管理单一助手的身份与行为，以及可见、可改、可关闭的跨会话记忆。',
+    description: '记忆页面用“长期记忆”和“助手配置”两个选项卡，分别管理跨会话信息与单一助手的身份和行为。',
     open: '打开记忆',
     items: [
       { icon: <Bot size={18} />, title: '助手配置', text: '设置所有新会话共用的助手名称和行为说明。' },
@@ -329,7 +329,7 @@ const englishCopy: typeof chineseCopy = {
   },
   memory: {
     title: 'Configure Assistant and Memory',
-    description: 'Memory manages the single Assistant identity and behavior together with visible, editable, optional cross-session context.',
+    description: 'Memory separates cross-session context and the single Assistant identity into Long-term Memory and Assistant Profile tabs.',
     open: 'Open Memory',
     items: [
       { icon: <Bot size={18} />, title: 'Assistant profile', text: 'Set the name and behavior instructions shared by new conversations.' },
