@@ -20,27 +20,26 @@
 
 ## Friction Points
 
-- **Validated 2026-08-03: runtime Session Recall is consumable, with follow-up API gaps**
-  - Checked against the product pin `ee97890` on 2026-08-03 while revising the
+- **Validated 2026-08-03: runtime Session Recall is consumable; scope and navigation gaps are resolved**
+  - Checked against the product pin `380635f` on 2026-08-03 while revising the
     Folumi memory proposal.
   - Tracked upstream as
     [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104).
-  - Draft PR #105 commit `4df283e` adds `ObservedSessionRepo`,
+  - Draft PR #105 commit `380635f` adds `ObservedSessionRepo`,
     `SessionRecallProjector`, `SessionRecallKnowledgeSource`, and
     `HistoryRecallPlugin`. Folumi consumes the observer, projector, and
     Knowledge source while deliberately not installing the automatic plugin:
     Session remains authoritative, the index is rebuildable, exact reads
     revalidate authority, and deletion/update invalidation flows through the
     observer.
-  - Downstream `tutor-web --lib` compilation succeeds. The draft PR's current
-    Ubuntu and Windows CI failures occur while fetching the private
-    `llm-api-adapter` revision (HTTP 401), before Recall tests execute.
-  - Follow-up: `SessionRecallScope` is derived by exact copying of the complete
-    `KnowledgeAccessContext.scope`. An application that uses scope attributes
-    for an independently selected Knowledge Base therefore also partitions
-    conversation recall by that Knowledge Base. A dedicated trusted Recall
-    scope extension or runtime-owned matcher would let products keep History
-    Recall security boundaries independent from unrelated Knowledge routing.
+  - Downstream `tutor-web --lib` passes all 99 tests and strict local Clippy.
+    CI was deliberately not evaluated for this follow-up.
+  - Resolved in `380635f`: runs now carry a trusted
+    `SessionRecallAccessContext` whose partition and current Session ID are
+    independent of `KnowledgeAccessContext.scope`. Folumi uses one stable
+    local-user History scope, so selecting another Knowledge Base no longer
+    hides prior conversation history. Model-driven tools need the Recall
+    context but do not need the automatic `HistoryRecallRequest` marker.
   - Follow-up: the optional automatic plugin retains accepted references only
     in private run state. A product choosing that mode cannot expose those
     references through trace/events for a source jump. Folumi does not install
@@ -52,13 +51,10 @@
     A runtime-owned persistent local FTS implementation would avoid a full
     startup rebuild without moving Session bodies or indexing authority into
     the product repository.
-  - Follow-up: `SessionRecallKnowledgeSource` returns stable typed references
-    and reference metadata, but its search hits and exact reads currently leave
-    `uri` empty. Folumi uses a thin, boundary-tested wrapper around the public
-    `SessionRecallRef::decode` API to expose `chat:<session>:<entry>` navigation.
-    A runtime-provided typed navigation target or source URI would remove this
-    product-specific presentation adapter without weakening reference opacity
-    at the model boundary.
+  - Resolved in `380635f`: `SessionRecallKnowledgeSource` exposes a typed
+    navigation target and accepts an application URI mapper. Folumi configures
+    `chat:<session>:<entry>` directly on the runtime source and removed its
+    delegating Knowledge-source wrapper.
 
 - **Knowledge search requires model-provided source routing when multiple sources are visible**
   - Reproduced in the desktop app on 2026-07-30 with Learner Memory and Tutor

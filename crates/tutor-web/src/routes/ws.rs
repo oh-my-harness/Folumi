@@ -29,7 +29,7 @@ use llm_harness_runtime_audit_jsonl::JsonlAuditSink;
 use llm_harness_runtime_knowledge::{KnowledgeAccessContext, KnowledgeSource, PrincipalRef};
 use llm_harness_runtime_memory::MemorySessionId;
 use llm_harness_runtime_sandbox_os::OsEnv;
-use llm_harness_runtime_session_recall::HistoryRecallRequest;
+use llm_harness_runtime_session_recall::SessionRecallAccessContext;
 use llm_harness_types::RunRequest;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
@@ -466,7 +466,10 @@ fn agent_run_request(
         ));
     }
     if history_recall_enabled {
-        request = request.with_extension(HistoryRecallRequest::new(session_id));
+        request = request.with_extension(
+            SessionRecallAccessContext::new(crate::knowledge_runtime::session_recall_scope())
+                .with_current_session_id(session_id),
+        );
     }
     let runtime_session_id = MemorySessionId::new(session_id)
         .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?;
@@ -924,7 +927,18 @@ mod tests {
         let request =
             agent_run_request("hello".into(), "session-a", Some("kb-a"), true, true).unwrap();
 
-        assert!(request.extensions.get::<KnowledgeAccessContext>().is_some());
+        let knowledge = request
+            .extensions
+            .get::<KnowledgeAccessContext>()
+            .expect("knowledge access context is installed");
+        assert_eq!(
+            knowledge
+                .scope
+                .attributes
+                .get(tutor_rag::KNOWLEDGE_BASE_SCOPE_ATTRIBUTE)
+                .map(String::as_str),
+            Some("kb-a")
+        );
         assert_eq!(
             request
                 .extensions
@@ -932,13 +946,17 @@ mod tests {
                 .map(MemorySessionId::as_str),
             Some("session-a")
         );
+        let recall = request
+            .extensions
+            .get::<SessionRecallAccessContext>()
+            .expect("history recall access context is installed");
         assert_eq!(
-            request
-                .extensions
-                .get::<HistoryRecallRequest>()
-                .map(|request| request.current_session_id.as_str()),
-            Some("session-a")
+            recall.scope,
+            crate::knowledge_runtime::session_recall_scope()
         );
+        assert_ne!(recall.scope.namespace, knowledge.scope.namespace);
+        assert!(recall.scope.attributes.is_empty());
+        assert_eq!(recall.current_session_id.as_deref(), Some("session-a"));
     }
 
     #[test]

@@ -13,7 +13,7 @@ use llm_harness_agent::{
 use llm_harness_runtime_knowledge::KnowledgeSource;
 use llm_harness_runtime_session_recall::{
     InMemorySessionRecallIndex, SessionRecallIndex, SessionRecallKnowledgeSource,
-    SessionRecallProjector, SessionRecallService,
+    SessionRecallNavigationTarget, SessionRecallProjector, SessionRecallService,
 };
 use llm_harness_types::{
     AgentMessage, AssistantMessageKind, ContentBlock, EntryId, SessionError, TokenUsage,
@@ -219,7 +219,13 @@ impl SessionPool {
             product_metadata: Mutex::new(product_metadata),
             product_metadata_path,
             repo,
-            history_recall_source: Arc::new(SessionRecallKnowledgeSource::new(service)),
+            history_recall_source: Arc::new(
+                SessionRecallKnowledgeSource::new(service).with_uri_mapper(
+                    |target: &SessionRecallNavigationTarget| {
+                        Some(format!("chat:{}:{}", target.session_id, target.entry_id))
+                    },
+                ),
+            ),
             history_recall_projector: projector,
             history_recall_enabled: AtomicBool::new(history_recall_enabled),
             history_recall_update: tokio::sync::Mutex::new(()),
@@ -231,29 +237,19 @@ impl SessionPool {
     }
 
     pub fn history_recall_knowledge_source(&self) -> Arc<dyn KnowledgeSource> {
-        Arc::new(crate::knowledge_runtime::NavigableSessionRecallSource::new(
-            self.history_recall_source.clone(),
-        ))
+        self.history_recall_source.clone()
     }
 
     pub async fn synchronize_history_recall(&self, enabled: bool) -> anyhow::Result<()> {
         let _guard = self.history_recall_update.lock().await;
         let sessions = self.repo.list(ListSessionOptions::default()).await?;
         for metadata in sessions {
-            let knowledge_base_id = self
-                .product_metadata
-                .lock()
-                .unwrap()
-                .get(&metadata.id)
-                .and_then(|product| product.kb.as_deref().map(str::to_string));
             let settings = if enabled {
                 SessionRecallSettings {
                     durability: metadata.durability,
                     lifecycle: metadata.lifecycle,
                     policy: SessionRecallPolicy::Enabled,
-                    scope: Some(crate::knowledge_runtime::session_recall_scope(
-                        knowledge_base_id.as_deref(),
-                    )),
+                    scope: Some(crate::knowledge_runtime::session_recall_scope()),
                 }
             } else {
                 SessionRecallSettings {
@@ -282,22 +278,18 @@ impl SessionPool {
             return Ok(());
         }
         let _guard = self.history_recall_update.lock().await;
-        let knowledge_base_id = self
-            .product_metadata
-            .lock()
-            .unwrap()
-            .get(session_id)
-            .and_then(|product| product.kb.as_deref().map(str::to_string));
         let session = Session::new(self.repo.open(session_id).await?);
         let metadata = session.metadata().await?;
+        let scope = crate::knowledge_runtime::session_recall_scope();
+        if metadata.recall_scope.as_ref() == Some(&scope) {
+            return Ok(());
+        }
         session
             .update_recall_settings(SessionRecallSettings {
                 durability: metadata.durability,
                 lifecycle: metadata.lifecycle,
                 policy: SessionRecallPolicy::Enabled,
-                scope: Some(crate::knowledge_runtime::session_recall_scope(
-                    knowledge_base_id.as_deref(),
-                )),
+                scope: Some(scope),
             })
             .await
     }
@@ -354,7 +346,7 @@ impl SessionPool {
                 },
                 recall_scope: self
                     .history_recall_enabled()
-                    .then(|| crate::knowledge_runtime::session_recall_scope(kb.as_deref())),
+                    .then(crate::knowledge_runtime::session_recall_scope),
             })
             .await?;
         let meta = storage.metadata().await?;
@@ -1239,8 +1231,12 @@ fn u32_from_json(value: Option<&serde_json::Value>) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use llm_harness_runtime_knowledge::{KnowledgeAccessContext, PrincipalRef};
-    use llm_harness_runtime_session_recall::SessionRecallSearchRequest;
+    use llm_harness_runtime_knowledge::{
+        KnowledgeAccessContext, KnowledgeRequestContext, PrincipalRef, SourceSearchRequest,
+    };
+    use llm_harness_runtime_session_recall::{
+        SessionRecallAccessContext, SessionRecallSearchRequest,
+    };
 
     fn test_pool() -> Arc<SessionPool> {
         SessionPool::new_with_root(
@@ -1291,7 +1287,9 @@ mod tests {
             .await
             .unwrap();
 
-        let scope = crate::knowledge_runtime::session_recall_scope(None);
+        let recall =
+            SessionRecallAccessContext::new(crate::knowledge_runtime::session_recall_scope())
+                .with_current_session_id(current_id);
         let access = KnowledgeAccessContext::new(
             crate::knowledge_runtime::agent_knowledge_scope(None),
             PrincipalRef::new(crate::knowledge_runtime::LOCAL_USER_ID, "local_user"),
@@ -1301,10 +1299,9 @@ mod tests {
             .service()
             .search(
                 &access,
+                &recall,
                 SessionRecallSearchRequest {
                     query: "silver comet".into(),
-                    scope,
-                    exclude_session_id: Some(current_id),
                     limit: 3,
                     max_snippet_bytes: 600,
                 },
@@ -1317,16 +1314,43 @@ mod tests {
         assert_eq!(hits[0].reference.session_id, source_id);
         assert!(hits[0].snippet.contains("silver comet"));
 
+        let run = llm_harness_types::RunContext::new(
+            llm_harness_types::RunRequest::from_text("silver comet").with_extension(recall.clone()),
+        );
+        let page = pool
+            .history_recall_source
+            .search(
+                KnowledgeRequestContext {
+                    run: &run,
+                    access: &access,
+                },
+                SourceSearchRequest {
+                    query: "silver comet".into(),
+                    filters: vec![],
+                    limit: 3,
+                    cursor: None,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(page.hits.len(), 1);
+        assert!(
+            page.hits[0]
+                .uri
+                .as_deref()
+                .is_some_and(|uri| uri.starts_with(&format!("chat:{source_id}:")))
+        );
+
         pool.synchronize_history_recall(false).await.unwrap();
         let disabled_hits = pool
             .history_recall_source
             .service()
             .search(
                 &access,
+                &SessionRecallAccessContext::new(crate::knowledge_runtime::session_recall_scope()),
                 SessionRecallSearchRequest {
                     query: "silver comet".into(),
-                    scope: crate::knowledge_runtime::session_recall_scope(None),
-                    exclude_session_id: None,
                     limit: 3,
                     max_snippet_bytes: 600,
                 },

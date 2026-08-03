@@ -5,14 +5,9 @@ use llm_harness_agent::SessionRecallScope;
 use llm_harness_runtime_knowledge::{
     AuthorizationDecision, EvidenceAuthority, KnowledgeAccessContext, KnowledgeAccessControl,
     KnowledgeAction, KnowledgeAuthorizer, KnowledgeCitationPolicy, KnowledgeCitationRequirement,
-    KnowledgeContent, KnowledgeError, KnowledgeReadRequest, KnowledgeRequestContext,
-    KnowledgeResourceRef, KnowledgeScope, KnowledgeSearchProjection, KnowledgeSource,
-    KnowledgeSourceDescriptor, SourceSearchPage, SourceSearchRequest,
+    KnowledgeError, KnowledgeResourceRef, KnowledgeScope, KnowledgeSource,
 };
-use llm_harness_runtime_session_recall::{
-    SESSION_RECALL_SOURCE_ID, SessionRecallKnowledgeSource, SessionRecallRef,
-};
-use tokio_util::sync::CancellationToken;
+use llm_harness_runtime_session_recall::SESSION_RECALL_SOURCE_ID;
 
 use crate::memory_approval::WebMemoryApprovalCoordinator;
 use crate::memory_runtime::{
@@ -22,6 +17,7 @@ use crate::memory_runtime::{
 use crate::memory_store::MemoryStore;
 
 pub(crate) const LOCAL_USER_ID: &str = "local-user";
+const SESSION_RECALL_NAMESPACE: &str = "folumi-session-history";
 
 pub(crate) fn agent_knowledge_scope(knowledge_base_id: Option<&str>) -> KnowledgeScope {
     let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
@@ -44,75 +40,18 @@ pub(crate) fn agent_knowledge_scope(knowledge_base_id: Option<&str>) -> Knowledg
     scope
 }
 
-pub(crate) fn session_recall_scope(knowledge_base_id: Option<&str>) -> SessionRecallScope {
-    let scope = agent_knowledge_scope(knowledge_base_id);
+pub(crate) fn session_recall_scope() -> SessionRecallScope {
     SessionRecallScope {
-        namespace: scope.namespace,
-        tenant: scope.tenant,
-        project: scope.project,
-        attributes: scope.attributes,
+        namespace: SESSION_RECALL_NAMESPACE.into(),
+        tenant: Some(LOCAL_USER_ID.into()),
+        project: None,
+        attributes: Default::default(),
     }
 }
 
 pub(crate) struct UserMemoryRuntimeInput {
     pub store: Arc<MemoryStore>,
     pub approver: Arc<WebMemoryApprovalCoordinator>,
-}
-
-/// Adds product navigation metadata without changing runtime recall authority,
-/// indexing, filtering, or exact-read behavior.
-pub(crate) struct NavigableSessionRecallSource {
-    inner: Arc<SessionRecallKnowledgeSource>,
-}
-
-impl NavigableSessionRecallSource {
-    pub(crate) fn new(inner: Arc<SessionRecallKnowledgeSource>) -> Self {
-        Self { inner }
-    }
-
-    fn source_uri(reference: &llm_harness_runtime_knowledge::KnowledgeRef) -> Option<String> {
-        SessionRecallRef::decode(&reference.item_id)
-            .ok()
-            .map(|reference| format!("chat:{}:{}", reference.session_id, reference.user_entry_id))
-    }
-}
-
-impl KnowledgeSource for NavigableSessionRecallSource {
-    fn descriptor(&self) -> &KnowledgeSourceDescriptor {
-        self.inner.descriptor()
-    }
-
-    fn search_projection(&self) -> KnowledgeSearchProjection {
-        self.inner.search_projection()
-    }
-
-    fn search<'a>(
-        &'a self,
-        ctx: KnowledgeRequestContext<'a>,
-        request: SourceSearchRequest,
-        abort: CancellationToken,
-    ) -> BoxFuture<'a, Result<SourceSearchPage, KnowledgeError>> {
-        Box::pin(async move {
-            let mut page = self.inner.search(ctx, request, abort).await?;
-            for hit in &mut page.hits {
-                hit.uri = Self::source_uri(&hit.reference);
-            }
-            Ok(page)
-        })
-    }
-
-    fn read<'a>(
-        &'a self,
-        ctx: KnowledgeRequestContext<'a>,
-        request: KnowledgeReadRequest,
-        abort: CancellationToken,
-    ) -> BoxFuture<'a, Result<KnowledgeContent, KnowledgeError>> {
-        Box::pin(async move {
-            let mut content = self.inner.read(ctx, request, abort).await?;
-            content.uri = Self::source_uri(&content.reference);
-            Ok(content)
-        })
-    }
 }
 
 #[derive(Clone)]
@@ -265,31 +204,5 @@ impl KnowledgeAuthorizer for AgentKnowledgeAuthorizer {
                 },
             )
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use llm_harness_runtime_session_recall::{SessionRecallRef, to_knowledge_ref};
-    use llm_harness_types::EntryId;
-
-    use super::NavigableSessionRecallSource;
-
-    #[test]
-    fn history_reference_becomes_a_navigable_chat_uri() {
-        let user_entry_id = EntryId::new();
-        let reference = to_knowledge_ref(&SessionRecallRef {
-            session_id: "session-a".into(),
-            user_entry_id,
-            assistant_entry_id: Some(EntryId::new()),
-            branch_leaf_id: EntryId::new(),
-            revision: 4,
-        })
-        .unwrap();
-
-        assert_eq!(
-            NavigableSessionRecallSource::source_uri(&reference),
-            Some(format!("chat:session-a:{user_entry_id}"))
-        );
     }
 }
