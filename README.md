@@ -16,6 +16,7 @@
 
 - [使用手册](./MANUAL.md)：首次配置和全部用户功能
 - [产品需求规格](./docs/specs/2026-06-26-product-requirements-spec.md)
+- [一级工作区决策](./docs/specs/2026-08-03-primary-workspaces-decision.md)：Knowledge Base、Notebook、Memory 的长期产品边界
 - [Folumi 产品收缩计划](./docs/plans/2026-07-31-personal-knowledge-assistant-product-contraction-plan.md)
 - [旧产品数据迁移清单](./docs/migrations/2026-08-01-legacy-product-data-inventory.md)
 - [桌面发布计划](./docs/plans/2026-06-28-tauri-desktop-release-plan.md)

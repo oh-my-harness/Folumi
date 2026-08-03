@@ -6,6 +6,9 @@ This specification is authoritative for the current product. Historical Tutor,
 Quiz, Space, Student Profile, and standalone Research requirements remain in
 archived plans only and are not Folumi requirements.
 
+The accepted workspace boundaries and change-control rule are recorded in
+[`2026-08-03-primary-workspaces-decision.md`](./2026-08-03-primary-workspaces-decision.md).
+
 ## 1. Product Definition
 
 - **REQ-001** Folumi shall be a local-first personal knowledge assistant.

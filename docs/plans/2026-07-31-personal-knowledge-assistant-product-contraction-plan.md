@@ -8,6 +8,9 @@
 >
 > Product name: **Folumi**（2026-08-01 confirmed）
 
+The 2026-08-03 navigation revision is authoritative in
+[`../specs/2026-08-03-primary-workspaces-decision.md`](../specs/2026-08-03-primary-workspaces-decision.md).
+
 ## 1. 决策摘要
 
 `llm-tutor` 不再继续发展为同时覆盖聊天、持久导师、测验、研究、学生画像、知识库、

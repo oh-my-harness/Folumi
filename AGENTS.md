@@ -13,6 +13,11 @@
   patches that make the project heavier or harder to reason about.
 - Keep adapters between product code and runtime code thin, explicit, and
   covered by boundary tests.
+- Preserve the accepted primary-workspace boundary in
+  `docs/specs/2026-08-03-primary-workspaces-decision.md`: Knowledge Base is for
+  RAG Sources only, while Notebook and Memory remain standalone primary pages.
+  Changing that information architecture requires an explicit product decision
+  plus matching PRD, user-documentation, and regression-test updates.
 - When using PowerShell to inspect or transform text files, explicitly use
   UTF-8 for files that may contain Chinese or other non-ASCII text, for example
   `Get-Content -Encoding UTF8`, to avoid introducing mojibake into UI copy or
