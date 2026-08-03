@@ -52,6 +52,13 @@
     A runtime-owned persistent local FTS implementation would avoid a full
     startup rebuild without moving Session bodies or indexing authority into
     the product repository.
+  - Follow-up: `SessionRecallKnowledgeSource` returns stable typed references
+    and reference metadata, but its search hits and exact reads currently leave
+    `uri` empty. Folumi uses a thin, boundary-tested wrapper around the public
+    `SessionRecallRef::decode` API to expose `chat:<session>:<entry>` navigation.
+    A runtime-provided typed navigation target or source URI would remove this
+    product-specific presentation adapter without weakening reference opacity
+    at the model boundary.
 
 - **Knowledge search requires model-provided source routing when multiple sources are visible**
   - Reproduced in the desktop app on 2026-07-30 with Learner Memory and Tutor
