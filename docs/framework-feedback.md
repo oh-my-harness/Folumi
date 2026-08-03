@@ -20,8 +20,8 @@
 
 ## Friction Points
 
-- **Validated 2026-08-03: runtime Session Recall is consumable; scope and navigation gaps are resolved**
-  - Checked against the product pin `a7f3173` on 2026-08-03 while revising the
+- **Validated 2026-08-03: runtime Session Recall is consumable; scope, navigation, and persistence gaps are resolved**
+  - Checked against the product pin `40c2984` on 2026-08-03 while revising the
     Folumi memory proposal.
   - Tracked upstream as
     [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104).
@@ -32,7 +32,7 @@
     Session remains authoritative, the index is rebuildable, exact reads
     revalidate authority, and deletion/update invalidation flows through the
     observer.
-  - Downstream `tutor-web --lib` passes all 99 tests and strict local Clippy.
+  - Downstream `tutor-web --lib` passes all 100 tests and strict local Clippy.
     CI was deliberately not evaluated for this follow-up.
   - Resolved in `380635f`: runs now carry a trusted
     `SessionRecallAccessContext` whose partition and current Session ID are
@@ -40,17 +40,20 @@
     local-user History scope, so selecting another Knowledge Base no longer
     hides prior conversation history. Model-driven tools need the Recall
     context but do not need the automatic `HistoryRecallRequest` marker.
-  - Follow-up: the optional automatic plugin retains accepted references only
-    in private run state. A product choosing that mode cannot expose those
-    references through trace/events for a source jump. Folumi does not install
-    the plugin in its first release and uses visible model-driven
-    `knowledge_search` / `knowledge_read` instead. If automatic mode is used in
-    the future, the runtime should expose bounded accepted references through a
-    typed run extension, trace event, or observational hook.
-  - Follow-up: the current runtime implementation ships an in-memory index.
-    A runtime-owned persistent local FTS implementation would avoid a full
-    startup rebuild without moving Session bodies or indexing authority into
-    the product repository.
+  - Resolved in `1381c3e`: an application choosing the optional automatic
+    plugin can attach a per-run `HistoryRecallObservation` typed extension and
+    read the bounded references accepted after exact reads. The snapshot
+    includes an opaque reference, structured Session/entry navigation target,
+    and optional mapped URI, but no recalled body and no Session persistence.
+    Folumi still uses visible model-driven `knowledge_search` /
+    `knowledge_read` in its first release, so it does not pay this observation
+    cost.
+  - Resolved in `655b37e`: Folumi uses the optional runtime SQLite/FTS5 index,
+    stored beside the Session repository as disposable derived state. Startup
+    now reconciles persisted revision metadata instead of rebuilding all
+    Session bodies; unchanged Sessions are not reopened. Disabling the feature
+    clears the derived index, while runtime consumers that do not enable the
+    SQLite feature keep the dependency-free in-memory default.
   - Resolved in `380635f`: `SessionRecallKnowledgeSource` exposes a typed
     navigation target and accepts an application URI mapper. Folumi configures
     `chat:<session>:<entry>` directly on the runtime source and removed its

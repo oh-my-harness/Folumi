@@ -12,8 +12,8 @@ use llm_harness_agent::{
 };
 use llm_harness_runtime_knowledge::KnowledgeSource;
 use llm_harness_runtime_session_recall::{
-    InMemorySessionRecallIndex, SessionRecallIndex, SessionRecallKnowledgeSource,
-    SessionRecallNavigationTarget, SessionRecallProjector, SessionRecallService,
+    SessionRecallIndex, SessionRecallKnowledgeSource, SessionRecallNavigationTarget,
+    SessionRecallProjector, SessionRecallService, SqliteSessionRecallIndex,
 };
 use llm_harness_types::{
     AgentMessage, AssistantMessageKind, ContentBlock, EntryId, SessionError, TokenUsage,
@@ -199,8 +199,12 @@ impl SessionPool {
         std::fs::create_dir_all(&root).expect("failed to create runtime session directory");
         let product_metadata_path = root.join("product-metadata.json");
         let product_metadata = read_product_metadata(&product_metadata_path).unwrap_or_default();
+        let history_recall_index_path = root.join("session-recall.sqlite3");
         let authority: Arc<dyn SessionRepo> = Arc::new(JsonlSessionRepo::new(root));
-        let index: Arc<dyn SessionRecallIndex> = Arc::new(InMemorySessionRecallIndex::new());
+        let index: Arc<dyn SessionRecallIndex> = Arc::new(
+            SqliteSessionRecallIndex::open(history_recall_index_path)
+                .expect("failed to open the Session Recall index"),
+        );
         let projector = Arc::new(SessionRecallProjector::new(
             authority.clone(),
             index.clone(),
@@ -244,28 +248,31 @@ impl SessionPool {
         let _guard = self.history_recall_update.lock().await;
         let sessions = self.repo.list(ListSessionOptions::default()).await?;
         for metadata in sessions {
-            let settings = if enabled {
-                SessionRecallSettings {
-                    durability: metadata.durability,
-                    lifecycle: metadata.lifecycle,
-                    policy: SessionRecallPolicy::Enabled,
-                    scope: Some(crate::knowledge_runtime::session_recall_scope()),
-                }
+            let policy = if enabled {
+                SessionRecallPolicy::Enabled
             } else {
-                SessionRecallSettings {
+                SessionRecallPolicy::Disabled
+            };
+            let scope = enabled.then(crate::knowledge_runtime::session_recall_scope);
+            if metadata.recall_policy == policy && metadata.recall_scope == scope {
+                continue;
+            }
+            Session::new(self.repo.open(&metadata.id).await?)
+                .update_recall_settings(SessionRecallSettings {
                     durability: metadata.durability,
                     lifecycle: metadata.lifecycle,
-                    policy: SessionRecallPolicy::Disabled,
-                    scope: None,
-                }
-            };
-            Session::new(self.repo.open(&metadata.id).await?)
-                .update_recall_settings(settings)
+                    policy,
+                    scope,
+                })
                 .await?;
         }
-        self.history_recall_projector
-            .rebuild(CancellationToken::new())
-            .await?;
+        if enabled {
+            self.history_recall_projector
+                .reconcile(CancellationToken::new())
+                .await?;
+        } else {
+            self.history_recall_projector.index().reset().await?;
+        }
         self.history_recall_enabled.store(enabled, Ordering::SeqCst);
         Ok(())
     }
@@ -1359,6 +1366,62 @@ mod tests {
             .await
             .unwrap();
         assert!(disabled_hits.is_empty());
+    }
+
+    #[tokio::test]
+    async fn history_recall_index_survives_pool_reopen_and_startup_reconcile() {
+        let root = std::env::temp_dir().join(format!(
+            "llm-tutor-persistent-history-recall-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let source_id = {
+            let pool = SessionPool::new_with_root_and_history_recall(root.clone(), true);
+            let source_id = pool
+                .create("chat", None, false, None, None, None)
+                .await
+                .unwrap();
+            let session = pool.open_runtime_session(&source_id).await.unwrap();
+            session
+                .append_message(tutor_agent::chat::user_message(
+                    "重新启动后的极光暗号是 silver aurora。",
+                ))
+                .await
+                .unwrap();
+            session
+                .append_message(tutor_agent::chat::assistant_message(
+                    "我会在历史会话中保留这个暗号。",
+                ))
+                .await
+                .unwrap();
+            source_id
+        };
+
+        assert!(root.join("session-recall.sqlite3").is_file());
+        let reopened = SessionPool::new_with_root_and_history_recall(root, true);
+        reopened.synchronize_history_recall(true).await.unwrap();
+        let access = KnowledgeAccessContext::new(
+            crate::knowledge_runtime::agent_knowledge_scope(None),
+            PrincipalRef::new(crate::knowledge_runtime::LOCAL_USER_ID, "local_user"),
+        );
+        let hits = reopened
+            .history_recall_source
+            .service()
+            .search(
+                &access,
+                &SessionRecallAccessContext::new(crate::knowledge_runtime::session_recall_scope()),
+                SessionRecallSearchRequest {
+                    query: "极光暗号".into(),
+                    limit: 3,
+                    max_snippet_bytes: 600,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].reference.session_id, source_id);
+        assert!(hits[0].snippet.contains("silver aurora"));
     }
 
     #[tokio::test]
