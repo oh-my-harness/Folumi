@@ -11,6 +11,10 @@ const settings = readFileSync(new URL('./components/SettingsPage.tsx', import.me
 const memory = readFileSync(new URL('./components/UserMemoryPage.tsx', import.meta.url), 'utf8')
 const backendMain = readFileSync(new URL('../../crates/tutor-web/src/main.rs', import.meta.url), 'utf8')
 const backendRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/mod.rs', import.meta.url), 'utf8')
+const notebookRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/notebook.rs', import.meta.url), 'utf8')
+const knowledgeRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/knowledge.rs', import.meta.url), 'utf8')
+const websocketRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/ws.rs', import.meta.url), 'utf8')
+const runtimeWorkflows = readFileSync(new URL('../../crates/tutor-agent/src/runtime_workflow.rs', import.meta.url), 'utf8')
 
 test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, and Settings', () => {
   assert.match(sidebar, /export type AppView = 'assistant' \| 'knowledge' \| 'notebook' \| 'memory' \| 'settings'/)
@@ -44,6 +48,14 @@ test('assistant profile is managed from Memory instead of Settings', () => {
 test('legacy data migration stays outside the active product boundary', () => {
   assert.doesNotMatch(backendMain, /migration_router|\/api\/migration\/legacy/)
   assert.doesNotMatch(backendRoutes, /pub mod migration/)
+})
+
+test('retired layered memory has no active capture or consolidation path', () => {
+  const activeBackend = [backendMain, notebookRoutes, knowledgeRoutes, websocketRoutes, runtimeWorkflows].join('\n')
+  assert.doesNotMatch(activeBackend, /MemoryEventCategory|record_event|memory_workflow|L1\/|L2\/|L3\//)
+  assert.match(memory, /长期记忆正在重新设计|Long-term memory is being redesigned/)
+  assert.doesNotMatch(memory, /\/api\/memory\/items|file_revision|marker/)
+  assert.doesNotMatch(app, /approval_request|approval_response|ApprovalDialog/)
 })
 
 test('research is a chat task action instead of a capability menu', () => {

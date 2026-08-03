@@ -10,6 +10,10 @@
 > Amended: 2026-08-03 — Memory uses separate Long-term Memory and Assistant
 > Profile tabs, with Long-term Memory as the default.
 >
+> Amended: 2026-08-03 — The obsolete layered Memory pipeline was retired. The
+> Long-term Memory tab remains as a redesign placeholder until a replacement
+> proposal is explicitly accepted; Assistant Profile remains available.
+>
 > Scope: Primary navigation and the product boundaries of Knowledge Base,
 > Notebook, Memory, and Settings
 
@@ -63,6 +67,8 @@ or component consolidation without a new explicit product decision.
   the default and owns the master switch plus item controls; **Assistant
   Profile** owns the name and behavior instructions used by new conversations.
 - Does not contain legacy Tutor/Quiz migration, import, or archive controls.
+- Does not capture Assistant, Notebook, or Knowledge Base activity while the
+  replacement long-term-memory design is under review.
 - Keeps provenance visible when available.
 - Continues to use runtime access control and mutation gates; a more prominent
   UI does not expand agent authority.
@@ -101,7 +107,8 @@ A change conforms to this decision only when all of the following remain true:
 - Notebook can be opened directly and supports its normal note-management
   workflow without first opening Knowledge Base;
 - Memory can be opened directly, defaults to Long-term Memory, and exposes a
-  separate Assistant Profile tab;
+  separate Assistant Profile tab; during the redesign interval the Long-term
+  Memory tab clearly reports that capture and recall are unavailable;
 - source links open Knowledge Base, while note links open Notebook;
 - Settings does not contain Assistant profile or the primary Notebook/Memory
   content-management experience; and

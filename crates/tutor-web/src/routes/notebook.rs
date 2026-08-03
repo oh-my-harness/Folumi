@@ -11,7 +11,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::memory_store::{FileMemoryBackend, MemoryEventCategory};
 use crate::notebook_store::{
     ExactNotebookMutationOutcome, NotebookEntryInput, NotebookEntryType, NotebookEntryUpdate,
     NotebookStore, notebook_entry_revision,
@@ -20,7 +19,6 @@ use crate::notebook_store::{
 #[derive(Clone)]
 struct NotebookState {
     store: Arc<NotebookStore>,
-    memory: Arc<FileMemoryBackend>,
 }
 
 #[derive(Deserialize)]
@@ -139,16 +137,6 @@ async fn bind_vault(
     match state.store.set_vault_root(PathBuf::from(req.path)) {
         Ok(mount) => {
             let watch = state.store.start_watcher().ok();
-            let _ = state.memory.record_event(
-                MemoryEventCategory::Notebook,
-                "bound_vault",
-                format!("Bound notebook vault: {}", mount.vault.root),
-                None,
-                serde_json::json!({
-                    "root": mount.vault.root,
-                    "entries": mount.entries.len(),
-                }),
-            );
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
@@ -197,17 +185,6 @@ async fn create_entry(
     }) {
         Ok(entry) => {
             let revision = notebook_entry_revision(&entry);
-            let _ = state.memory.record_event(
-                MemoryEventCategory::Notebook,
-                "created",
-                format!("Created notebook entry: {}", entry.title),
-                Some(entry.id.clone()),
-                serde_json::json!({
-                    "entry_type": entry.entry_type,
-                    "space_id": entry.space_id,
-                    "source_session_id": entry.source_session_id,
-                }),
-            );
             (
                 StatusCode::CREATED,
                 Json(serde_json::json!({ "entry": entry, "revision": revision })),
@@ -254,17 +231,6 @@ async fn update_entry(
     ) {
         Ok(ExactNotebookMutationOutcome::Updated(entry)) => {
             let revision = notebook_entry_revision(&entry);
-            let _ = state.memory.record_event(
-                MemoryEventCategory::Notebook,
-                "updated",
-                format!("Updated notebook entry: {}", entry.title),
-                Some(entry.id.clone()),
-                serde_json::json!({
-                    "entry_type": entry.entry_type,
-                    "space_id": entry.space_id,
-                    "metadata": entry.metadata,
-                }),
-            );
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
@@ -293,21 +259,7 @@ async fn delete_entry(
     State(state): State<NotebookState>,
     AxumPath(entry_id): AxumPath<String>,
 ) -> impl IntoResponse {
-    let existing = state.store.get(&entry_id);
     if state.store.delete(&entry_id) {
-        let _ = state.memory.record_event(
-            MemoryEventCategory::Notebook,
-            "deleted",
-            format!(
-                "Deleted notebook entry: {}",
-                existing
-                    .as_ref()
-                    .map(|entry| entry.title.as_str())
-                    .unwrap_or(&entry_id)
-            ),
-            Some(entry_id),
-            serde_json::json!({}),
-        );
         StatusCode::NO_CONTENT.into_response()
     } else {
         error_response(StatusCode::NOT_FOUND, "notebook entry not found".into())
@@ -392,19 +344,6 @@ fn import_parsed_entries(state: NotebookState, import: ParsedImport) -> axum::re
 
     if imported.is_empty() && skipped.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "missing file field".into());
-    }
-
-    if !imported.is_empty() {
-        let _ = state.memory.record_event(
-            MemoryEventCategory::Notebook,
-            "imported",
-            format!("Imported {} notebook entries", imported.len()),
-            None,
-            serde_json::json!({
-                "entry_ids": imported.iter().map(|entry| entry.id.as_str()).collect::<Vec<_>>(),
-                "skipped_count": skipped.len(),
-            }),
-        );
     }
 
     (
@@ -523,8 +462,8 @@ async fn export_obsidian_vault_zip(
     }
 }
 
-pub fn notebook_router(store: Arc<NotebookStore>, memory: Arc<FileMemoryBackend>) -> Router {
-    let state = NotebookState { store, memory };
+pub fn notebook_router(store: Arc<NotebookStore>) -> Router {
+    let state = NotebookState { store };
     Router::new()
         .route("/api/notebook/entries", get(list_tree).post(create_entry))
         .route("/api/notebook/entries/full", get(list_entries))
@@ -1119,8 +1058,7 @@ mod tests {
     async fn creates_lists_and_deletes_notebook_entry() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
-        let memory = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
-        let app = notebook_router(store, memory.clone());
+        let app = notebook_router(store);
         let response = app
             .clone()
             .oneshot(json_request(
@@ -1218,15 +1156,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
-        assert!(!memory.recent_events(10).unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn imports_markdown_entries_from_multipart() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
-        let memory = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
-        let app = notebook_router(store, memory.clone());
+        let app = notebook_router(store);
         let markdown = "---\ntitle: Imported OPC\ntags:\n  - optics\n  - opc\n---\n# Imported OPC\n\nSee [[Lithography]].\n";
         let body = multipart_body("BOUNDARY", "opc.md", "text/markdown", markdown.as_bytes());
 
@@ -1287,14 +1223,12 @@ mod tests {
                 .contains("[[Lithography]]")
         );
         assert_eq!(body["entry"]["links"][0]["target"], "Lithography");
-        assert!(!memory.recent_events(10).unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn previews_import_conflicts_and_exports_notebook() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
-        let memory = Arc::new(FileMemoryBackend::new_with_root(dir.path().join("memory")));
         let existing = store
             .create(NotebookEntryInput {
                 space_id: Some("default".into()),
@@ -1307,7 +1241,7 @@ mod tests {
                 source_message_id: None,
             })
             .unwrap();
-        let app = notebook_router(store, memory);
+        let app = notebook_router(store);
         let markdown = "---\ntitle: Imported OPC\ntags: [opc]\n---\n# Imported OPC\n\nNew.";
         let body = multipart_body("BOUNDARY", "opc.md", "text/markdown", markdown.as_bytes());
 

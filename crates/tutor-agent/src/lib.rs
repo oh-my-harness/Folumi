@@ -6,14 +6,13 @@ pub mod event_sink;
 pub mod governance;
 pub mod knowledge;
 pub mod llm_provider;
-pub mod memory;
 pub mod research;
 pub mod runtime_engine;
 pub mod runtime_harness;
 pub mod runtime_workflow;
 pub mod terminal_approver;
 
-pub use capability::{Capability, CapabilityRouter, LearnerMemoryMode};
+pub use capability::{Capability, CapabilityRouter};
 pub use error::{Result, TutorError};
 pub use knowledge::{
     KnowledgeRuntime, agent_knowledge_evidence_provider_id, assemble_course_knowledge,

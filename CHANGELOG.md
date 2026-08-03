@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Retired the obsolete L1/L2/L3 Memory store, activity-event capture,
+  consolidation workflows, maintenance APIs, runtime source/plugin mounting,
+  and related review helpers. Long-term Memory is temporarily unavailable
+  while the replacement item-oriented design is reviewed; Assistant Profile
+  remains available.
+
 All notable changes to this project will be documented in this file.
 
 This project follows Semantic Versioning for source releases. Desktop bundle

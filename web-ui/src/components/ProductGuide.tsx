@@ -263,13 +263,11 @@ const chineseCopy = {
   },
   memory: {
     title: '配置助手和记忆',
-    description: '记忆页面用“长期记忆”和“助手配置”两个选项卡，分别管理跨会话信息与单一助手的身份和行为。',
+    description: '旧长期记忆链路已退役，新方案正在评审；当前仍可管理单一助手的身份和行为。',
     open: '打开记忆',
     items: [
       { icon: <Bot size={18} />, title: '助手配置', text: '设置所有新会话共用的助手名称和行为说明。' },
-      { icon: <FileText size={18} />, title: '用户记忆', text: '记录经过确认的稳定事实、偏好和目标，并保留来源。' },
-      { icon: <Database size={18} />, title: '助手连续性', text: '记录跨会话承诺、待办和有效策略，让单一助手能持续跟进。' },
-      { icon: <Brain size={18} />, title: '用户控制', text: '可逐条检查、修改和遗忘，也可用总开关完全停用记忆。' },
+      { icon: <Brain size={18} />, title: '长期记忆', text: '当前暂停采集、召回和维护，等待新条目模型完成评审。' },
     ],
   },
 }
@@ -329,13 +327,11 @@ const englishCopy: typeof chineseCopy = {
   },
   memory: {
     title: 'Configure Assistant and Memory',
-    description: 'Memory separates cross-session context and the single Assistant identity into Long-term Memory and Assistant Profile tabs.',
+    description: 'The old long-term-memory pipeline is retired and its replacement is under review. Assistant Profile remains available.',
     open: 'Open Memory',
     items: [
       { icon: <Bot size={18} />, title: 'Assistant profile', text: 'Set the name and behavior instructions shared by new conversations.' },
-      { icon: <FileText size={18} />, title: 'User Memory', text: 'Confirmed stable facts, preferences, and goals with visible provenance.' },
-      { icon: <Database size={18} />, title: 'Assistant Continuity', text: 'Cross-session commitments, open loops, and successful strategies for one Assistant.' },
-      { icon: <Brain size={18} />, title: 'User control', text: 'Inspect, edit, or forget individual items, or disable Memory completely.' },
+      { icon: <Brain size={18} />, title: 'Long-term memory', text: 'Capture, recall, and maintenance are paused while the new item model is reviewed.' },
     ],
   },
 }

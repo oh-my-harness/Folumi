@@ -2,6 +2,11 @@
 
 Status: Accepted
 
+> Memory portions superseded on 2026-08-03. The L1/L2/L3 store and
+> consolidation workflow are retired; the Notebook and Knowledge ownership
+> boundaries remain accepted. See
+> `specs/2026-08-03-user-memory-redesign.md` for the replacement proposal.
+
 This document defines the ownership boundary between runtime capabilities and
 `llm-tutor` product capabilities. It is the target architecture for the next
 migration stages.

@@ -4,7 +4,6 @@ import { ChatBox } from './components/ChatBox'
 import type { ChatAttachment, ContextStats, NotebookEditProposal, NotebookMention, SaveToNotebookOptions } from './components/ChatBox'
 import { TracePanel, TraceEntry } from './components/TracePanel'
 import { BudgetPanel } from './components/BudgetPanel'
-import { ApprovalDialog } from './components/ApprovalDialog'
 import { SettingsPage, type SettingsTab } from './components/SettingsPage'
 import { KnowledgeBasePage } from './components/KnowledgeBasePage'
 import { NotesPage } from './components/NotesPage'
@@ -202,7 +201,6 @@ export default function App() {
   const pendingResearchReportRef = useRef<ResearchReportTraceData | undefined>(undefined)
   const [budgetSpent, setBudgetSpent] = useState(0)
   const [budgetWarning, setBudgetWarning] = useState(false)
-  const [pendingApproval, setPendingApproval] = useState<{ tool: string; args: Record<string, unknown>; requestId: string } | null>(null)
   const [running, setRunning] = useState(false)
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
   const [pinnedSessionIds, setPinnedSessionIds] = useState<Set<string>>(() => loadPinnedSessionIds())
@@ -462,7 +460,6 @@ export default function App() {
               : typeof payload.capability === 'string' ? capabilityLabel(payload.capability) : undefined,
           })
         } else if (kind === 'done') {
-          setPendingApproval(null)
           setRunning(false)
           updateRecentSessionRun(setRecentSessions, sourceSessionId, null)
           setLatestUsage((prev) => isTokenUsagePayload(payload.usage) ? payload.usage : prev)
@@ -474,7 +471,6 @@ export default function App() {
             })
           }
         } else if (kind === 'history_sync') {
-          setPendingApproval(null)
           streamingRef.current = ''
           progressStreamingRef.current = ''
           setStreamingText('')
@@ -483,7 +479,6 @@ export default function App() {
           updateRecentSessionRun(setRecentSessions, sourceSessionId, null)
           void hydrateSession(sourceSessionId, true)
         } else if (kind === 'stopped') {
-          setPendingApproval(null)
           progressStreamingRef.current = ''
           pushStatus({
             kind: 'done',
@@ -505,19 +500,7 @@ export default function App() {
             label: 'Context repaired',
             detail: payload.reason === 'incomplete_tool_call' ? 'Recovered incomplete tool call history' : undefined,
           })
-        } else if (kind === 'approval_request') {
-          pushStatus({
-            kind: 'tool',
-            label: 'Waiting for approval',
-            detail: typeof payload.tool === 'string' ? payload.tool : undefined,
-          })
-          setPendingApproval({
-            tool: payload.tool as string,
-            args: payload.args as Record<string, unknown>,
-            requestId: payload.request_id as string,
-          })
         } else if (kind === 'error') {
-          setPendingApproval(null)
           progressStreamingRef.current = ''
           const message = typeof payload.message === 'string' ? payload.message : 'WebSocket error'
           pushStatus({ kind: 'error', label: 'Error', detail: message })
@@ -528,13 +511,11 @@ export default function App() {
     },
     onClose: (sourceSessionId) => {
       if (!isCurrentSessionEvent(sourceSessionId, activeSessionIdRef.current)) return
-      setPendingApproval(null)
       setRunning(false)
       pushStatus({ kind: 'idle', label: 'Disconnected', detail: 'WebSocket closed' })
     },
     onError: (sourceSessionId) => {
       if (!isCurrentSessionEvent(sourceSessionId, activeSessionIdRef.current)) return
-      setPendingApproval(null)
       pushStatus({ kind: 'error', label: 'Connection failed', detail: 'Check the Folumi backend service' })
       setMessages((prev) => [
         ...prev,
@@ -701,7 +682,6 @@ export default function App() {
             assistant: {
               name: llmSettings.assistantName,
               instructions: llmSettings.assistantInstructions,
-              memory_enabled: llmSettings.memoryEnabled,
             },
             llm: settingsForSession(llmSettings, selectedLlmConfigId),
             search: searchForSession(llmSettings),
@@ -735,7 +715,6 @@ export default function App() {
 
   const handleStopGeneration = useCallback(() => {
     if (!running) return
-    setPendingApproval(null)
     send({ type: 'stop' })
     pushStatus({ kind: 'tool', label: 'Stopping', detail: capabilityLabel(capability) })
   }, [capability, pushStatus, running, send])
@@ -789,7 +768,6 @@ export default function App() {
           assistant: {
             name: llmSettings.assistantName,
             instructions: llmSettings.assistantInstructions,
-            memory_enabled: llmSettings.memoryEnabled,
           },
           llm: settingsForSession(llmSettings, selectedLlmConfigId),
           search: searchForSession(llmSettings),
@@ -1168,16 +1146,6 @@ export default function App() {
     }
   }, [llmSettings, persistSettings, running, sessionId])
 
-  const handleApproval = (requestId: string, approved: boolean) => {
-    send({ type: 'approval_response', request_id: requestId, approved })
-    setPendingApproval(null)
-    pushStatus({
-      kind: 'thinking',
-      label: approved ? 'Approval sent' : 'Tool denied',
-      detail: 'Waiting for agent to continue',
-    })
-  }
-
   const handleSelectSession = async (id: string) => {
     if (id !== sessionId) {
       activateSession(id)
@@ -1357,11 +1325,6 @@ export default function App() {
                   ? (llmSettings.language === 'en-US' ? 'Notes' : '笔记')
                   : knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId)?.name
                     ?? (llmSettings.language === 'en-US' ? 'Conversation only' : '仅当前会话')}</span>
-                <span className={llmSettings.memoryEnabled ? 'text-emerald-700' : 'text-gray-400'}>
-                  · {llmSettings.memoryEnabled
-                    ? (llmSettings.language === 'en-US' ? 'Memory on' : '记忆已开启')
-                    : (llmSettings.language === 'en-US' ? 'Memory off' : '记忆已关闭')}
-                </span>
               </div>
               <div className="ml-auto">
                 <BudgetPanel spent={budgetSpent} limit={llmSettings.budgetLimitUsd} warning={budgetWarning} />
@@ -1441,10 +1404,8 @@ export default function App() {
         {view === 'memory' && (
           <UserMemoryPage
             language={llmSettings.language}
-            enabled={llmSettings.memoryEnabled}
             assistantName={llmSettings.assistantName}
             assistantInstructions={llmSettings.assistantInstructions}
-            onEnabledChange={(memoryEnabled) => handleSettingsChange({ ...llmSettings, memoryEnabled })}
             onAssistantProfileChange={({ name, instructions }) => handleSettingsChange({
               ...llmSettings,
               assistantName: name,
@@ -1467,7 +1428,6 @@ export default function App() {
         )}
       </div>
 
-      <ApprovalDialog request={pendingApproval} onDecision={handleApproval} />
       {settingsHydrated && shouldShowOnboarding(llmSettings) && !onboardingOpen && (
         <OnboardingResumeButton onClick={openOnboarding} />
       )}

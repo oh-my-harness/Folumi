@@ -62,7 +62,6 @@ struct CreateSearchConfig {
 struct CreateAssistantConfig {
     name: Option<String>,
     instructions: Option<String>,
-    memory_enabled: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -157,7 +156,6 @@ fn assistant_config_from_request(config: CreateAssistantConfig) -> AssistantSess
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| "Folumi Assistant".into()),
         instructions: config.instructions.unwrap_or_default().trim().to_string(),
-        memory_enabled: config.memory_enabled.unwrap_or(true),
     }
 }
 
@@ -892,7 +890,7 @@ mod tests {
             .oneshot(
                 Request::post("/api/sessions")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"capability":"chat","assistant":{"name":"Folumi","instructions":"Be concise","memory_enabled":false}}"#))
+                    .body(Body::from(r#"{"capability":"chat","assistant":{"name":"Folumi","instructions":"Be concise"}}"#))
                     .unwrap(),
             )
             .await
@@ -920,7 +918,6 @@ mod tests {
         let detail: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(detail["assistant"]["name"], "Folumi");
         assert_eq!(detail["assistant"]["instructions"], "Be concise");
-        assert_eq!(detail["assistant"]["memory_enabled"], false);
     }
 
     #[tokio::test]

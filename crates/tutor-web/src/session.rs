@@ -40,7 +40,6 @@ pub struct SearchSessionConfig {
 pub struct AssistantSessionConfig {
     pub name: String,
     pub instructions: String,
-    pub memory_enabled: bool,
 }
 
 impl Default for AssistantSessionConfig {
@@ -48,7 +47,6 @@ impl Default for AssistantSessionConfig {
         Self {
             name: "Folumi Assistant".into(),
             instructions: String::new(),
-            memory_enabled: true,
         }
     }
 }
@@ -1751,7 +1749,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn assistant_profile_and_memory_policy_survive_pool_reopen() {
+    async fn assistant_profile_survives_pool_reopen() {
         let root = std::env::temp_dir().join(format!("folumi-test-{}", uuid::Uuid::new_v4()));
         let pool = SessionPool::new_with_root(&root);
         let id = pool
@@ -1765,7 +1763,6 @@ mod tests {
                 assistant: AssistantSessionConfig {
                     name: "My Folumi".into(),
                     instructions: "Prefer short, practical answers.".into(),
-                    memory_enabled: false,
                 },
             })
             .await
@@ -1780,7 +1777,6 @@ mod tests {
             entry.assistant.instructions,
             "Prefer short, practical answers."
         );
-        assert!(!entry.assistant.memory_enabled);
         let _ = std::fs::remove_dir_all(root);
     }
 

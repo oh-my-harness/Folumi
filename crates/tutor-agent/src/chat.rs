@@ -168,9 +168,6 @@ pub(crate) async fn run_conversation_with_request(
     {
         plugins.push(knowledge_runtime.plugin());
     }
-    if let Some(memory_plugin) = router.learner_memory_plugin() {
-        plugins.push(memory_plugin);
-    }
     tools.extend(router.product_tools.iter().cloned());
 
     let client = router.make_client();
@@ -569,9 +566,6 @@ mod tests {
         final_answer_mode_for_capability, looks_like_research_report, organize_system_prompt,
         research_system_prompt, text_delta_route_for_capability,
     };
-    use crate::capability::{
-        LearnerMemoryMode, append_memory_routing_policy, memory_routing_policy,
-    };
     use llm_harness_loop::{FinalAnswerMissingBehavior, FinalAnswerMode};
 
     #[test]
@@ -590,26 +584,6 @@ mod tests {
         assert!(prompt.contains("trivia"));
         assert!(prompt.contains("must call web_search before answering"));
         assert!(prompt.contains("If web_search or web_fetch fails"));
-    }
-
-    #[test]
-    fn conversational_prompts_use_memory_naturally_without_narrating_tools() {
-        for prompt in [
-            chat_system_prompt(),
-            research_system_prompt(),
-            organize_system_prompt(),
-        ] {
-            let prompt = append_memory_routing_policy(
-                &prompt,
-                &memory_routing_policy(LearnerMemoryMode::InteractiveMutation),
-            );
-            assert!(prompt.contains("silent internal context loading"));
-            assert!(prompt.contains("Never narrate that you are checking"));
-            assert!(prompt.contains("refer to it naturally"));
-            assert!(prompt.contains("hedge and ask the user to confirm"));
-            assert!(prompt.contains("Never claim to remember content"));
-            assert!(prompt.contains("If the user explicitly asks how you know"));
-        }
     }
 
     #[test]

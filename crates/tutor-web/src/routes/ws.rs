@@ -4,6 +4,17 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use crate::notebook_store::NotebookStore;
+use crate::notebook_tool::{
+    CreateNotebookItemTool, ListNotebookTreeTool, MoveNotebookItemTool, ProposeNotebookEditTool,
+    ReadNotebookItemTool, SearchNotebookTool, UpdateNotebookItemTool,
+};
+use crate::research_tool::{CreateResearchReportTool, ProposeResearchPlanTool};
+use crate::routes::notebook_mentions::{NotebookMention, resolve_notebook_mention};
+use crate::session::{
+    ActiveRunSummary, LlmSessionConfig, SearchSessionConfig, SessionEntry, SessionPool,
+};
+use crate::stream::StreamEvent;
 use axum::{
     Router,
     extract::ws::{Message, WebSocket},
@@ -23,56 +34,24 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tutor_agent::event_sink::{EventSink, SharedEventSink};
 use tutor_agent::governance::GovernanceConfig;
-use tutor_agent::{Capability, CapabilityRouter, LearnerMemoryMode, LlmConfig, LlmProviderKind};
-
-use crate::learner_memory_source::{
-    LEARNER_MEMORY_KINDS_ATTRIBUTE, LEARNER_MEMORY_L1_SESSION_ATTRIBUTE,
-    LEARNER_MEMORY_LAYERS_ATTRIBUTE, LEARNER_MEMORY_PRINCIPAL_ATTRIBUTE,
-    LEARNER_MEMORY_PROFILE_ATTRIBUTE, LEARNER_MEMORY_SURFACES_ATTRIBUTE,
-};
-use crate::memory_approval::{ApprovalResponseOutcome, WebMemoryApprovalCoordinator};
-use crate::memory_store::{FileMemoryBackend, MemoryEventCategory};
-use crate::notebook_store::NotebookStore;
-use crate::notebook_tool::{
-    CreateNotebookItemTool, ListNotebookTreeTool, MoveNotebookItemTool, ProposeNotebookEditTool,
-    ReadNotebookItemTool, SearchNotebookTool, UpdateNotebookItemTool,
-};
-use crate::research_tool::{CreateResearchReportTool, ProposeResearchPlanTool};
-use crate::routes::notebook_mentions::{NotebookMention, resolve_notebook_mention};
-use crate::session::{
-    ActiveRunSummary, LlmSessionConfig, SearchSessionConfig, SessionEntry, SessionPool,
-};
-use crate::settings_store::SettingsStore;
-use crate::stream::StreamEvent;
+use tutor_agent::{Capability, CapabilityRouter, LlmConfig, LlmProviderKind};
 
 #[derive(Clone)]
 struct WsState {
     pool: Arc<SessionPool>,
-    memory: Arc<FileMemoryBackend>,
     notebook: Arc<NotebookStore>,
-    settings: Arc<SettingsStore>,
     runtime_security: crate::knowledge_runtime::AgentRuntimeSecurity,
     rag_root: PathBuf,
 }
 
 #[derive(Clone)]
 pub struct WsDataStores {
-    memory: Arc<FileMemoryBackend>,
     notebook: Arc<NotebookStore>,
-    settings: Arc<SettingsStore>,
 }
 
 impl WsDataStores {
-    pub fn new(
-        memory: Arc<FileMemoryBackend>,
-        notebook: Arc<NotebookStore>,
-        settings: Arc<SettingsStore>,
-    ) -> Self {
-        Self {
-            memory,
-            notebook,
-            settings,
-        }
+    pub fn new(notebook: Arc<NotebookStore>) -> Self {
+        Self { notebook }
     }
 }
 
@@ -221,8 +200,6 @@ enum ClientMessage {
     },
     #[serde(rename = "stop")]
     Stop,
-    #[serde(rename = "approval_response")]
-    ApprovalResponse { request_id: String, approved: bool },
 }
 
 struct TutorMessageInput {
@@ -231,7 +208,6 @@ struct TutorMessageInput {
     mentions: Vec<NotebookMention>,
     run_id: String,
     cancel: CancellationToken,
-    memory_approver: Arc<WebMemoryApprovalCoordinator>,
 }
 
 async fn ws_handler(
@@ -314,8 +290,6 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
         }
     });
 
-    let connection_closed = CancellationToken::new();
-    let mut memory_approver: Option<Arc<WebMemoryApprovalCoordinator>> = None;
     while let Some(Ok(msg)) = ws_stream.next().await {
         match msg {
             Message::Text(text) => {
@@ -344,13 +318,6 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
                             .ensure_entry(&session_id)
                             .await
                             .unwrap_or_else(|| entry.clone());
-                        let run_memory_approver = Arc::new(WebMemoryApprovalCoordinator::new(
-                            active_entry.stream.clone(),
-                            session_id.clone(),
-                            run_id.clone(),
-                            connection_closed.child_token(),
-                        ));
-                        memory_approver = Some(run_memory_approver.clone());
                         let run_pool = pool.clone();
                         let run_session_id = session_id.clone();
                         let run_state = state.clone();
@@ -363,11 +330,9 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
                                     mentions: mentions.unwrap_or_default(),
                                     run_id: run_id.clone(),
                                     cancel,
-                                    memory_approver: run_memory_approver.clone(),
                                 },
                             )
                             .await;
-                            run_memory_approver.close();
                             if let Some(run) = run_pool.terminal_active_run(
                                 &run_session_id,
                                 &run_id,
@@ -392,37 +357,6 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
                                 .await;
                         }
                     }
-                    Ok(ClientMessage::ApprovalResponse {
-                        request_id,
-                        approved,
-                    }) => {
-                        let outcome = memory_approver
-                            .as_ref()
-                            .map(|coordinator| coordinator.resolve(&request_id, approved))
-                            .unwrap_or(ApprovalResponseOutcome::Unknown);
-                        let (kind, reason) = match outcome {
-                            ApprovalResponseOutcome::Resolved => {
-                                ("approval_response_received", None)
-                            }
-                            ApprovalResponseOutcome::Replayed => {
-                                ("approval_response_rejected", Some("replayed"))
-                            }
-                            ApprovalResponseOutcome::Unknown => {
-                                ("approval_response_rejected", Some("unknown"))
-                            }
-                        };
-                        let _ = entry
-                            .stream
-                            .status(
-                                kind,
-                                serde_json::json!({
-                                    "request_id": request_id,
-                                    "approved": approved,
-                                    "reason": reason,
-                                }),
-                            )
-                            .await;
-                    }
                     Err(err) => {
                         let _ = entry
                             .stream
@@ -441,17 +375,12 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
         }
     }
 
-    connection_closed.cancel();
-    if let Some(coordinator) = memory_approver {
-        coordinator.close();
-    }
     send_task.abort();
 }
 
 fn agent_knowledge_access_context(
     session_id: &str,
     knowledge_base_id: Option<&str>,
-    learner_memory_mode: LearnerMemoryMode,
 ) -> KnowledgeAccessContext {
     let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
     scope.project = Some(session_id.to_string());
@@ -461,36 +390,9 @@ fn agent_knowledge_access_context(
             knowledge_base_id.to_string(),
         );
     }
-    if let Some(profile) = learner_memory_mode.profile_name() {
-        scope
-            .attributes
-            .insert(LEARNER_MEMORY_PROFILE_ATTRIBUTE.into(), profile.into());
-        scope.attributes.insert(
-            LEARNER_MEMORY_PRINCIPAL_ATTRIBUTE.into(),
-            "local-user".into(),
-        );
-        scope
-            .attributes
-            .insert(LEARNER_MEMORY_LAYERS_ATTRIBUTE.into(), "l1,l2,l3".into());
-        scope.attributes.insert(
-            LEARNER_MEMORY_SURFACES_ATTRIBUTE.into(),
-            "chat,quiz,notebook,knowledge".into(),
-        );
-        scope.attributes.insert(
-            LEARNER_MEMORY_KINDS_ATTRIBUTE.into(),
-            "recent,profile,scope,preferences,teaching_strategy,continuity".into(),
-        );
-        scope.attributes.insert(
-            LEARNER_MEMORY_L1_SESSION_ATTRIBUTE.into(),
-            session_id.to_string(),
-        );
-    }
     let mut access =
         KnowledgeAccessContext::new(scope, PrincipalRef::new("local-user", "local_user"));
-    access.authorization_version = Some(format!(
-        "local-user:agent-knowledge:v1:user-memory:{}",
-        learner_memory_mode.profile_name().unwrap_or("disabled")
-    ));
+    access.authorization_version = Some("local-user:agent-knowledge:v1".into());
     access
 }
 
@@ -498,19 +400,17 @@ fn agent_run_request(
     content: String,
     session_id: &str,
     knowledge_base_id: Option<&str>,
-    learner_memory_mode: LearnerMemoryMode,
 ) -> tutor_agent::Result<RunRequest> {
     let mut request = RunRequest::from_text(content);
-    if knowledge_base_id.is_some() || learner_memory_mode.profile_name().is_some() {
+    if knowledge_base_id.is_some() {
         request = request.with_extension(agent_knowledge_access_context(
             session_id,
             knowledge_base_id,
-            learner_memory_mode,
         ));
     }
-    let memory_session_id = MemorySessionId::new(session_id)
+    let runtime_session_id = MemorySessionId::new(session_id)
         .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?;
-    Ok(request.with_extension(memory_session_id))
+    Ok(request.with_extension(runtime_session_id))
 }
 
 pub fn ws_router(
@@ -521,9 +421,7 @@ pub fn ws_router(
 ) -> Router {
     let state = WsState {
         pool,
-        memory: data_stores.memory,
         notebook: data_stores.notebook,
-        settings: data_stores.settings,
         runtime_security,
         rag_root: rag_root.into(),
     };
@@ -535,9 +433,7 @@ pub fn ws_router(
 async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static str {
     let WsState {
         pool,
-        memory,
         notebook,
-        settings,
         runtime_security,
         rag_root,
     } = state;
@@ -547,7 +443,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         mentions,
         run_id,
         cancel,
-        memory_approver,
     } = input;
     let history_len = pool.history_len(&entry.id).await + 1;
     let user_message_index = next_user_message_index(&pool, &entry.id).await;
@@ -627,12 +522,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         let mut router = CapabilityRouter::new(env, llm, governance)
             .with_event_sink(sink)
             .with_workflow_root(rag_root.join("workflow-sessions"));
-        let learner_memory_allowed = entry.assistant.memory_enabled;
-        let learner_memory_mode = if learner_memory_allowed {
-            LearnerMemoryMode::InteractiveMutation
-        } else {
-            LearnerMemoryMode::Disabled
-        };
         router = router
             .with_product_instruction(assistant_product_instruction(&entry.assistant))
             .with_product_tool(Arc::new(ReadNotebookItemTool::new(notebook.clone())));
@@ -659,21 +548,9 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             }
             _ => None,
         };
-        let learner_memory =
-            learner_memory_allowed.then(|| crate::knowledge_runtime::LearnerMemoryRuntimeInput {
-                backend: memory.clone(),
-                semantic_rag: entry
-                    .embedding
-                    .clone()
-                    .or_else(|| settings.active_embedding_config())
-                    .map(|embedding| tutor_rag::LanceDbRag::new(rag_root.clone(), embedding)),
-                mode: learner_memory_mode,
-                approver: Some(memory_approver),
-            });
-        router = crate::knowledge_runtime::install_agent_knowledge_and_memory(
+        router = crate::knowledge_runtime::install_agent_knowledge(
             router,
             course_source,
-            learner_memory,
             &runtime_security,
         )?;
         if entry.capability == "research" {
@@ -696,12 +573,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
                 )
                 .await;
         }
-        let request = agent_run_request(
-            resolved_content.content,
-            &entry.id,
-            entry.kb.as_deref(),
-            learner_memory_mode,
-        )?;
+        let request = agent_run_request(resolved_content.content, &entry.id, entry.kb.as_deref())?;
         let answer = router
             .run_request_with_session_cancel(
                 capability,
@@ -738,31 +610,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
 
     match result {
         Ok(answer) => {
-            if entry.assistant.memory_enabled
-                && should_record_chat_memory(
-                    &entry.capability,
-                    research_report_started.load(Ordering::SeqCst),
-                )
-            {
-                let _ = memory.record_event(
-                    MemoryEventCategory::Chat,
-                    "answered",
-                    summarize_exchange(&content, &answer),
-                    Some(entry.id.clone()),
-                    serde_json::json!({
-                        "session_id": entry.id,
-                        "capability": entry.capability,
-                    "user": content,
-                    "space_mentions": mentions.iter().map(|mention| serde_json::json!({
-                        "id": mention.id,
-                        "type": mention.mention_type,
-                        "target_id": mention.target_id,
-                        "title": mention.title,
-                    })).collect::<Vec<_>>(),
-                        "assistant": answer,
-                    }),
-                );
-            }
             // Always close the stream with the runtime-classified canonical
             // final answer. Earlier deltas may have belonged to a Progress
             // message before a tool call.
@@ -822,11 +669,6 @@ fn assistant_product_instruction(assistant: &crate::session::AssistantSessionCon
             instructions
         )
     }
-}
-
-fn should_record_chat_memory(capability: &str, research_report_started: bool) -> bool {
-    matches!(capability, "chat" | "organize")
-        || (capability == "research" && !research_report_started)
 }
 
 async fn next_user_message_index(pool: &SessionPool, session_id: &str) -> usize {
@@ -898,16 +740,6 @@ fn resolve_message_content_with_space_mentions(
     }
 }
 
-fn summarize_exchange(user: &str, assistant: &str) -> String {
-    let user = user.split_whitespace().collect::<Vec<_>>().join(" ");
-    let assistant = assistant.split_whitespace().collect::<Vec<_>>().join(" ");
-    format!(
-        "User asked: {}; assistant answered: {}",
-        user.chars().take(160).collect::<String>(),
-        assistant.chars().take(220).collect::<String>()
-    )
-}
-
 fn web_search_config_for_session(
     config: Option<SearchSessionConfig>,
 ) -> Option<tutor_tools::WebSearchConfig> {
@@ -968,12 +800,8 @@ mod tests {
     use crate::notebook_store::{NotebookEntryInput, NotebookEntryType};
 
     #[test]
-    fn agent_knowledge_access_is_scoped_to_session_resources_and_interactive_memory() {
-        let access = agent_knowledge_access_context(
-            "session-a",
-            Some("kb-a"),
-            LearnerMemoryMode::InteractiveMutation,
-        );
+    fn agent_knowledge_access_is_scoped_to_session_resources() {
+        let access = agent_knowledge_access_context("session-a", Some("kb-a"));
 
         assert_eq!(access.scope.namespace, tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
         assert_eq!(access.scope.project.as_deref(), Some("session-a"));
@@ -985,58 +813,17 @@ mod tests {
                 .map(String::as_str),
             Some("kb-a")
         );
-        assert_eq!(
-            access
-                .scope
-                .attributes
-                .get(LEARNER_MEMORY_PROFILE_ATTRIBUTE)
-                .map(String::as_str),
-            Some("interactive_mutation")
-        );
-        assert_eq!(
-            access
-                .scope
-                .attributes
-                .get(LEARNER_MEMORY_L1_SESSION_ATTRIBUTE)
-                .map(String::as_str),
-            Some("session-a")
-        );
         assert_eq!(access.principal.subject, "local-user");
         assert_eq!(access.principal.principal_type, "local_user");
         assert_eq!(
             access.authorization_version.as_deref(),
-            Some("local-user:agent-knowledge:v1:user-memory:interactive_mutation")
+            Some("local-user:agent-knowledge:v1")
         );
     }
 
     #[test]
-    fn disabled_learner_memory_omits_all_memory_claims() {
-        let access =
-            agent_knowledge_access_context("session-a", Some("kb-a"), LearnerMemoryMode::Disabled);
-
-        assert!(
-            !access
-                .scope
-                .attributes
-                .contains_key(LEARNER_MEMORY_PROFILE_ATTRIBUTE)
-        );
-        assert!(
-            !access
-                .scope
-                .attributes
-                .contains_key(LEARNER_MEMORY_PRINCIPAL_ATTRIBUTE)
-        );
-    }
-
-    #[test]
-    fn ordinary_agent_request_carries_typed_knowledge_and_memory_session_context() {
-        let request = agent_run_request(
-            "hello".into(),
-            "session-a",
-            Some("kb-a"),
-            LearnerMemoryMode::InteractiveMutation,
-        )
-        .unwrap();
+    fn ordinary_agent_request_carries_typed_knowledge_context() {
+        let request = agent_run_request("hello".into(), "session-a", Some("kb-a")).unwrap();
 
         assert!(request.extensions.get::<KnowledgeAccessContext>().is_some());
         assert_eq!(
@@ -1104,15 +891,6 @@ mod tests {
         assert_eq!(artifact["artifact_store"], "runtime_trace");
         assert_eq!(artifact["artifact_id"], "run-123");
         assert_eq!(artifact["title"], "Transformer Architecture");
-    }
-
-    #[test]
-    fn research_memory_only_records_conversation_before_report_workflow() {
-        assert!(should_record_chat_memory("research", false));
-        assert!(!should_record_chat_memory("research", true));
-        assert!(should_record_chat_memory("chat", true));
-        assert!(should_record_chat_memory("organize", true));
-        assert!(!should_record_chat_memory("quiz", false));
     }
 
     #[test]

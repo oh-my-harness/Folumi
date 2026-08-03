@@ -8,13 +8,6 @@ use tower_http::cors::{Any, CorsLayer};
 
 mod knowledge_runtime;
 mod knowledge_store;
-#[allow(dead_code)]
-mod learner_memory_source;
-#[allow(dead_code)]
-mod learner_memory_write;
-mod memory_approval;
-mod memory_evidence;
-mod memory_store;
 mod notebook_store;
 mod notebook_tool;
 mod research_tool;
@@ -40,9 +33,6 @@ async fn main() -> anyhow::Result<()> {
     if let Err(error) = notebook.start_watcher() {
         eprintln!("failed to start notebook vault watcher: {error}");
     }
-    let memory = std::sync::Arc::new(memory_store::FileMemoryBackend::new_with_root(
-        config.data_dir.join("memory"),
-    ));
     let settings = std::sync::Arc::new(settings_store::SettingsStore::new_with_path(
         config.data_dir.join("settings.json"),
     ));
@@ -57,24 +47,15 @@ async fn main() -> anyhow::Result<()> {
     let app = axum::Router::new()
         .merge(routes::knowledge::knowledge_router(
             knowledge.clone(),
-            memory.clone(),
             rag_root.clone(),
         ))
-        .merge(routes::notebook::notebook_router(
-            notebook.clone(),
-            memory.clone(),
-        ))
+        .merge(routes::notebook::notebook_router(notebook.clone()))
         .merge(routes::library::library_router(
             knowledge.clone(),
             notebook.clone(),
         ))
         .merge(routes::notebook_mentions::notebook_mentions_router(
             notebook.clone(),
-        ))
-        .merge(routes::memory::memory_router(
-            memory.clone(),
-            runtime_security.clone(),
-            config.data_dir.join("workflow-sessions").join("memory"),
         ))
         .merge(routes::settings::settings_router(settings.clone()))
         .merge(routes::sessions::sessions_router(
@@ -83,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
         ))
         .merge(routes::ws::ws_router(
             pool.clone(),
-            routes::ws::WsDataStores::new(memory.clone(), notebook.clone(), settings.clone()),
+            routes::ws::WsDataStores::new(notebook.clone()),
             runtime_security,
             rag_root,
         ))

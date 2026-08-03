@@ -1,5 +1,9 @@
 # Memory Consolidation Design
 
+> Superseded on 2026-08-03. The described L1/L2/L3 workflow has been removed
+> from the active product and must not be used as an implementation target.
+> See `2026-08-03-user-memory-redesign.md` for the replacement proposal.
+
 > Status: core workflow implemented; artifact resolution and budgets remain | Created: 2026-06-26 | Updated: 2026-07-14 |
 > Scope: define the memory consolidation workflow, evidence access boundary,
 > structured change contract, and review experience for `llm-tutor`.

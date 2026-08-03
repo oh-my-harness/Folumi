@@ -1,10 +1,5 @@
 pub mod knowledge_runtime;
 pub mod knowledge_store;
-pub mod learner_memory_source;
-pub mod learner_memory_write;
-pub mod memory_approval;
-pub mod memory_evidence;
-pub mod memory_store;
 pub mod notebook_store;
 pub mod notebook_tool;
 pub mod research_tool;

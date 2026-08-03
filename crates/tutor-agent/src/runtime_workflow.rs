@@ -5,50 +5,7 @@ use llm_harness_types::SPAWN_AGENT_TOOL_NAME;
 
 use crate::error::{Result, TutorError};
 
-pub const MEMORY_WORKFLOW_ID: &str = "tutor.memory";
 pub const RESEARCH_WORKFLOW_ID: &str = "tutor.research";
-
-pub fn memory_workflow() -> Workflow {
-    memory_workflow_with_allowed_tools(vec![
-        KNOWLEDGE_SEARCH_TOOL_NAME.into(),
-        KNOWLEDGE_READ_TOOL_NAME.into(),
-    ])
-}
-
-pub fn memory_workflow_with_allowed_tools(allowed_tools: Vec<String>) -> Workflow {
-    Workflow {
-        entry_step: "prepare_memory".into(),
-        steps: vec![
-            Step::executor(
-                "prepare_memory",
-                "Prepare memory workflow input",
-                "tutor.memory.prepare",
-                None,
-            ),
-            Step::llm(
-                "run_memory",
-                "Run memory workflow",
-                "Read the workflow Context. The `memory_prompt` variable contains the full memory maintenance instruction, including target file, action, current Markdown, normalized evidence, and output schema. \
-                 Maintain learner memory according to that instruction. End the step with only the JSON object requested by `memory_prompt`; do not wrap it in Markdown fences or add prose.",
-                allowed_tools,
-            )
-            .with_structured(Some(true)),
-        ],
-        edges: vec![Edge {
-            from: "prepare_memory".into(),
-            to: "run_memory".into(),
-            condition: Some(prepared_condition()),
-        }],
-    }
-}
-
-pub fn validate_memory_workflow() -> Result<()> {
-    validate_workflow(&memory_workflow()).map_err(|err| {
-        TutorError::Internal(format!(
-            "runtime workflow validation failed for {MEMORY_WORKFLOW_ID}: {err}"
-        ))
-    })
-}
 
 pub fn research_workflow() -> Workflow {
     Workflow {
@@ -175,26 +132,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn memory_workflow_is_valid_runtime_workflow() {
-        validate_memory_workflow().unwrap();
-    }
-
-    #[test]
     fn research_workflow_is_valid_runtime_workflow() {
         validate_research_workflow().unwrap();
     }
 
     #[test]
     fn workflows_use_runtime_evaluable_edge_conditions() {
-        for workflow in [memory_workflow(), research_workflow()] {
-            for edge in workflow.edges {
-                assert!(
-                    !matches!(edge.condition, Some(EdgeCondition::Label(_))),
-                    "workflow {} -> {} should use Expr conditions so runtime EdgeConditionJudge can route it",
-                    edge.from,
-                    edge.to
-                );
-            }
+        for edge in research_workflow().edges {
+            assert!(
+                !matches!(edge.condition, Some(EdgeCondition::Label(_))),
+                "workflow {} -> {} should use Expr conditions so runtime EdgeConditionJudge can route it",
+                edge.from,
+                edge.to
+            );
         }
     }
 
@@ -255,22 +205,5 @@ mod tests {
         assert!(read_tools.contains(&"web_fetch".to_string()));
         assert!(!read_tools.contains(&SPAWN_AGENT_TOOL_NAME.to_string()));
         assert_eq!(write_tools, vec![KNOWLEDGE_READ_TOOL_NAME.to_string()]);
-    }
-
-    #[test]
-    fn memory_workflow_declares_only_the_tools_mounted_for_the_run() {
-        let expected = vec![
-            KNOWLEDGE_SEARCH_TOOL_NAME.to_string(),
-            KNOWLEDGE_READ_TOOL_NAME.to_string(),
-        ];
-        let workflow = memory_workflow_with_allowed_tools(expected.clone());
-        let tools = workflow
-            .steps
-            .iter()
-            .find(|step| step.id() == "run_memory")
-            .unwrap()
-            .allowed_tools();
-
-        assert_eq!(tools, expected);
     }
 }

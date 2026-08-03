@@ -1,6 +1,5 @@
 pub mod knowledge;
 pub mod library;
-pub mod memory;
 pub mod notebook;
 pub mod notebook_mentions;
 pub mod sessions;
