@@ -366,7 +366,8 @@ Memory 页面还提供有效期修改、显式重新确认和 JSON 导出；导�
 
 ### Phase 2：History Recall
 
-状态：待 runtime 提供稳定的跨 Session 搜索与精确 turn 投影契约，当前开关不可开启。
+状态：待 runtime 提供稳定的跨 Session 搜索与精确 turn 投影契约，当前开关不可开启；
+上游跟踪见 [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104)。
 
 - 先补齐或确认 runtime 跨 Session 搜索/投影边界；
 - 历史检索独立开关，默认关闭；

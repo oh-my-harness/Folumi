@@ -23,6 +23,8 @@
 - **SessionRepo lacks a first-class cross-session recall/search projection**
   - Checked against the product pin `ee97890` on 2026-08-03 while revising the
     Folumi memory proposal.
+  - Tracked upstream as
+    [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104).
   - `SessionRepo` supports create, get, list, fork, and delete, but exposes no
     cross-session text/semantic search, stable turn-level result reference, or
     projection invalidation contract for deleted, archived, or temporary
