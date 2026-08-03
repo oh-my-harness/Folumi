@@ -21,7 +21,7 @@
 ## Friction Points
 
 - **Validated 2026-08-03: runtime Session Recall is consumable; scope and navigation gaps are resolved**
-  - Checked against the product pin `380635f` on 2026-08-03 while revising the
+  - Checked against the product pin `a7f3173` on 2026-08-03 while revising the
     Folumi memory proposal.
   - Tracked upstream as
     [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104).
@@ -56,24 +56,21 @@
     `chat:<session>:<entry>` directly on the runtime source and removed its
     delegating Knowledge-source wrapper.
 
-- **Knowledge search requires model-provided source routing when multiple sources are visible**
+- **Resolved 2026-08-03: Knowledge search safely federates multiple visible sources**
   - Reproduced in the desktop app on 2026-07-30 with Learner Memory and Tutor
     Memory mounted in one runtime `KnowledgeRegistry`.
-  - `knowledge_search` makes `source_id` optional, but
-    `KnowledgeRegistry::search` rejects an unscoped request unless it resolves
-    to exactly one visible source. With both memory sources visible, a
-    semantically correct query therefore fails with
-    `UnsupportedCapability` before either source can search.
-  - Product mitigation: runtime instructions now provide the exact trusted
-    catalog identifiers for Course Knowledge, Learner Memory, and Tutor Memory,
-    and require source-routed searches. A combined-source regression test
-    covers the Learner identity path, including a legacy name entry stored
-    under preferences.
-  - Suggestion: expose authorized source discovery to the model, make
-    `source_id` conditionally required with an enumerated authorized catalog,
-    or support federated search with per-source failures. The default tool
-    contract should not accept a request shape that deterministically fails
-    whenever more than one source is visible.
+  - Runtime commit `a7f3173` searches every authorized visible source when
+    `source_id` is omitted, applies per-source filters and authorization, and
+    merges results under one global limit using stable round-robin fairness.
+  - Partial backend failures are returned only as sanitized source ID, error
+    code, and retryability. Explicit single-source requests retain strict error
+    behavior, and cancellation still aborts the complete operation.
+  - Mixed searches use the most restrictive Session projection. If any source
+    is reference-only (including Session Recall), no source snippet from that
+    federated result is persisted into the Session.
+  - Folumi still recommends `source_id = session_recall` when the intent is
+    specifically History Recall, but omission is now a valid safe fallback
+    instead of a deterministic tool failure.
 
 - **Resolved 2026-07-29: Knowledge citation policy distinguishes course evidence from
   personalization memory**
