@@ -1,9 +1,11 @@
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import {
   Check,
+  Brain,
   Edit3,
   FileText,
   MessageSquare,
+  NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
   Pin,
@@ -15,7 +17,7 @@ import {
 import { useI18n } from '../i18n'
 import { openDesktopContextMenu } from '../desktop'
 
-export type AppView = 'assistant' | 'knowledge' | 'settings'
+export type AppView = 'assistant' | 'knowledge' | 'notebook' | 'memory' | 'settings'
 
 interface RecentSession {
   id: string
@@ -42,11 +44,13 @@ interface Props {
 
 const navItems: Array<{
   key: AppView
-  labelKey: 'nav.assistant' | 'nav.knowledge'
+  labelKey: 'nav.assistant' | 'nav.knowledge' | 'nav.notebook' | 'nav.memory'
   icon: typeof MessageSquare
 }> = [
   { key: 'assistant', labelKey: 'nav.assistant', icon: MessageSquare },
   { key: 'knowledge', labelKey: 'nav.knowledge', icon: FileText },
+  { key: 'notebook', labelKey: 'nav.notebook', icon: NotebookPen },
+  { key: 'memory', labelKey: 'nav.memory', icon: Brain },
 ]
 
 export function Sidebar({

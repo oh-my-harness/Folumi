@@ -19,11 +19,12 @@ interface NoteEntry {
 }
 
 interface Props {
+  language: 'zh-CN' | 'en-US'
   focusTarget?: Extract<SourceTarget, { type: 'notebook' }> | null
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
 }
 
-export function NotesPage({ focusTarget, onSourceNavigate }: Props) {
+export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
   const [notes, setNotes] = useState<NoteEntry[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detail, setDetail] = useState<NoteEntry | null>(null)
@@ -129,7 +130,7 @@ export function NotesPage({ focusTarget, onSourceNavigate }: Props) {
       setNotes((items) => items.map((item) => item.id === updated.id ? updated : item))
       setDetail(updated)
       setEditing(false)
-      setStatus('Note saved')
+      setStatus(language === 'en-US' ? 'Note saved' : '笔记已保存')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
@@ -138,7 +139,7 @@ export function NotesPage({ focusTarget, onSourceNavigate }: Props) {
   }
 
   const remove = async (note: NoteEntry) => {
-    if (!window.confirm(`Delete "${note.title}"?`)) return
+    if (!window.confirm(language === 'en-US' ? `Delete "${note.title}"?` : `确定删除“${note.title}”吗？`)) return
     try {
       let restorable = detail?.id === note.id ? detail : note
       if (!restorable.markdown) {
@@ -191,20 +192,29 @@ export function NotesPage({ focusTarget, onSourceNavigate }: Props) {
     }
   }
 
-  return <main className="flex h-full min-h-0 bg-white">
+  return <main className="flex h-full min-h-0 flex-col bg-white">
+    <header className="flex items-start gap-3 border-b border-gray-200 px-6 py-4">
+      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileText size={21} /></span>
+      <div>
+        <h1 className="text-xl font-semibold text-gray-950">{language === 'en-US' ? 'Notebook' : '笔记'}</h1>
+        <p className="mt-1 text-sm text-gray-500">{language === 'en-US' ? 'Record, organize, read, and edit your Markdown notes.' : '记录、整理、查看和编辑你拥有的 Markdown 笔记。'}</p>
+      </div>
+    </header>
+    <div className="flex min-h-0 flex-1">
     <aside className="flex w-80 shrink-0 flex-col border-r border-gray-200 bg-gray-50/70">
       <div className="flex items-center gap-2 border-b border-gray-200 p-4">
-        <button className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 text-sm font-medium text-white" type="button" disabled={loading} onClick={() => void create()}><Plus size={16} />New note</button>
+        <button className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 text-sm font-medium text-white" type="button" disabled={loading} onClick={() => void create()}><Plus size={16} />{language === 'en-US' ? 'New note' : '新建笔记'}</button>
         <button className="rounded-lg border border-gray-200 bg-white p-2 text-gray-600" type="button" disabled={loading} onClick={() => void load()} aria-label="Refresh notes"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button>
       </div>
-      {deleted && <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900"><span className="min-w-0 flex-1 truncate">Deleted “{deleted.title}”</span><button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => void restore()}><Undo2 size={13} />Undo</button><button type="button" onClick={() => setDeleted(null)}><X size={13} /></button></div>}
+      {deleted && <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900"><span className="min-w-0 flex-1 truncate">{language === 'en-US' ? `Deleted “${deleted.title}”` : `已删除“${deleted.title}”`}</span><button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => void restore()}><Undo2 size={13} />{language === 'en-US' ? 'Undo' : '撤销'}</button><button type="button" onClick={() => setDeleted(null)}><X size={13} /></button></div>}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">{sorted.map((note) => <button key={note.id} type="button" className={`mb-1 flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left ${note.id === activeId ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-700 hover:bg-white'}`} onClick={() => { setActiveId(note.id); setEditing(false) }}><FileText size={16} className="mt-0.5 shrink-0" /><span className="min-w-0"><span className="block truncate text-sm font-medium">{note.title}</span><span className="block truncate text-xs text-gray-400">{note.path || 'Unfiled'}</span></span></button>)}</div>
       {status && <div className="border-t border-gray-200 px-4 py-2 text-xs text-gray-500">{status}</div>}
     </aside>
-    <section className="flex min-w-0 flex-1 flex-col">{!active ? <div className="m-auto text-center text-gray-400"><FileText className="mx-auto" size={34} /><p className="mt-3 text-sm">Create or select a note</p></div> : <>
-      <header className="flex items-start gap-4 border-b border-gray-100 px-7 py-4"><div className="min-w-0 flex-1">{editing ? <div className="grid max-w-2xl gap-2"><input className={inputClassName} value={title} onChange={(event) => setTitle(event.target.value)} aria-label="Note title" /><input className={`${inputClassName} font-mono text-xs`} value={path} onChange={(event) => setPath(event.target.value)} aria-label="Note path" placeholder="folder/note.md" /></div> : <><h2 className="truncate text-xl font-semibold text-gray-950">{active.title}</h2><p className="mt-1 truncate text-xs text-gray-400">{active.path}</p></>}</div><div className="flex gap-2">{editing ? <><button className={buttonClassName} type="button" disabled={loading || !markdown.trim()} onClick={() => void save()}><Save size={15} />Save</button><button className={buttonClassName} type="button" onClick={() => setEditing(false)}><X size={15} />Cancel</button></> : <><button className={buttonClassName} type="button" onClick={() => startEdit(active)}><Edit3 size={15} />Edit</button><button className={buttonClassName} type="button" onClick={() => void remove(active)}><Trash2 size={15} />Delete</button></>}</div></header>
+    <section className="flex min-w-0 flex-1 flex-col">{!active ? <div className="m-auto text-center text-gray-400"><FileText className="mx-auto" size={34} /><p className="mt-3 text-sm">{language === 'en-US' ? 'Create or select a note' : '新建或选择一条笔记'}</p></div> : <>
+      <header className="flex items-start gap-4 border-b border-gray-100 px-7 py-4"><div className="min-w-0 flex-1">{editing ? <div className="grid max-w-2xl gap-2"><input className={inputClassName} value={title} onChange={(event) => setTitle(event.target.value)} aria-label="Note title" /><input className={`${inputClassName} font-mono text-xs`} value={path} onChange={(event) => setPath(event.target.value)} aria-label="Note path" placeholder="folder/note.md" /></div> : <><h2 className="truncate text-xl font-semibold text-gray-950">{active.title}</h2><p className="mt-1 truncate text-xs text-gray-400">{active.path}</p></>}</div><div className="flex gap-2">{editing ? <><button className={buttonClassName} type="button" disabled={loading || !markdown.trim()} onClick={() => void save()}><Save size={15} />{language === 'en-US' ? 'Save' : '保存'}</button><button className={buttonClassName} type="button" onClick={() => setEditing(false)}><X size={15} />{language === 'en-US' ? 'Cancel' : '取消'}</button></> : <><button className={buttonClassName} type="button" onClick={() => startEdit(active)}><Edit3 size={15} />{language === 'en-US' ? 'Edit' : '编辑'}</button><button className={buttonClassName} type="button" onClick={() => void remove(active)}><Trash2 size={15} />{language === 'en-US' ? 'Delete' : '删除'}</button></>}</div></header>
       <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">{editing ? <textarea className={`${inputClassName} min-h-[65vh] resize-y font-mono leading-6`} value={markdown} onChange={(event) => setMarkdown(event.target.value)} /> : <div className="max-w-4xl rounded-lg border border-gray-200 bg-gray-50 p-5"><MarkdownMessage text={active.markdown || ' '} onSourceNavigate={onSourceNavigate} /></div>}</div>
     </>}</section>
+    </div>
   </main>
 }
 

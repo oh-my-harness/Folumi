@@ -257,7 +257,7 @@ const chineseCopy = {
   notebook: {
     title: '配置并使用 Notebook',
     description: 'Notebook 是 Markdown 工作区。可直接使用应用本地目录，也可在桌面端绑定外部 Vault。',
-    steps: ['在“设置 > 笔记本”查看本地目录，或绑定一个外部 Markdown Vault。', '进入“知识 > 笔记”创建、阅读和编辑笔记。', '在聊天资料源中选择 Notebook，可让 Agent 搜索多条笔记。', '若只需要一条笔记，使用 @ 按钮精确引用。'],
+    steps: ['在“设置 > 笔记本”查看本地目录，或绑定一个外部 Markdown Vault。', '进入独立的“笔记”页面创建、阅读和编辑笔记。', '在聊天资料源中选择 Notebook，可让 Agent 搜索多条笔记。', '若只需要一条笔记，使用 @ 按钮精确引用。'],
     settings: 'Notebook 设置',
     open: '打开 Notebook',
   },
@@ -322,7 +322,7 @@ const englishCopy: typeof chineseCopy = {
   notebook: {
     title: 'Configure and use Notebook',
     description: 'Notebook is a Markdown workspace. Use the app-local directory or bind an external Vault on desktop.',
-    steps: ['Inspect the local directory or bind an external Markdown Vault under Settings > Notebook.', 'Create, read, and edit notes under Knowledge > Notes.', 'Select Notebook from the Chat source menu when the Agent should search multiple notes.', 'Use the @ button when you need one exact note.'],
+    steps: ['Inspect the local directory or bind an external Markdown Vault under Settings > Notebook.', 'Create, read, and edit notes on the standalone Notebook page.', 'Select Notebook from the Chat source menu when the Agent should search multiple notes.', 'Use the @ button when you need one exact note.'],
     settings: 'Notebook settings',
     open: 'Open Notebook',
   },

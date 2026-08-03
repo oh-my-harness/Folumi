@@ -1,6 +1,6 @@
 # Folumi Product Requirements Specification
 
-> Status: active target baseline | Last updated: 2026-08-01
+> Status: active target baseline | Last updated: 2026-08-03
 
 This specification is authoritative for the current product. Historical Tutor,
 Quiz, Space, Student Profile, and standalone Research requirements remain in
@@ -10,7 +10,7 @@ archived plans only and are not Folumi requirements.
 
 - **REQ-001** Folumi shall be a local-first personal knowledge assistant.
 - **REQ-002** The primary navigation shall contain Assistant, Knowledge Base,
-  and Settings only.
+  Notebook, Memory, and Settings.
 - **REQ-003** The product shall expose one Assistant identity rather than a
   user-managed collection of Tutors.
 - **REQ-004** Sources, Notes, Memory, and Sessions shall remain distinct data
@@ -40,6 +40,8 @@ archived plans only and are not Folumi requirements.
 
 ## 3. Sources
 
+- **REQ-199** Knowledge Base shall be a dedicated RAG source workspace and
+  shall not embed editable Notes or Memory management in the same interface.
 - **REQ-200** Sources shall preserve original documents and source metadata as
   authoritative data.
 - **REQ-201** The product shall expose import progress, failure reasons, retry,
@@ -54,6 +56,8 @@ archived plans only and are not Folumi requirements.
 
 ## 4. Notes
 
+- **REQ-299** Notebook shall be a standalone primary workspace for recording,
+  organizing, reading, and editing Notes.
 - **REQ-300** Notes shall be user-owned Markdown stored in the application
   Vault or a user-selected external Vault.
 - **REQ-301** Notes shall support folders, tags, Wiki links, backlinks, import,
@@ -66,6 +70,8 @@ archived plans only and are not Folumi requirements.
 
 ## 5. Memory and Continuity
 
+- **REQ-399** Memory shall be a standalone primary workspace for enabling,
+  reviewing, editing, forgetting, and migrating long-term memory.
 - **REQ-400** Long-term Memory shall be optional and controlled by a master
   switch.
 - **REQ-401** Users shall be able to inspect, edit, approve, reject, and forget
@@ -97,7 +103,8 @@ archived plans only and are not Folumi requirements.
 ## 7. Settings, Privacy, and Portability
 
 - **REQ-600** Users shall configure LLM, embedding, search, appearance, Note
-  Vault, tool governance, and Memory policy through Settings.
+  Vault, and tool governance through Settings; Memory policy and items shall be
+  managed from the standalone Memory workspace.
 - **REQ-601** Product data shall remain local unless a configured provider or
   explicit external tool call requires transmission.
 - **REQ-602** The UI shall make current knowledge scope and long-term Memory

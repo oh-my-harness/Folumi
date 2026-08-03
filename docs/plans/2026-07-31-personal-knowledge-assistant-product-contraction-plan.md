@@ -1,6 +1,6 @@
 # Personal Knowledge Assistant Product Contraction Plan
 
-> Status: Proposed / 待评审
+> Status: Accepted / 2026-08-03 revised navigation
 >
 > Date: 2026-07-31
 >
@@ -18,11 +18,13 @@ Notebook、Space 和多层学习记忆的综合学习平台。
 > 用户管理自己的资料和笔记，助手基于明确选择的知识工作，给出可追溯答案，并在用户
 > 授权下形成可查看、可修改、可删除的长期记忆。
 
-目标产品只保留三个一级入口：
+目标产品保留五个一级入口：
 
 1. **助手**：对话、资料问答、分析整理和受控知识操作。
-2. **知识库**：统一管理只读资料与用户可编辑笔记。
-3. **设置**：模型、Embedding、助手、记忆、数据和隐私。
+2. **知识库**：管理用于 RAG 检索的只读资料。
+3. **笔记**：记录、管理和查看用户拥有的 Markdown 笔记。
+4. **记忆**：查看、开关、修改和遗忘长期记忆。
+5. **设置**：模型、Embedding、助手、数据和隐私。
 
 Knowledge、Notebook 和 Memory 的底层成果继续使用；Quiz、Space、Student Profile、多 Tutor
 和并列 Capability 模式退出目标产品。Research、联网搜索和代码执行降为助手按需调用的
@@ -139,6 +141,8 @@ Capability 模型或隐藏的教学工作流。
 ```text
 助手
 知识库
+笔记
+记忆
 设置
 ```
 
@@ -168,9 +172,7 @@ Quiz、Research、Organize、Code Exec 不再作为并列模式选择项。联�
 
 ### 5.3 知识库
 
-知识库页面包含两个主要标签：
-
-#### 资料
+知识库页面只管理用于 RAG 的资料：
 
 - 创建和重命名知识库；
 - 导入 PDF、Markdown、Text 和后续支持的格式；
@@ -180,7 +182,9 @@ Quiz、Research、Organize、Code Exec 不再作为并列模式选择项。联�
 - 全局搜索、文档预览和引用定位；
 - 重复文档检测、删除和导出。
 
-#### 笔记
+### 5.4 笔记
+
+笔记页面独立负责：
 
 - Markdown 树、文件夹、标签、Wiki Link 和反向链接；
 - 搜索、预览和编辑；
@@ -189,20 +193,23 @@ Quiz、Research、Organize、Code Exec 不再作为并列模式选择项。联�
 - 基于 revision 的并发检查；
 - 删除、批量修改和破坏性覆盖使用单独确认与恢复机制。
 
-资料与笔记可以在同一知识库界面中被联合搜索，但保持不同写权限和来源标识。
+Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权限；助手可在会话中按用户
+选择调用两类来源，但界面不将二者混为同一个工作区。
 
-### 5.4 设置
+### 5.5 记忆
+
+记忆页面独立负责总开关、记忆列表、来源检查、编辑、遗忘和旧数据迁移。Memory 的读取和
+变更仍通过 runtime access control 与 mutation gate，不因提升为一级页面而放宽权限。
+
+### 5.6 设置
 
 设置收敛为以下分组：
 
 1. **模型**：LLM 配置、测试和默认选择。
 2. **检索**：Embedding、搜索服务、索引默认参数。
 3. **助手**：名称、语言、回答偏好、允许使用的工具和默认资料范围。
-4. **记忆**：总开关、记忆列表、写入确认、编辑、遗忘和数据导出。
-5. **数据与隐私**：数据目录、备份、导入导出、远程数据发送说明。
-6. **外观与帮助**：主题、语言、快捷键和简化后的首次引导。
-
-Memory 不再占据一级导航。用户从助手设置进入“它记住了什么”。
+4. **数据与隐私**：数据目录、备份、导入导出、远程数据发送说明。
+5. **外观与帮助**：主题、语言、快捷键和简化后的首次引导。
 
 ## 6. 核心用户流程
 
@@ -258,8 +265,8 @@ Memory 不再占据一级导航。用户从助手设置进入“它记住了什�
 | --- | --- | --- |
 | Chat / Session | 保留并强化 | 成为唯一主工作台 |
 | Knowledge / RAG | 保留并强化 | 成为 Sources 管理核心 |
-| Notebook | 保留并合并 | 作为知识库中的 Notes |
-| Learner Memory | 保留并改名 | 收缩为 User Memory |
+| Notebook | 保留并强化 | 成为独立的 Notes 记录、管理和查看工作区 |
+| Learner Memory | 保留并改名 | 收缩为独立 Memory 页中的 User Memory |
 | Tutor Memory | 合并 | 收缩为单一 Assistant Continuity |
 | Tutor Soul | 简化 | 变成单一助手的行为设置 |
 | 多 Tutor 管理 | 删除 | 不保留并行身份、交接和权限矩阵 |
@@ -268,7 +275,7 @@ Memory 不再占据一级导航。用户从助手设置进入“它记住了什�
 | Code execution | 可选工具 | 默认隐藏在高级能力中 |
 | Quiz / Quiz Bank | 删除 | 导出已有数据后删除工作流、UI 和存储 |
 | Student Profile | 删除 | 有价值的个人偏好迁入 User Memory |
-| Space | 删除 | Notebook 并入 Knowledge，其余入口退出 |
+| Space | 删除 | Notebook 独立保留，其余 Space 聚合入口退出 |
 | Organize mode | 删除 | 由普通助手直接执行笔记任务 |
 | Deep Solve | 保持退休 | 不恢复旧入口或兼容路径 |
 | Trace | 保留但弱化 | 默认折叠，供高级用户和故障诊断使用 |
@@ -319,12 +326,13 @@ Memory 不再占据一级导航。用户从助手设置进入“它记住了什�
 
 ### Phase 2：收缩产品界面
 
-一句话：导航精简为“助手、知识库、设置”，把 Notebook、Memory 和 Research 放回正确的
-产品层级。
+一句话：导航明确为“助手、知识库、笔记、记忆、设置”，让三个长期数据域各自拥有清晰的
+工作区，同时把 Research 保持为助手任务动作。
 
 - [x] 重构 AppView 与 Sidebar；
-- [x] Knowledge 和 Notebook 合并为统一知识库页面；
-- [x] Memory 移入助手设置；
+- [x] Knowledge Base 保持为只包含 RAG Sources 的独立页面；
+- [x] Notebook 作为记录、管理和查看笔记的独立一级页面；
+- [x] Memory 作为记忆开关、审阅、编辑、遗忘和迁移的独立一级页面；
 - [x] Research 改为聊天任务动作；
 - [x] 删除 Capability 模式选择器中的 Quiz、Research 和 Organize；
 - [x] 重写首次引导和空状态。

@@ -6,12 +6,26 @@ const sidebar = readFileSync(new URL('./components/Sidebar.tsx', import.meta.url
 const composer = readFileSync(new URL('./components/ChatBox.tsx', import.meta.url), 'utf8')
 const onboarding = readFileSync(new URL('./components/OnboardingDialog.tsx', import.meta.url), 'utf8')
 const migration = readFileSync(new URL('./components/LegacyMigrationPanel.tsx', import.meta.url), 'utf8')
+const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+const knowledge = readFileSync(new URL('./components/KnowledgeBasePage.tsx', import.meta.url), 'utf8')
+const settings = readFileSync(new URL('./components/SettingsPage.tsx', import.meta.url), 'utf8')
+const memory = readFileSync(new URL('./components/UserMemoryPage.tsx', import.meta.url), 'utf8')
 
-test('primary navigation exposes only Assistant, Knowledge Base, and Settings', () => {
-  assert.match(sidebar, /export type AppView = 'assistant' \| 'knowledge' \| 'settings'/)
+test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, and Settings', () => {
+  assert.match(sidebar, /export type AppView = 'assistant' \| 'knowledge' \| 'notebook' \| 'memory' \| 'settings'/)
   assert.match(sidebar, /key: 'assistant'/)
   assert.match(sidebar, /key: 'knowledge'/)
-  assert.doesNotMatch(sidebar, /key: '(tutor|notebook|space|memory)'/)
+  assert.match(sidebar, /key: 'notebook'/)
+  assert.match(sidebar, /key: 'memory'/)
+  assert.doesNotMatch(sidebar, /key: '(tutor|space)'/)
+})
+
+test('Notebook and Memory are standalone workspaces while Knowledge Base stays RAG-only', () => {
+  assert.match(app, /view === 'notebook'/)
+  assert.match(app, /view === 'memory'/)
+  assert.doesNotMatch(knowledge, /NotesPage|Search Sources and Notes/)
+  assert.doesNotMatch(settings, /UserMemoryPage|LegacyMigrationPanel/)
+  assert.match(memory, /LegacyMigrationPanel/)
 })
 
 test('research is a chat task action instead of a capability menu', () => {

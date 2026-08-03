@@ -6,7 +6,9 @@ import { TracePanel, TraceEntry } from './components/TracePanel'
 import { BudgetPanel } from './components/BudgetPanel'
 import { ApprovalDialog } from './components/ApprovalDialog'
 import { SettingsPage, type SettingsTab } from './components/SettingsPage'
-import { KnowledgeBasePage, type KnowledgeSection } from './components/KnowledgeBasePage'
+import { KnowledgeBasePage } from './components/KnowledgeBasePage'
+import { NotesPage } from './components/NotesPage'
+import { UserMemoryPage } from './components/UserMemoryPage'
 import { OnboardingDialog } from './components/OnboardingDialog'
 import { OnboardingResumeButton } from './components/OnboardingResumeButton'
 import { AppView, Sidebar } from './components/Sidebar'
@@ -175,7 +177,6 @@ export default function App() {
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [onboardingStep, setOnboardingStep] = useState(0)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('llm')
-  const [knowledgeSection, setKnowledgeSection] = useState<KnowledgeSection>('sources')
   const [starterDraft, setStarterDraft] = useState<{ id: number; text: string } | null>(null)
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(() => loadLlmSettings().activeLlmConfigId)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -1069,12 +1070,10 @@ export default function App() {
       return
     }
     if (destination === 'memory') {
-      setSettingsTab('assistant')
-      setView('settings')
+      setView('memory')
       return
     }
-    setKnowledgeSection(destination === 'notebook' ? 'notes' : 'sources')
-    setView('knowledge')
+    setView(destination === 'notebook' ? 'notebook' : 'knowledge')
   }, [startNewChat])
 
   const handleCapabilityChange = useCallback(async (nextCapability: Capability) => {
@@ -1305,8 +1304,7 @@ export default function App() {
 
     if (target.type === 'notebook') {
       setNoteFocusTarget(target)
-      setKnowledgeSection('notes')
-      setView('knowledge')
+      setView('notebook')
       pushStatus({
         kind: 'done',
         label: 'Opened source area',
@@ -1317,7 +1315,6 @@ export default function App() {
 
     if (target.type === 'kb') {
       setKnowledgeFocusTarget(target)
-      setKnowledgeSection('sources')
       setView('knowledge')
       pushStatus({
         kind: 'done',
@@ -1398,8 +1395,7 @@ export default function App() {
                   onSaveToNotebook={handleSaveToNotebook}
                   onOpenNotebookEntry={(entryId) => {
                     setNoteFocusTarget({ type: 'notebook', entryId })
-                    setKnowledgeSection('notes')
-                    setView('knowledge')
+                    setView('notebook')
                   }}
                   onRegenerateResearch={handleRegenerateResearch}
                   onIngestResearchSources={handleIngestResearchSources}
@@ -1429,11 +1425,24 @@ export default function App() {
         {view === 'knowledge' && (
           <KnowledgeBasePage
             settings={llmSettings}
-            section={knowledgeSection}
-            onSectionChange={setKnowledgeSection}
             onChanged={refreshKnowledgeBases}
-            knowledgeFocusTarget={knowledgeFocusTarget}
-            noteFocusTarget={noteFocusTarget}
+            focusTarget={knowledgeFocusTarget}
+          />
+        )}
+
+        {view === 'notebook' && (
+          <NotesPage
+            language={llmSettings.language}
+            focusTarget={noteFocusTarget}
+            onSourceNavigate={handleSourceNavigate}
+          />
+        )}
+
+        {view === 'memory' && (
+          <UserMemoryPage
+            language={llmSettings.language}
+            enabled={llmSettings.memoryEnabled}
+            onEnabledChange={(memoryEnabled) => handleSettingsChange({ ...llmSettings, memoryEnabled })}
             onSourceNavigate={handleSourceNavigate}
           />
         )}
@@ -1447,7 +1456,6 @@ export default function App() {
             onOpenOnboarding={openOnboarding}
             onGuideNavigate={handleGuideNavigate}
             onStartGuideAssistant={startGuideAssistant}
-            onSourceNavigate={handleSourceNavigate}
           />
         )}
       </div>
@@ -1474,8 +1482,11 @@ export default function App() {
           }}
           onOpenKnowledge={() => {
             setOnboardingOpen(false)
-            setKnowledgeSection('sources')
             setView('knowledge')
+          }}
+          onOpenNotebook={() => {
+            setOnboardingOpen(false)
+            setView('notebook')
           }}
           onDismiss={pauseOnboarding}
           onComplete={completeOnboarding}

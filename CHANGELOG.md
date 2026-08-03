@@ -11,14 +11,14 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ### Changed
 
-- Reduced the primary interface to Assistant, Knowledge Base, and Settings.
-- Unified Sources and Notes under Knowledge Base and moved visible memory
-  management into Assistant settings.
+- Promoted Notebook and Memory to standalone primary workspaces.
+- Limited Knowledge Base to RAG source-document management instead of mixing
+  editable Notes into the same interface.
+- Defined the primary interface as Assistant, Knowledge Base, Notebook,
+  Memory, and Settings.
 - Replaced the legacy capability menu with an on-demand Research chat action.
 - Rewrote onboarding and empty states so a first grounded answer no longer
   requires Tutor, Space, or workflow concepts.
-- Added unified Sources and Notes search with type filters, snippets, and
-  direct navigation to the matching item.
 - Added content-based duplicate detection, retryable failed imports, and an
   explicit full-index rebuild from stored source documents.
 - Replaced multi-Tutor setup in new conversations with one configurable

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Brain, Edit3, ExternalLink, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
 import { sourceTargetFromRaw } from './MarkdownMessage'
+import { LegacyMigrationPanel } from './LegacyMigrationPanel'
 
 interface MemoryItem {
   path: string
@@ -20,10 +21,11 @@ interface MemoryItem {
 interface Props {
   language: 'zh-CN' | 'en-US'
   enabled: boolean
+  onEnabledChange: (enabled: boolean) => void
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
 }
 
-export function UserMemoryPage({ language, enabled, onSourceNavigate }: Props) {
+export function UserMemoryPage({ language, enabled, onEnabledChange, onSourceNavigate }: Props) {
   const [items, setItems] = useState<MemoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('')
@@ -90,12 +92,16 @@ export function UserMemoryPage({ language, enabled, onSourceNavigate }: Props) {
 
   return (
     <section className="h-full overflow-y-auto bg-white px-6 py-6">
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3 border-b border-gray-200 pb-5">
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Brain size={21} /></span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-semibold text-gray-950">{language === 'en-US' ? 'User Memory' : '用户记忆'}</h3>
-          <p className="mt-1 text-sm text-gray-500">{language === 'en-US' ? 'Every item is visible, editable, forgettable, and linked to its available provenance.' : '每条记忆都可见、可编辑、可遗忘，并尽可能保留来源。'}</p>
+          <h1 className="text-xl font-semibold text-gray-950">{language === 'en-US' ? 'Memory' : '记忆'}</h1>
+          <p className="mt-1 text-sm text-gray-500">{language === 'en-US' ? 'Review and control the long-term context the assistant may carry across conversations.' : '查看和控制助手可以跨会话延续的长期信息。'}</p>
         </div>
+        <label className="flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm text-gray-700">
+          <input type="checkbox" checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} />
+          {language === 'en-US' ? 'Use memory' : '启用记忆'}
+        </label>
         <button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm text-gray-700" disabled={loading} onClick={() => void load()}><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />{language === 'en-US' ? 'Refresh' : '刷新'}</button>
       </div>
 
@@ -129,6 +135,10 @@ export function UserMemoryPage({ language, enabled, onSourceNavigate }: Props) {
             </article>
           )
         })}
+      </div>
+
+      <div className="mt-8 border-t border-gray-200 pt-6">
+        <LegacyMigrationPanel language={language} />
       </div>
     </section>
   )

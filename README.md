@@ -10,7 +10,7 @@
 >
 > 当前阶段：Folumi 产品收缩基线已完成；后续迭代聚焦知识库管理与个人助手体验。
 >
-> 文档状态：已按 2026-08-01 的产品范围决策更新。
+> 文档状态：已按 2026-08-03 的一级工作区调整更新。
 
 ## 文档
 
@@ -29,12 +29,12 @@
 | 领域 | Folumi 提供的能力 |
 | --- | --- |
 | Assistant | 基于 runtime session 的多轮对话，按需读取知识、引用来源并使用明确启用的工具。 |
-| Sources | 导入和管理只读资料，支持检索、原文读取、证据引用和来源定位。 |
-| Notes | 用户拥有的 Markdown 内容，可编辑、链接、导入和导出；助手产出只有经用户确认才写入。 |
-| Memory | 默认可关闭、可查看、可修改、可遗忘的助手记忆；业务可以选择完全不用或自行组织。 |
-| Settings | 模型、embedding、搜索、数据目录、工具权限、外观和记忆策略。 |
+| Knowledge Base | 导入和管理只读资料，支持 RAG 检索、原文读取、证据引用和来源定位。 |
+| Notebook | 用户拥有的 Markdown 内容，可记录、管理、查看、链接、导入和导出；助手产出只有经用户确认才写入。 |
+| Memory | 可独立查看、开关、修改和遗忘的助手记忆；业务可以选择完全不用或自行组织。 |
+| Settings | 模型、embedding、搜索、数据目录、工具权限、外观和 Notebook 存储。 |
 
-目标主导航只有 **Assistant、Knowledge Base、Settings**。Sources、Notes 和 Memory 是清晰分离的数据域：来源不可被助手暗中改写，笔记由用户拥有，记忆必须受用户策略和审批边界控制。Quiz、Space、Student Profile、多 Tutor 和独立 Research 模式属于冻结范围。
+目标主导航包含 **Assistant、Knowledge Base、Notebook、Memory、Settings**。Knowledge Base 只管理用于 RAG 的只读来源；Notebook 是记录、管理和查看 Markdown 笔记的独立工作区；Memory 是独立的长期记忆控制面。三者保持清晰的数据边界。Quiz、Space、Student Profile、多 Tutor 和独立 Research 模式属于冻结范围。
 
 ## 快速开始
 

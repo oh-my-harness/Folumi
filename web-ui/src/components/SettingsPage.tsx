@@ -38,9 +38,6 @@ import type {
 } from '../settings'
 import { chooseDesktopDirectory, getDesktopDataDir, openDesktopDataDir } from '../api'
 import type { ProductGuideDestination } from '../productGuide'
-import type { SourceReference, SourceTarget } from './MarkdownMessage'
-import { UserMemoryPage } from './UserMemoryPage'
-import { LegacyMigrationPanel } from './LegacyMigrationPanel'
 import { ProductGuide } from './ProductGuide'
 
 interface Props {
@@ -51,7 +48,6 @@ interface Props {
   onOpenOnboarding: () => void
   onGuideNavigate: (destination: ProductGuideDestination) => void
   onStartGuideAssistant: () => void
-  onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
 }
 
 const providerOptions: { value: LlmProvider; label: string; description: string }[] = [
@@ -135,7 +131,6 @@ export function SettingsPage({
   onOpenOnboarding,
   onGuideNavigate,
   onStartGuideAssistant,
-  onSourceNavigate,
 }: Props) {
   const { t } = useI18n()
   const [testState, setTestState] = useState<Record<string, ConfigTestState>>({})
@@ -620,16 +615,8 @@ export function SettingsPage({
                         : '例如：回答简洁，区分事实与建议，优先使用我笔记中的术语。'}
                     />
                   </Field>
-                  <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-                    <input className="mt-1" type="checkbox" checked={settings.memoryEnabled} onChange={(event) => update('memoryEnabled', event.target.checked)} />
-                    <span><span className="block text-sm font-medium text-gray-900">{settings.language === 'en-US' ? 'Use long-term memory' : '使用长期记忆'}</span><span className="mt-1 block text-xs leading-5 text-gray-500">{settings.language === 'en-US' ? 'When off, new sessions neither recall nor record User Memory. Existing memory remains available here for review or deletion.' : '关闭后，新会话不会读取或记录用户记忆；已有记忆仍保留在此，供查看或删除。'}</span></span>
-                  </label>
                 </div>
               </SettingsPanel>
-              <div className="h-[calc(100vh-20rem)] min-h-[32rem] overflow-hidden rounded-lg border border-gray-200 bg-white">
-                <UserMemoryPage language={settings.language} enabled={settings.memoryEnabled} onSourceNavigate={onSourceNavigate} />
-              </div>
-              <LegacyMigrationPanel language={settings.language} />
             </div>
           )}
 

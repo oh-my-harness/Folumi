@@ -11,6 +11,7 @@ interface Props {
   onOpenModelSettings: () => void
   onOpenEmbeddingSettings: () => void
   onOpenKnowledge: () => void
+  onOpenNotebook: () => void
   onDismiss: () => void
   onComplete: () => void
   onStart: () => void
@@ -27,6 +28,7 @@ export function OnboardingDialog({
   onOpenModelSettings,
   onOpenEmbeddingSettings,
   onOpenKnowledge,
+  onOpenNotebook,
   onDismiss,
   onComplete,
   onStart,
@@ -116,6 +118,7 @@ export function OnboardingDialog({
                   <div className="min-w-0 flex-1 text-sm text-gray-600">{embeddingReady ? copy.knowledge.embeddingReady : copy.knowledge.embeddingMissing} · {knowledgeBaseCount ? copy.knowledge.ready.replace('{count}', String(knowledgeBaseCount)) : copy.knowledge.empty}</div>
                   <button type="button" className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700" onClick={onOpenEmbeddingSettings}>{copy.knowledge.embedding}</button>
                   <button type="button" className="h-9 rounded-md bg-blue-600 px-3 text-sm font-medium text-white" onClick={onOpenKnowledge}>{copy.knowledge.open}</button>
+                  <button type="button" className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700" onClick={onOpenNotebook}>{copy.knowledge.openNotebook}</button>
                 </div>
               </div>
             )}
@@ -152,13 +155,13 @@ function StepHeading({ icon, title, description }: { icon: ReactNode; title: str
 const chineseCopy = {
   title: '开始使用 Folumi', subtitle: '准备模型、加入资料，然后开始第一次有来源的问答', steps: ['准备模型', '加入知识', '开始提问'], dismiss: '关闭使用引导', later: '稍后再说', back: '上一步', continue: '继续', done: '完成',
   model: { title: '准备对话模型', description: 'Folumi 需要一个可用的模型来回答问题；已有配置会直接复用。', missing: '尚未配置模型', missingDescription: '可以继续浏览，但提问前需要完成模型配置。', configure: '配置模型', manage: '管理', test: '测试连接', testing: '正在测试…', testOk: '模型连接正常。', testError: '模型连接失败。' },
-  knowledge: { title: '加入你的知识', description: '来源文档和个人笔记统一放在知识库中；不需要检索时也可以跳过。', instructions: ['导入 PDF、Markdown 或文本作为可追溯的来源。', '创建或导入 Markdown 笔记，保存自己的理解。', '聊天时关联来源、笔记或临时附件，回答会保留引用。'], embeddingReady: '嵌入模型已配置', embeddingMissing: '尚未配置嵌入模型', ready: '已有 {count} 个知识库', empty: '还没有来源', embedding: '嵌入设置', open: '打开知识库' },
+  knowledge: { title: '加入资料与笔记', description: '知识库保存用于 RAG 检索的来源文档；Notebook 独立保存你创建和管理的笔记。', instructions: ['在知识库中导入 PDF、Markdown 或文本作为可追溯来源。', '在 Notebook 中创建或导入 Markdown 笔记，保存自己的理解。', '聊天时按需关联知识库或 Notebook，并保留可追溯引用。'], embeddingReady: '嵌入模型已配置', embeddingMissing: '尚未配置嵌入模型', ready: '已有 {count} 个知识库', empty: '还没有来源', embedding: '嵌入设置', open: '打开知识库', openNotebook: '打开笔记' },
   start: { title: '开始第一次提问', description: '无需选择导师或工作流。直接描述问题，需要深入检索时再点击“研究”。', example: '例如：“根据我刚导入的项目资料，总结三个关键结论，并标明分别来自哪里。”', action: '去问助手' },
 }
 
 const englishCopy: typeof chineseCopy = {
   title: 'Get started with Folumi', subtitle: 'Prepare a model, add material, and ask your first grounded question', steps: ['Model', 'Knowledge', 'Ask'], dismiss: 'Close onboarding', later: 'Maybe later', back: 'Back', continue: 'Continue', done: 'Complete',
   model: { title: 'Prepare a chat model', description: 'Folumi needs a working model to answer questions. Existing settings are reused.', missing: 'No model configured', missingDescription: 'You can browse now, but a model is required before asking.', configure: 'Configure', manage: 'Manage', test: 'Test connection', testing: 'Testing…', testOk: 'Model connection works.', testError: 'Model connection failed.' },
-  knowledge: { title: 'Add your knowledge', description: 'Source documents and personal notes live together in Knowledge Base. Skip this when retrieval is unnecessary.', instructions: ['Import PDF, Markdown, or text as traceable Sources.', 'Create or import Markdown Notes for your own understanding.', 'Attach Sources, Notes, or temporary files in chat and keep citations in the answer.'], embeddingReady: 'Embedding configured', embeddingMissing: 'No embedding configured', ready: '{count} knowledge base(s)', empty: 'No sources yet', embedding: 'Embedding settings', open: 'Open Knowledge Base' },
+  knowledge: { title: 'Add sources and notes', description: 'Knowledge Base stores source documents for RAG retrieval; Notebook separately stores the notes you create and manage.', instructions: ['Import PDF, Markdown, or text into Knowledge Base as traceable sources.', 'Create or import Markdown notes in Notebook for your own understanding.', 'Associate Knowledge Base or Notebook with chat as needed and keep citations traceable.'], embeddingReady: 'Embedding configured', embeddingMissing: 'No embedding configured', ready: '{count} knowledge base(s)', empty: 'No sources yet', embedding: 'Embedding settings', open: 'Open Knowledge Base', openNotebook: 'Open Notebook' },
   start: { title: 'Ask your first question', description: 'No tutor or workflow selection is required. Describe the task and use Research only when you need deeper investigation.', example: 'For example: “Summarize the three key conclusions in my project material and cite where each one came from.”', action: 'Ask Assistant' },
 }
