@@ -1,152 +1,113 @@
-# Folumi User Memory Redesign
+# Folumi 用户记忆系统重设计
 
-> Status: Proposed — awaiting product review before implementation
+> 状态：提案（Proposed）——实施前等待产品评审
 >
-> Decision date: 2026-08-03
+> 决策日期：2026-08-03
 >
-> Supersedes: the active L1/L2/L3 memory model and Memory consolidation
-> workflow described by earlier design and implementation-plan documents
+> 替代范围：早期设计与实施计划中描述的 L1/L2/L3 记忆模型及记忆整理工作流
 
-## Context
+## 背景
 
-Folumi now presents Memory as a standalone, user-controlled workspace. The
-product shows individual long-term memories and lets the user inspect, edit, or
-forget them. The previous backend instead modeled Memory as hidden activity
-logs (L1), generated summaries (L2), and profile files (L3), plus maintenance
-runs that consolidated one layer into another.
+Folumi 已将“记忆”作为独立、由用户控制的一级工作区。产品界面面向一条条长期记忆，允许用户检查、修改或遗忘。旧后端采用的却是另一套模型：隐藏的活动日志（L1）、生成的摘要（L2）、用户档案文件（L3），以及负责在不同层级之间整理内容的维护任务。
 
-That model no longer matches the product. It records activity the user did not
-ask to remember, makes file placement part of the domain model, and leaves a
-large invisible maintenance system behind a simple item-oriented interface.
+这套模型已经不符合当前产品。它会记录用户并未要求记住的活动，把文件存放位置变成业务模型的一部分，并在简单的条目界面背后保留一套庞大且不可见的维护系统。
 
-## Proposal
+## 方案概述
 
-If accepted, User Memory will be a flat collection of explicit, durable memory items. A memory
-item is a product entity, not a Markdown bullet, file location, event, summary,
-or consolidation result.
+如果本提案通过，用户记忆将是一组扁平、明确、可持久保存的记忆条目。记忆条目是产品实体，不是 Markdown 列表项、文件位置、活动事件、摘要或整理结果。
 
-The old layered system is retired completely:
+旧分层系统已经完全退役：
 
-- no L1 activity events are recorded from Assistant, Notebook, or Knowledge
-  Base operations;
-- no L2 summaries or L3 profile files are read or written;
-- no consolidation preview, run, apply, undo, or file-editing API remains;
-- old layered files are not migrated or imported into the new system; and
-- old files may remain inert on disk, but the application does not discover,
-  read, mutate, or delete them automatically.
+- Assistant、Notebook 和知识库操作不再记录 L1 活动事件；
+- 不再读取或写入 L2 摘要与 L3 档案文件；
+- 不再保留整理预览、运行、应用、撤销和文件编辑 API；
+- 旧分层文件不会迁移或导入新系统；
+- 旧文件可以原样留在磁盘上，但应用不会自动发现、读取、修改或删除它们。
 
-## Product model
+## 产品模型
 
-Each memory item has:
+每条记忆包含以下字段：
 
-| Field | Purpose |
+| 字段 | 用途 |
 | --- | --- |
-| `id` | Stable opaque item identity |
-| `kind` | User-facing semantic category |
-| `content` | The concise fact or continuity statement |
-| `source_refs` | Optional links back to the conversation or product object that justified the write |
-| `provenance` | Bounded machine-readable origin metadata for audit and explanation |
-| `idempotency_key` | Prevents duplicate writes when a runtime call is retried |
-| `created_at` / `updated_at` | Lifecycle timestamps |
-| `expires_at` | Optional expiry for time-bounded information |
-| computed `revision` | Exact compare-and-swap token for edits and deletion |
+| `id` | 稳定且不透明的条目标识 |
+| `kind` | 面向用户的语义类型 |
+| `content` | 简洁的事实或连续性描述 |
+| `source_refs` | 可选；指向支持本次写入的会话或产品对象 |
+| `provenance` | 有边界、机器可读的来源元数据，用于审计和解释 |
+| `idempotency_key` | runtime 调用重试时防止重复写入 |
+| `created_at` / `updated_at` | 生命周期时间戳 |
+| `expires_at` | 可选；用于有时效性的信息 |
+| 计算得到的 `revision` | 修改和删除时使用的精确比较交换令牌 |
 
-The supported kinds are:
+支持以下记忆类型：
 
-- `profile`: stable facts about who the user is or how they wish to be
-  addressed;
-- `preference`: stable communication, learning, or workflow preferences;
-- `goal`: a durable outcome the user is working toward;
-- `commitment`: a promise the assistant should carry into a later session;
-- `open_loop`: an unfinished item that should be resumed;
-- `strategy`: a reusable approach that has been explicitly chosen.
+- `profile`：关于用户身份或期望称呼方式的稳定事实；
+- `preference`：稳定的沟通、学习或工作流偏好；
+- `goal`：用户正在努力实现的长期目标；
+- `commitment`：助手需要在后续会话中继续履行的承诺；
+- `open_loop`：尚未完成、之后需要继续处理的事项；
+- `strategy`：用户明确选择、以后可以复用的方法或策略。
 
-Kinds organize and filter the list; they do not determine physical storage
-locations. Assistant Profile remains a separate tab backed by product settings
-and must not be confused with a `profile` memory about the user.
+类型只用于组织和筛选条目，不决定物理存储位置。“助手配置”继续作为单独的选项卡，由产品设置保存；它描述助手本身，不能与描述用户信息的 `profile` 记忆混为一谈。
 
-## Write and recall policy
+## 写入与召回策略
 
-Ordinary conversation stays in the runtime session. Merely mentioning a fact,
-opening a note, importing a source, or running a search never creates long-term
-memory.
+普通对话保留在 runtime session 中。仅仅提到某个事实、打开一条笔记、导入一个知识来源或进行一次搜索，都不会创建长期记忆。
 
-The assistant may propose a memory only when the user explicitly asks it to
-remember something or explicitly confirms a proposal. Every assistant write
-and forget operation continues through `llm-harness-runtime-memory`, including
-access control, secure write policy, idempotency, exact revisions, and the live
-mutation confirmation gate. UI edits and deletes also require the latest item
-revision.
+只有当用户明确要求记住某项内容，或者明确确认助手提出的记忆建议时，助手才可以写入记忆。所有由助手发起的写入和遗忘操作继续经过 `llm-harness-runtime-memory`，包括访问控制、安全写入策略、幂等控制、精确 revision 和实时变更确认门。用户在界面中修改或删除条目时，同样必须提交最新 revision。
 
-Recall uses the runtime Knowledge boundary. Search may establish relevance but
-must not expose the full private content in a result snippet; the assistant
-must perform an exact revisioned read. Expired items are hidden from runtime
-recall but remain visible to the user until edited or forgotten.
+召回继续使用 runtime Knowledge 边界。搜索只能确认相关性，不能在搜索摘要中暴露完整的私有记忆内容；助手必须使用带精确 revision 的读取操作取得正文。已过期的条目不会参与 runtime 召回，但仍会在用户界面中显示，直到用户修改或遗忘。
 
-The master switch controls whether new sessions mount Memory read/write
-capabilities. Turning it off does not erase existing items.
+总开关控制新会话是否挂载记忆读取和写入能力。关闭记忆不会删除已有条目。
 
-## Proposed storage boundary
+## 建议的存储边界
 
-The initial local implementation would store one versioned document at
-`memory/items.json`. The repository exposes a `MemoryItemStore` boundary so the
-physical backend can later move to SQLite without changing product APIs or
-runtime contracts. The expected working set is a small collection of curated
-items; full activity history belongs to runtime sessions, not this store.
+第一版本建议把数据保存在一个带版本号的本地文档 `memory/items.json` 中。代码通过 `MemoryItemStore` 边界访问数据，以便未来在不改变产品 API 和 runtime 契约的情况下迁移到 SQLite。
 
-Storage must provide:
+预计实际数据量是一组规模较小、经过用户筛选的记忆条目。完整活动历史属于 runtime session，不属于记忆存储。
 
-- atomic replacement of the versioned document;
-- serialized mutation within the process;
-- idempotent upsert;
-- exact-revision update and delete;
-- stable opaque IDs; and
-- fail-closed validation for kinds, content length, provenance, and schema
-  version.
+存储层必须提供：
 
-## Proposed user interface and API
+- 对版本化文档的原子替换；
+- 进程内串行写入；
+- 幂等新增或更新；
+- 基于精确 revision 的修改和删除；
+- 稳定且不透明的条目 ID；
+- 对类型、内容长度、来源元数据和 schema 版本进行失败即关闭的校验。
 
-The Long-term Memory tab presents a single item list. It may group or filter by
-kind, but it must not expose L1/L2/L3, file paths, Markdown markers, or
-consolidation concepts.
+## 建议的界面与 API
 
-The active API is limited to:
+“长期记忆”选项卡展示一个统一的条目列表。界面可以按类型分组或筛选，但不能再暴露 L1/L2/L3、文件路径、Markdown 标记或内容整理等概念。
 
-- `GET /api/memory/items` — list items with computed revisions;
-- `PATCH /api/memory/items` — edit one item using `id` and `revision`; and
-- `DELETE /api/memory/items` — forget one item using `id` and `revision`.
+活动 API 建议只保留：
 
-Creating memory through conversation remains a runtime `memory_write`
-operation with live confirmation. A future explicit “Add memory” UI may call a
-dedicated endpoint, but must apply the same validation and must not reintroduce
-automatic extraction or consolidation.
+- `GET /api/memory/items`：列出条目及计算得到的 revision；
+- `PATCH /api/memory/items`：使用 `id` 和 `revision` 修改一条记忆；
+- `DELETE /api/memory/items`：使用 `id` 和 `revision` 遗忘一条记忆。
 
-## Non-goals
+通过对话创建记忆时，继续使用 runtime 的 `memory_write` 操作，并要求实时确认。未来可以增加明确的“添加记忆”界面和专用接口，但必须使用相同的校验规则，且不能重新引入自动提取或后台整理。
 
-- behavioral telemetry or a complete audit log;
-- automatic profiling from user activity;
-- summarizing every conversation, note, or source into Memory;
-- exposing physical storage structure as navigation;
-- multiple hidden memory tiers; or
-- compatibility with the retired layered files and maintenance APIs.
+## 非目标
 
-## Acceptance criteria
+- 行为遥测或完整的活动审计日志；
+- 根据用户活动自动建立用户画像；
+- 把每次对话、每条笔记或每个知识来源都总结进记忆；
+- 把物理存储结构暴露为产品导航；
+- 多个隐藏的记忆层级；
+- 兼容已经退役的分层文件和维护 API。
 
-- Active production code contains no L1/L2/L3 event recording or consolidation
-  workflow.
-- Notebook and Knowledge Base changes never write Memory.
-- The Memory page and API use stable item IDs and revisions only.
-- Runtime search/read/write/forget works against the same flat item store.
-- Writes and forgets requested by the assistant require live confirmation.
-- Turning Memory off prevents mounting it in new sessions without deleting
-  items.
-- Existing layered files do not affect new-system results and are never
-  silently deleted.
-- Product requirements, user documentation, and regression tests describe the
-  flat explicit-memory model.
+## 验收标准
 
-## Change control
+- 活动生产代码中不存在 L1/L2/L3 事件记录或整理工作流；
+- Notebook 和知识库的任何变更都不会写入记忆；
+- 记忆页面与 API 只使用稳定条目 ID 和 revision；
+- runtime 的搜索、读取、写入和遗忘操作使用同一个扁平条目存储；
+- 助手发起的写入和遗忘必须经过实时确认；
+- 关闭记忆后，新会话不会挂载记忆能力，但已有条目不会被删除；
+- 旧分层文件不会影响新系统结果，也不会被应用静默删除；
+- 产品需求、用户文档和回归测试使用一致的扁平显式记忆模型。
 
-Reintroducing automatic capture, hidden layers, consolidation, or migration
-from the retired store requires a new explicit product decision and matching
-PRD, documentation, and regression-test changes.
+## 变更控制
+
+如果以后需要重新引入自动采集、隐藏层级、内容整理或旧存储迁移，必须先形成新的明确产品决策，并在同一次变更中同步更新 PRD、用户文档和回归测试。
