@@ -27,10 +27,11 @@
     [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104).
   - Draft PR #105 commit `4df283e` adds `ObservedSessionRepo`,
     `SessionRecallProjector`, `SessionRecallKnowledgeSource`, and
-    `HistoryRecallPlugin`. Folumi now consumes that contract: Session remains
-    authoritative, the index is rebuildable, exact reads revalidate authority,
-    deletion/update invalidation flows through the observer, and recalled text
-    is injected ephemerally with bounded budgets.
+    `HistoryRecallPlugin`. Folumi consumes the observer, projector, and
+    Knowledge source while deliberately not installing the automatic plugin:
+    Session remains authoritative, the index is rebuildable, exact reads
+    revalidate authority, and deletion/update invalidation flows through the
+    observer.
   - Downstream `tutor-web --lib` compilation succeeds. The draft PR's current
     Ubuntu and Windows CI failures occur while fetching the private
     `llm-api-adapter` revision (HTTP 401), before Recall tests execute.
@@ -40,11 +41,13 @@
     conversation recall by that Knowledge Base. A dedicated trusted Recall
     scope extension or runtime-owned matcher would let products keep History
     Recall security boundaries independent from unrelated Knowledge routing.
-  - Follow-up: the automatic plugin retains accepted references only in private
-    run state. Product trace/events cannot currently expose those references
-    for a source jump. Please expose bounded accepted references through a
-    typed run extension, trace event, or observational hook; model-driven
-    `knowledge_read` already supports a normal citation/source path.
+  - Follow-up: the optional automatic plugin retains accepted references only
+    in private run state. A product choosing that mode cannot expose those
+    references through trace/events for a source jump. Folumi does not install
+    the plugin in its first release and uses visible model-driven
+    `knowledge_search` / `knowledge_read` instead. If automatic mode is used in
+    the future, the runtime should expose bounded accepted references through a
+    typed run extension, trace event, or observational hook.
   - Follow-up: the current runtime implementation ships an in-memory index.
     A runtime-owned persistent local FTS implementation would avoid a full
     startup rebuild without moving Session bodies or indexing authority into

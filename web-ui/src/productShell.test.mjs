@@ -68,6 +68,13 @@ test('retired layered memory is replaced by explicit revisioned Saved Memory', (
   assert.match(backendRoutes, /pub mod memory/)
 })
 
+test('History Recall is visible tool search without hidden pre-run injection', () => {
+  assert.match(memory, /不会在 run 前隐式自动召回/)
+  assert.match(websocketRoutes, /source_id exactly `session_recall`/)
+  assert.match(websocketRoutes, /tool trace and source link/)
+  assert.doesNotMatch(websocketRoutes, /with_runtime_plugin|history_recall_plugin/)
+})
+
 test('research is a chat task action instead of a capability menu', () => {
   assert.doesNotMatch(composer, /openMenu === 'mode'/)
   assert.doesNotMatch(composer, /visibleModeOptions/)

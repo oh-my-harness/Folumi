@@ -80,7 +80,7 @@ pub(crate) async fn run_code_exec_with_request(
                 model: router.llm.model.clone(),
                 model_info: router.llm.model_info(8192),
                 tools,
-                plugins: router.runtime_plugins.clone(),
+                plugins: vec![],
                 system_prompt: router.apply_product_instruction(
                     "You are a code execution assistant. When the user asks to run code, \
              call code_exec with the correct language and code, then explain stdout, stderr, \

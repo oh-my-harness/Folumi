@@ -89,7 +89,9 @@ The accepted workspace boundaries and change-control rule are recorded in
   switch.
 - **REQ-401** Long-term Memory shall distinguish explicit Saved Memory from
   opt-in History Recall; History Recall shall be independently controllable and
-  disabled by default.
+  disabled by default. The first release shall expose History Recall as visible,
+  agent-decided Knowledge tool calls when prior conversation context is clearly
+  requested or referenced, and shall not inject hidden recall before every run.
 - **REQ-402** Users shall be able to inspect, add, edit, pin, complete,
   reconfirm, and forget individual Saved Memory items with visible provenance
   and revision.

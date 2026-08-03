@@ -66,9 +66,9 @@ Memory 页面默认打开“长期记忆”选项卡。Saved Memory 默认关闭
 ### 4.2 Saved Memory 与 History Recall
 
 - Saved Memory 只保存用户明确要求或确认的事实、偏好、目标和连续性事项；
-- History Recall 是默认关闭的独立能力。先开启 Memory，再开启“历史检索”后，新 run 会通过 runtime 的派生索引只读检索符合权限和生命周期条件的旧 Sessions；检索结果不会自动形成 Saved Memory；
+- History Recall 是默认关闭的独立能力。先开启 Memory，再开启“历史检索”后，只有当用户明确询问或引用旧对话时，助手才可通过可见的 runtime Knowledge 工具按需搜索符合权限和生命周期条件的旧 Sessions；产品不挂载 run 前自动召回插件，检索结果也不会自动形成 Saved Memory；
 - 当前实现使用 runtime 的内存投影，并在应用启动或设置切换时从 Session 权威数据重建；删除 Session 会通过 runtime observer 使派生结果失效；
-- 对模型主动执行的历史读取，来源可跳转到对应会话；自动注入的召回片段尚不能在产品 trace 中直接展示来源，持久本地 FTS、临时对话和离线召回评测仍属于 Phase 2 后续工作；
+- 历史搜索和读取会出现在工具 trace 中，读取来源可跳转到对应会话；持久本地 FTS、临时对话和离线召回评测仍属于 Phase 2 后续工作；
 - 每条 Saved Memory 是独立可见、带生命周期的全局产品条目，不再使用 L1/L2/L3 文件层次；
 - 同一主题的冲突条目会在确认后替代旧条目；完成、已替代和过期内容不参与正常召回；
 - 当前会话内容仍属于 runtime Session；临时对话的完整隔离能力尚未开放；

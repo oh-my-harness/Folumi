@@ -6,14 +6,14 @@ use std::sync::{
 };
 
 use llm_harness_agent::{
-    JsonlSessionRepo, ObservedSessionRepo, Plugin, Session, SessionDurability,
-    SessionMutationObserver, SessionRecallPolicy, SessionRecallSettings, SessionRepo,
+    JsonlSessionRepo, ObservedSessionRepo, Session, SessionDurability, SessionMutationObserver,
+    SessionRecallPolicy, SessionRecallSettings, SessionRepo,
     session::{CreateSessionOptions, ListSessionOptions, SessionEntryPayload, SessionMetadata},
 };
 use llm_harness_runtime_knowledge::KnowledgeSource;
 use llm_harness_runtime_session_recall::{
-    HistoryRecallPlugin, HistoryRecallPluginConfig, InMemorySessionRecallIndex, SessionRecallIndex,
-    SessionRecallKnowledgeSource, SessionRecallProjector, SessionRecallService,
+    InMemorySessionRecallIndex, SessionRecallIndex, SessionRecallKnowledgeSource,
+    SessionRecallProjector, SessionRecallService,
 };
 use llm_harness_types::{
     AgentMessage, AssistantMessageKind, ContentBlock, EntryId, SessionError, TokenUsage,
@@ -228,16 +228,6 @@ impl SessionPool {
 
     pub fn history_recall_enabled(&self) -> bool {
         self.history_recall_enabled.load(Ordering::SeqCst)
-    }
-
-    pub fn history_recall_plugin(&self) -> Arc<dyn Plugin> {
-        Arc::new(
-            HistoryRecallPlugin::new(
-                self.history_recall_source.clone(),
-                HistoryRecallPluginConfig::default(),
-            )
-            .expect("default History Recall limits are valid"),
-        )
     }
 
     pub fn history_recall_knowledge_source(&self) -> Arc<dyn KnowledgeSource> {
