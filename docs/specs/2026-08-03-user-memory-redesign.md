@@ -356,10 +356,13 @@ API 只是产品界面边界。Agent 侧继续使用 runtime Knowledge/Memory/Se
 - [x] `topic_key`、冲突确认、原子 supersede、过期过滤；
 - [x] runtime Memory/Knowledge 适配与 mutation gate；
 - [x] Memory 页面和来源检查，不启用自动提取。
+- [x] 有效期编辑、显式重新确认，以及排除内部历史和已遗忘正文的 JSON 导出。
 
 实现说明：Saved Memory 默认关闭。开启后，新 run 才挂载 runtime 官方
 Knowledge/Memory 能力；助手只有在用户明确要求记住或遗忘时才可提出 mutation，且
 最终写入内容仍需在界面中逐次确认。产品 API 的直接编辑仍使用 revision/CAS 与冲突规则。
+Memory 页面还提供有效期修改、显式重新确认和 JSON 导出；导出不包含内部历史、tombstone、
+策略密钥或已遗忘正文，也不构成旧文件迁移/导入通道。
 
 ### Phase 2：History Recall
 

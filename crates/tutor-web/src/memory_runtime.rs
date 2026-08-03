@@ -474,3 +474,166 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> (String, bool) {
 fn backend_error(error: impl std::fmt::Display) -> KnowledgeError {
     KnowledgeError::Backend(error.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use futures::future::BoxFuture;
+    use llm_harness_runtime_knowledge::{
+        KnowledgeAccessContext, KnowledgeRequestContext, KnowledgeScope, PrincipalRef,
+    };
+    use llm_harness_runtime_memory::{
+        MemoryMutation, MemoryMutationGateError, MemoryMutationOrigin, MemoryMutationRequest,
+        MemoryServiceError, MemorySessionId, MemoryWriteIntent,
+    };
+    use llm_harness_types::{RunContext, RunRequest};
+    use tokio_util::sync::CancellationToken;
+
+    use super::*;
+
+    struct RecordingApprover {
+        approved: bool,
+        calls: AtomicUsize,
+        presented: Mutex<Vec<(String, Option<String>)>>,
+    }
+
+    impl RecordingApprover {
+        fn new(approved: bool) -> Self {
+            Self {
+                approved,
+                calls: AtomicUsize::new(0),
+                presented: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl SavedMemoryApprover for RecordingApprover {
+        fn authorize<'a>(
+            &'a self,
+            _ctx: KnowledgeRequestContext<'a>,
+            request: MemoryMutationRequest,
+            abort: CancellationToken,
+        ) -> BoxFuture<'a, Result<(), MemoryMutationGateError>> {
+            Box::pin(async move {
+                if abort.is_cancelled() {
+                    return Err(MemoryMutationGateError::Aborted);
+                }
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                if let MemoryMutation::Write { write } = request.mutation {
+                    self.presented
+                        .lock()
+                        .unwrap()
+                        .push((write.content, write.kind));
+                }
+                if self.approved {
+                    Ok(())
+                } else {
+                    Err(MemoryMutationGateError::Denied)
+                }
+            })
+        }
+    }
+
+    fn run_context() -> RunContext {
+        let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
+        scope.attributes.insert(
+            USER_MEMORY_PROFILE_ATTRIBUTE.into(),
+            "interactive_mutation".into(),
+        );
+        scope
+            .attributes
+            .insert(USER_MEMORY_PRINCIPAL_ATTRIBUTE.into(), "local-user".into());
+        let access =
+            KnowledgeAccessContext::new(scope, PrincipalRef::new("local-user", "local_user"));
+        RunContext::new(
+            RunRequest::from_text("请记住我偏好中文。")
+                .with_extension(access)
+                .with_extension(MemorySessionId::new("session-a").unwrap()),
+        )
+    }
+
+    fn service(store: Arc<MemoryStore>, approver: Arc<dyn SavedMemoryApprover>) -> MemoryService {
+        assemble_saved_memory_service(
+            Arc::new(SavedMemoryKnowledgeSource::new(store.clone())),
+            store,
+            crate::knowledge_runtime::agent_knowledge_access_control(),
+            approver,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn approved_runtime_write_persists_exact_presented_content_and_session_source() {
+        let directory = tempfile::tempdir().unwrap();
+        let store =
+            Arc::new(MemoryStore::new_with_path(directory.path().join("memory.sqlite3")).unwrap());
+        let approver = Arc::new(RecordingApprover::new(true));
+        let service = service(store.clone(), approver.clone());
+        let run = run_context();
+        let context = KnowledgeRequestContext::from_run(&run).unwrap();
+
+        let receipt = service
+            .write(
+                context,
+                MemoryWriteIntent {
+                    content: "  请使用简洁的中文回答。  ".into(),
+                    kind: Some("preference".into()),
+                    requested_ttl: None,
+                },
+                MemoryMutationOrigin::ExplicitTool {
+                    tool_use_id: "memory-write-a".into(),
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(approver.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            approver.presented.lock().unwrap().as_slice(),
+            &[("请使用简洁的中文回答。".into(), Some("preference".into()))]
+        );
+        let item = store.get(&receipt.reference.item_id).unwrap();
+        assert_eq!(item.content, "请使用简洁的中文回答。");
+        assert_eq!(item.origin, MemoryOrigin::AssistantSuggested);
+        assert_eq!(item.source_refs.len(), 1);
+        assert_eq!(item.source_refs[0].source_type, "session");
+        assert_eq!(item.source_refs[0].source_id, "session-a");
+    }
+
+    #[tokio::test]
+    async fn denied_runtime_write_never_reaches_the_store() {
+        let directory = tempfile::tempdir().unwrap();
+        let store =
+            Arc::new(MemoryStore::new_with_path(directory.path().join("memory.sqlite3")).unwrap());
+        let approver = Arc::new(RecordingApprover::new(false));
+        let service = service(store.clone(), approver.clone());
+        let run = run_context();
+        let context = KnowledgeRequestContext::from_run(&run).unwrap();
+
+        let error = service
+            .write(
+                context,
+                MemoryWriteIntent {
+                    content: "Never persist this denied memory.".into(),
+                    kind: Some("fact".into()),
+                    requested_ttl: None,
+                },
+                MemoryMutationOrigin::ExplicitTool {
+                    tool_use_id: "memory-write-denied".into(),
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            MemoryServiceError::MutationGate(MemoryMutationGateError::Denied)
+        ));
+        assert_eq!(approver.calls.load(Ordering::SeqCst), 1);
+        assert!(store.list(&Default::default()).unwrap().is_empty());
+    }
+}

@@ -1169,6 +1169,36 @@ mod tests {
     }
 
     #[test]
+    fn explicit_reconfirm_advances_revision_without_changing_content() {
+        let (_directory, store) = store();
+        let first = store
+            .create(input("Prefers concise answers.", None))
+            .unwrap();
+        let reconfirmed = store
+            .update(
+                &first.id,
+                UpdateMemoryItem {
+                    revision: first.revision.clone(),
+                    content: None,
+                    kind: None,
+                    topic_key: None,
+                    clear_topic_key: false,
+                    priority: None,
+                    status: None,
+                    valid_until: None,
+                    clear_valid_until: false,
+                    reconfirm: true,
+                },
+                MemoryOrigin::UserExplicit,
+            )
+            .unwrap();
+
+        assert_eq!(reconfirmed.content, first.content);
+        assert_ne!(reconfirmed.revision, first.revision);
+        assert!(reconfirmed.last_confirmed_at >= first.last_confirmed_at);
+    }
+
+    #[test]
     fn conflict_requires_resolution_and_replace_is_atomic() {
         let (_directory, store) = store();
         let old = store

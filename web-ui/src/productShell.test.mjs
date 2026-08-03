@@ -59,6 +59,8 @@ test('retired layered memory is replaced by explicit revisioned Saved Memory', (
   assert.doesNotMatch(activeBackend, /MemoryEventCategory|record_event|memory_workflow|L1\/|L2\/|L3\//)
   assert.match(memory, /Saved Memory|保存的记忆/)
   assert.match(memory, /\/api\/memory\/items/)
+  assert.match(memory, /\/api\/memory\/export\.json/)
+  assert.match(memory, /reconfirm: true/)
   assert.match(memoryRoutes, /revision/)
   assert.match(memoryStore, /memory-v2|memory_items|superseded|memory_tombstones/)
   assert.doesNotMatch(memory, /file_revision|marker|L1\/|L2\/|L3\//)

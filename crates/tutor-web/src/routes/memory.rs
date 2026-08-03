@@ -3,15 +3,15 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, patch},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::memory_store::{
-    CreateMemoryItem, MemoryItem, MemoryKind, MemoryListFilter, MemoryOrigin, MemoryStatus,
-    MemoryStore, MemoryStoreError, UpdateMemoryItem,
+    CreateMemoryItem, MemoryItem, MemoryKind, MemoryListFilter, MemoryOrigin, MemorySettings,
+    MemoryStatus, MemoryStore, MemoryStoreError, UpdateMemoryItem,
 };
 
 #[derive(Clone)]
@@ -30,6 +30,7 @@ pub fn memory_router(store: Arc<MemoryStore>) -> Router {
             "/api/memory/settings",
             get(get_settings).patch(update_settings),
         )
+        .route("/api/memory/export.json", get(export_memory))
         .with_state(MemoryState { store })
 }
 
@@ -131,6 +132,59 @@ async fn update_settings(
     ) {
         Ok(settings) => (StatusCode::OK, Json(settings)).into_response(),
         Err(error) => error_response(error),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct MemoryExport {
+    schema_version: u32,
+    exported_at: chrono::DateTime<chrono::Utc>,
+    settings: MemorySettings,
+    items: Vec<MemoryItem>,
+}
+
+async fn export_memory(State(state): State<MemoryState>) -> Response {
+    let settings = match state.store.settings() {
+        Ok(settings) => settings,
+        Err(error) => return error_response(error),
+    };
+    let items = match state.store.list(&MemoryListFilter {
+        include_expired: true,
+        ..Default::default()
+    }) {
+        Ok(items) => items,
+        Err(error) => return error_response(error),
+    };
+    let payload = MemoryExport {
+        schema_version: 1,
+        exported_at: chrono::Utc::now(),
+        settings,
+        items,
+    };
+    match serde_json::to_vec_pretty(&payload) {
+        Ok(body) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, "application/json; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-store"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=folumi-memory-export.json",
+                ),
+            ],
+            body,
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                code: "serialization",
+                error: format!("memory export failed: {error}"),
+                latest: None,
+                existing: None,
+            }),
+        )
+            .into_response(),
     }
 }
 
@@ -243,6 +297,83 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(forget.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn export_omits_forgotten_content_and_internal_history() {
+        let (_directory, app) = app();
+        let forgotten = app
+            .clone()
+            .oneshot(
+                Request::post("/api/memory/items")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "kind": "fact",
+                            "content": "export-secret-that-must-disappear"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let forgotten = response_json(forgotten).await;
+        let id = forgotten["id"].as_str().unwrap();
+        let revision = forgotten["revision"].as_str().unwrap();
+        app.clone()
+            .oneshot(
+                Request::delete(format!("/api/memory/items/{id}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "revision": revision }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        app.clone()
+            .oneshot(
+                Request::post("/api/memory/items")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({ "kind": "preference", "content": "Keep this export item." })
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::get("/api/memory/export.json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_DISPOSITION],
+            "attachment; filename=folumi-memory-export.json"
+        );
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        let export = response_json(response).await;
+        assert_eq!(export["schema_version"], 1);
+        assert_eq!(export["items"].as_array().unwrap().len(), 1);
+        assert_eq!(export["items"][0]["content"], "Keep this export item.");
+        let object = export.as_object().unwrap();
+        assert_eq!(object.len(), 4);
+        assert!(
+            ["exported_at", "items", "schema_version", "settings"]
+                .into_iter()
+                .all(|key| object.contains_key(key))
+        );
+        let serialized = serde_json::to_string(&export).unwrap();
+        assert!(!serialized.contains("export-secret-that-must-disappear"));
+        assert!(!serialized.contains("tombstone"));
+        assert!(!serialized.contains("memory_history"));
+        assert!(!serialized.contains("policy_secret"));
     }
 
     #[tokio::test]

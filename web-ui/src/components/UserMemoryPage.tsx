@@ -6,6 +6,7 @@ import {
   Brain,
   Check,
   Clock3,
+  Download,
   History,
   Pencil,
   Pin,
@@ -89,6 +90,7 @@ export function UserMemoryPage({
   const [editContent, setEditContent] = useState('')
   const [editTopic, setEditTopic] = useState('')
   const [editKind, setEditKind] = useState<MemoryKind>('preference')
+  const [editValidUntil, setEditValidUntil] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -228,11 +230,26 @@ export function UserMemoryPage({
     }
   }
 
+  const exportMemory = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const response = await fetch('/api/memory/export.json')
+      if (!response.ok) throw new Error(await apiError(response))
+      downloadBlob(await response.blob(), 'folumi-memory-export.json')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const startEdit = (item: MemoryItem) => {
     setEditingId(item.id)
     setEditContent(item.content)
     setEditTopic(item.topic_key ?? '')
     setEditKind(item.kind)
+    setEditValidUntil(isoToDateInput(item.valid_until))
   }
 
   return (
@@ -279,6 +296,7 @@ export function UserMemoryPage({
                 <p className="mt-1 text-sm text-gray-500">{english ? `${items.length} saved items · global scope` : `共 ${items.length} 条 · 当前仅开放全局作用域`}</p>
               </div>
               <div className="flex gap-2">
+                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm text-gray-700 hover:bg-gray-50" type="button" onClick={() => void exportMemory()} disabled={busy || loading}><Download size={15} />{english ? 'Export' : '导出'}</button>
                 <button className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm text-gray-700 hover:bg-gray-50" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />{english ? 'Refresh' : '刷新'}</button>
                 <button className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700" type="button" onClick={() => setShowCreate((value) => !value)}><Plus size={16} />{english ? 'Add memory' : '添加记忆'}</button>
               </div>
@@ -314,7 +332,9 @@ export function UserMemoryPage({
                     <div className="grid gap-3">
                       <div className="grid gap-3 md:grid-cols-[160px_1fr]"><KindSelect value={editKind} onChange={setEditKind} english={english} /><input className="input" value={editTopic} onChange={(event) => setEditTopic(normalizeTopicInput(event.target.value))} placeholder={english ? 'Topic key (optional)' : '主题键（可选）'} /></div>
                       <textarea className="min-h-24 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6" maxLength={1200} value={editContent} onChange={(event) => setEditContent(event.target.value)} />
-                      <div className="flex justify-end gap-2"><button className="btn-secondary" type="button" onClick={() => setEditingId(null)}>{english ? 'Cancel' : '取消'}</button><button className="btn-primary" type="button" disabled={busy || !editContent.trim()} onClick={() => void patchItem(item, { content: editContent.trim(), kind: editKind, topic_key: editTopic.trim() || undefined, clear_topic_key: !editTopic.trim() })}>{english ? 'Save changes' : '保存修改'}</button></div>
+                      <Field label={english ? 'Valid until (optional)' : '有效期至（可选）'}><input className="input max-w-56" type="date" value={editValidUntil} onChange={(event) => setEditValidUntil(event.target.value)} /></Field>
+                      {item.expired && <p className="text-xs text-amber-700">{english ? 'Choose a future date, or clear the date, to renew this expired memory.' : '请选择新的未来日期，或清空日期，以重新确认这条过期记忆。'}</p>}
+                      <div className="flex justify-end gap-2"><button className="btn-secondary" type="button" onClick={() => setEditingId(null)}>{english ? 'Cancel' : '取消'}</button><button className="btn-primary" type="button" disabled={busy || !editContent.trim() || isPastDate(editValidUntil)} onClick={() => void patchItem(item, { content: editContent.trim(), kind: editKind, topic_key: editTopic.trim() || undefined, clear_topic_key: !editTopic.trim(), valid_until: dateToIso(editValidUntil), clear_valid_until: !editValidUntil, reconfirm: true })}>{english ? 'Save and reconfirm' : '保存并重新确认'}</button></div>
                     </div>
                   ) : (
                     <>
@@ -322,12 +342,13 @@ export function UserMemoryPage({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2"><Badge text={kindLabel(item.kind, english)} /><Badge text={stateLabel(item, english)} tone={item.expired || item.status !== 'active' ? 'muted' : 'blue'} />{item.priority === 'pinned' && <Badge text={english ? 'Pinned' : '已置顶'} tone="violet" />}{item.topic_key && <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">{item.topic_key}</code>}</div>
                           <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-900">{item.content}</p>
-                          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400"><span>{english ? 'Updated' : '更新于'} {formatDate(item.updated_at, language)}</span>{item.valid_until && <span className="inline-flex items-center gap-1"><Clock3 size={12} />{english ? 'Valid until' : '有效期至'} {formatDate(item.valid_until, language)}</span>}<span>{item.origin === 'assistant_suggested' ? (english ? 'Assistant suggestion, approved' : '助手建议，经确认') : (english ? 'Added by user' : '用户明确添加')}</span></div>
+                          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400"><span>{english ? 'Confirmed' : '确认于'} {formatDate(item.last_confirmed_at, language)}</span><span>{english ? 'Updated' : '更新于'} {formatDate(item.updated_at, language)}</span>{item.valid_until && <span className="inline-flex items-center gap-1"><Clock3 size={12} />{english ? 'Valid until' : '有效期至'} {formatDate(item.valid_until, language)}</span>}<span>{item.origin === 'assistant_suggested' ? (english ? 'Assistant suggestion, approved' : '助手建议，经确认') : (english ? 'Added by user' : '用户明确添加')}</span></div>
                           {item.source_refs.length > 0 && <details className="mt-2 text-xs text-gray-500"><summary className="cursor-pointer">{english ? `${item.source_refs.length} source reference(s)` : `${item.source_refs.length} 个来源`}</summary><ul className="mt-1 space-y-1 pl-4">{item.source_refs.map((source, index) => <li key={`${source.source_id}-${index}`}>{source.source_type === 'session' && onSessionNavigate ? <button type="button" className="text-blue-600 hover:underline" onClick={() => onSessionNavigate(source.source_id)}>{english ? 'Open source conversation' : '打开来源会话'} · {source.source_id}</button> : <>{source.source_type}: {source.source_id}</>}</li>)}</ul></details>}
                         </div>
                         <div className="flex shrink-0 flex-wrap justify-end gap-1">
                           <IconButton title={item.priority === 'pinned' ? (english ? 'Unpin' : '取消置顶') : (english ? 'Pin' : '置顶')} onClick={() => void patchItem(item, { priority: item.priority === 'pinned' ? 'normal' : 'pinned' })}>{item.priority === 'pinned' ? <PinOff size={15} /> : <Pin size={15} />}</IconButton>
                           {item.status !== 'superseded' && <IconButton title={english ? 'Edit' : '编辑'} onClick={() => startEdit(item)}><Pencil size={15} /></IconButton>}
+                          {item.status !== 'superseded' && <IconButton title={item.expired ? (english ? 'Renew expired memory' : '续期并重新确认') : (english ? 'Reconfirm' : '重新确认')} onClick={() => item.expired ? startEdit(item) : void patchItem(item, { reconfirm: true })}><RefreshCw size={15} /></IconButton>}
                           {matchesResolvable(item.kind) && item.status !== 'superseded' && <IconButton title={item.status === 'resolved' ? (english ? 'Reopen' : '重新打开') : (english ? 'Mark resolved' : '标记完成')} onClick={() => void patchItem(item, { status: item.status === 'resolved' ? 'active' : 'resolved' })}><Check size={15} /></IconButton>}
                           <IconButton danger title={english ? 'Forget permanently' : '永久遗忘'} onClick={() => void forgetItem(item)}><Trash2 size={15} /></IconButton>
                         </div>
@@ -403,6 +424,20 @@ function dateToIso(value: string) {
   return value ? new Date(`${value}T23:59:59`).toISOString() : null
 }
 
+function isoToDateInput(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function isPastDate(value: string) {
+  const iso = dateToIso(value)
+  return Boolean(iso && new Date(iso).getTime() <= Date.now())
+}
+
 function formatDate(value: string, language: 'zh-CN' | 'en-US') {
   return new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
@@ -414,4 +449,15 @@ async function apiError(response: Response) {
   } catch {
     return `HTTP ${response.status}`
   }
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
