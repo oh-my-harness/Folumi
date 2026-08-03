@@ -6,7 +6,10 @@ Current product and runtime-facing specs live here.
 - `2026-08-03-primary-workspaces-decision.md` is the accepted information-
   architecture decision that keeps Knowledge Base RAG-only and preserves
   Notebook and Memory as standalone primary workspaces.
-- `2026-06-26-memory-consolidation-design.md` records the current memory/profile design.
+- `2026-08-03-user-memory-redesign.md` is the active revised proposal for
+  explicit Saved Memory, opt-in History Recall, scopes, and lifecycle rules.
+- `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
+  design and remains only as historical context.
 - `2026-07-15-persistent-tutor-design.md` defines persistent tutor identity,
   Markdown Soul, private Tutor Memory, permissions, and handoff boundaries.
 

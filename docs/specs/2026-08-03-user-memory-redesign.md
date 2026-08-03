@@ -1,113 +1,409 @@
 # Folumi 用户记忆系统重设计
 
-> 状态：提案（Proposed）——实施前等待产品评审
+> 状态：修订提案（Revised Proposed）——产品方向已确认，尚未开始实施
 >
 > 决策日期：2026-08-03
 >
+> 最近修订：2026-08-03——加入历史检索、作用域、冲突失效规则和 SQLite 存储边界
+>
 > 替代范围：早期设计与实施计划中描述的 L1/L2/L3 记忆模型及记忆整理工作流
 
-## 背景
+## 1. 背景
 
-Folumi 已将“记忆”作为独立、由用户控制的一级工作区。产品界面面向一条条长期记忆，允许用户检查、修改或遗忘。旧后端采用的却是另一套模型：隐藏的活动日志（L1）、生成的摘要（L2）、用户档案文件（L3），以及负责在不同层级之间整理内容的维护任务。
+Folumi 已将“记忆”作为独立、由用户控制的一级工作区。旧后端采用隐藏活动日志（L1）、生成摘要（L2）、用户档案文件（L3），再通过维护任务在不同层级间整理内容。这套模型会记录用户并未要求记住的活动，把文件位置变成业务模型的一部分，也让界面无法如实说明系统究竟保存了什么。
 
-这套模型已经不符合当前产品。它会记录用户并未要求记住的活动，把文件存放位置变成业务模型的一部分，并在简单的条目界面背后保留一套庞大且不可见的维护系统。
-
-## 方案概述
-
-如果本提案通过，用户记忆将是一组扁平、明确、可持久保存的记忆条目。记忆条目是产品实体，不是 Markdown 列表项、文件位置、活动事件、摘要或整理结果。
-
-旧分层系统已经完全退役：
+旧分层链路已经退役：
 
 - Assistant、Notebook 和知识库操作不再记录 L1 活动事件；
 - 不再读取或写入 L2 摘要与 L3 档案文件；
 - 不再保留整理预览、运行、应用、撤销和文件编辑 API；
-- 旧分层文件不会迁移或导入新系统；
-- 旧文件可以原样留在磁盘上，但应用不会自动发现、读取、修改或删除它们。
+- 旧分层文件不迁移、不导入，也不会被应用自动发现、修改或删除。
 
-## 产品模型
+清理旧链路之后，Folumi 需要的不是另一套隐藏层级，而是几种权威来源清楚、用途不同、均可由用户控制的连续性能力。
 
-每条记忆包含以下字段：
+## 2. 设计结论
+
+新系统采用“保存的记忆 + 历史检索”双通道，并继续把助手配置作为独立数据域：
+
+1. **当前会话上下文**：由 `llm-harness-runtime` Session 负责，是本次对话的直接上下文。
+2. **保存的记忆（Saved Memory）**：用户明确要求保存或明确确认的长期条目，可跨会话召回。
+3. **历史检索（History Recall）**：在用户选择开启后，从既有 runtime Sessions 中查找与当前问题相关的原始对话；检索结果不会自动晋升为保存的记忆。
+4. **助手配置（Assistant Profile）**：助手的名称和行为说明，由产品设置保存；它描述助手，不描述用户，因此不属于保存的记忆。
+
+这些是不同的**数据权威与使用通道**，不是 L1/L2/L3 那样的物理存储层级。界面和 API 不暴露文件路径、整理任务或隐藏的层间同步。
+
+```text
+当前输入
+  ├─ 当前 runtime Session ───────────────> 本轮直接上下文
+  ├─ 保存的记忆（显式、可编辑）──────────> 稳定偏好与连续性
+  ├─ 历史检索（可选、只读召回）──────────> 相关旧对话片段
+  └─ Assistant Profile ─────────────────> 助手身份与行为约束
+```
+
+## 3. 设计依据
+
+本方案吸收成熟产品和 Agent 框架中已经形成共识的部分，但不照搬其云端数据模型：
+
+- ChatGPT 将保存的记忆与聊天历史引用视为不同能力，并提供关闭、删除来源聊天和临时对话控制；
+- Claude 提供跨聊天检索，并按 Project 隔离记忆空间，允许暂停、重置和查看来源；
+- Gemini 允许基于历史聊天个性化，并让用户通过关闭功能、删除来源聊天或在对话中纠正来控制结果；
+- GitHub Copilot 区分用户偏好与仓库范围事实，并对仓库事实进行来源引用、重新验证和过期清理；
+- LangGraph 将线程内短期状态与跨线程长期存储分开，并区分语义、情节和程序性记忆；
+- Letta 的可见 Memory Blocks 说明结构化、可查看的核心记忆适合进入上下文，但不意味着所有历史都应复制为记忆条目。
+
+参考资料：
+
+- [OpenAI Memory FAQ](https://help.openai.com/en/articles/8590148-memory-faq)
+- [Claude chat search and memory](https://support.claude.com/en/articles/11817273-use-claude-s-chat-search-and-memory-to-build-on-previous-context)
+- [Gemini personalization from past chats](https://support.google.com/gemini/answer/16598469?hl=en)
+- [GitHub Copilot Memory](https://docs.github.com/en/enterprise-cloud@latest/copilot/concepts/agents/copilot-memory)
+- [LangGraph Memory](https://docs.langchain.com/oss/python/concepts/memory)
+- [Letta Memory Blocks](https://docs.letta.com/v1-sdk/memory/memory-blocks)
+- [Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory](https://arxiv.org/abs/2504.19413)
+
+## 4. 产品边界
+
+| 数据域 | 权威来源 | 主要用途 | 是否可被 Agent 修改 |
+| --- | --- | --- | --- |
+| 当前会话 | runtime Session | 当前对话连续性 | 由正常会话生命周期追加 |
+| 保存的记忆 | Folumi Memory store | 跨会话的稳定事实、偏好、目标和连续性 | 仅用户明确要求或确认后 |
+| 历史检索 | runtime Sessions | 找回相关旧对话 | 只读；不能改写历史 |
+| 助手配置 | Product settings | 助手名称与行为说明 | 用户在“助手配置”中修改 |
+| Sources | Knowledge Base 原始资料 | RAG 事实依据 | 对 Agent 只读 |
+| Notes | 用户拥有的 Markdown | 用户知识成果 | 明确授权后修改 |
+
+以下边界必须保持：
+
+- 打开、阅读或编辑 Notebook、知识库资料不会自动创建保存的记忆；
+- 历史检索不会复制 Session 正文到 Memory store，也不会自动生成长期条目；
+- 保存的记忆只用于个性化与任务连续性，不能替代知识库引用或外部事实证据；
+- Assistant Profile 不得混入用户事实；可复用的助手策略和行为规则属于 Assistant Profile，而不是用户记忆；
+- 产品不重建 Session、上下文构建、compaction、工具编排或持久化协议，继续优先使用 runtime 能力。
+
+## 5. 保存的记忆模型
+
+### 5.1 条目字段
+
+每条保存的记忆是结构化产品实体：
 
 | 字段 | 用途 |
 | --- | --- |
 | `id` | 稳定且不透明的条目标识 |
-| `kind` | 面向用户的语义类型 |
-| `content` | 简洁的事实或连续性描述 |
-| `source_refs` | 可选；指向支持本次写入的会话或产品对象 |
-| `provenance` | 有边界、机器可读的来源元数据，用于审计和解释 |
+| `scope_type` | `global` 或 `workspace` |
+| `scope_id` | 工作区作用域的稳定 ID；全局条目为空 |
+| `kind` | `fact`、`preference`、`goal` 或 `continuity` |
+| `content` | 面向用户展示的简洁正文 |
+| `topic_key` | 可选；同一作用域内识别同一主题、处理冲突的稳定键 |
+| `status` | `active`、`resolved` 或 `superseded` |
+| `priority` | `normal` 或 `pinned` |
+| `origin` | `user_explicit` 或 `assistant_suggested` |
+| `source_refs` | 可选；指向支持本条记忆的 Session turn 或产品对象 |
+| `provenance` | 有边界、机器可读的来源和确认元数据 |
 | `idempotency_key` | runtime 调用重试时防止重复写入 |
 | `created_at` / `updated_at` | 生命周期时间戳 |
-| `expires_at` | 可选；用于有时效性的信息 |
-| 计算得到的 `revision` | 修改和删除时使用的精确比较交换令牌 |
+| `last_confirmed_at` | 用户最近一次确认该内容仍有效的时间 |
+| `valid_until` | 可选；超过该时间后不再召回 |
+| `resolved_at` | 可选；目标或连续性事项完成的时间 |
+| `revision` | 每次变更生成的精确 CAS 令牌 |
 
-支持以下记忆类型：
+首版不保存模型生成的数字 `confidence`。可信度主要来自“用户是否明确表达或确认”“来源是否仍存在”“内容是否过期或被替代”，避免把不可校准的模型分数伪装成事实。
 
-- `profile`：关于用户身份或期望称呼方式的稳定事实；
-- `preference`：稳定的沟通、学习或工作流偏好；
-- `goal`：用户正在努力实现的长期目标；
-- `commitment`：助手需要在后续会话中继续履行的承诺；
-- `open_loop`：尚未完成、之后需要继续处理的事项；
-- `strategy`：用户明确选择、以后可以复用的方法或策略。
+### 5.2 记忆类型
 
-类型只用于组织和筛选条目，不决定物理存储位置。“助手配置”继续作为单独的选项卡，由产品设置保存；它描述助手本身，不能与描述用户信息的 `profile` 记忆混为一谈。
+- `fact`：关于用户或其长期环境的稳定事实，例如称呼、职业背景或长期约束；
+- `preference`：稳定的沟通、学习、格式或工作方式偏好；
+- `goal`：用户正在推进、需要跨会话延续的中长期目标；
+- `continuity`：未完成事项、后续约定或需要在之后继续处理的上下文，带完成状态和可选期限。
 
-## 写入与召回策略
+旧提案中的 `commitment` 与 `open_loop` 合并为 `continuity`，用状态表达是否完成；`strategy` 归入 Assistant Profile。类型只用于组织、过滤和检索，不决定物理存储位置。
 
-普通对话保留在 runtime session 中。仅仅提到某个事实、打开一条笔记、导入一个知识来源或进行一次搜索，都不会创建长期记忆。
+## 6. 作用域
 
-只有当用户明确要求记住某项内容，或者明确确认助手提出的记忆建议时，助手才可以写入记忆。所有由助手发起的写入和遗忘操作继续经过 `llm-harness-runtime-memory`，包括访问控制、安全写入策略、幂等控制、精确 revision 和实时变更确认门。用户在界面中修改或删除条目时，同样必须提交最新 revision。
+### 6.1 两级作用域
 
-召回继续使用 runtime Knowledge 边界。搜索只能确认相关性，不能在搜索摘要中暴露完整的私有记忆内容；助手必须使用带精确 revision 的读取操作取得正文。已过期的条目不会参与 runtime 召回，但仍会在用户界面中显示，直到用户修改或遗忘。
+- `global`：可用于所有非临时会话，适合称呼、长期偏好和跨项目目标；
+- `workspace`：只在当前逻辑工作上下文中可用，适合某个项目、客户或主题下的约定与连续性事项。
 
-总开关控制新会话是否挂载记忆读取和写入能力。关闭记忆不会删除已有条目。
+`workspace` 是未来独立的产品级逻辑实体，能够关联多个 runtime Sessions 和用户选择的资料范围。它**不是**侧边栏页面、Knowledge Base ID、Notebook 路径或单个 runtime Session ID，不能借作用域之名重新合并 Knowledge Base、Notebook 与 Memory。
 
-## 建议的存储边界
+Folumi 当前尚无稳定的逻辑工作区实体，因此第一实施阶段只允许创建 `global` 条目，但数据库、API 和检索契约从第一天保留 `scope_type` / `scope_id`。工作区实体及其创建、切换、删除和数据保留规则通过单独产品决策落地后，再启用 `workspace` 写入。
 
-第一版本建议把数据保存在一个带版本号的本地文档 `memory/items.json` 中。代码通过 `MemoryItemStore` 边界访问数据，以便未来在不改变产品 API 和 runtime 契约的情况下迁移到 SQLite。
+### 6.2 可见性与覆盖规则
 
-预计实际数据量是一组规模较小、经过用户筛选的记忆条目。完整活动历史属于 runtime session，不属于记忆存储。
+- 普通会话可见全局条目；绑定工作区的会话可见“全局 + 当前工作区”条目；
+- 冲突检测只在同一作用域、同一 `topic_key` 内执行；不同工作区之间互不可见，也不互相判定冲突；
+- 当前工作区条目与全局条目主题相同时，两者都保留，但召回时工作区条目优先，并向模型标明作用域；
+- 删除工作区时必须由单独确认决定其记忆是级联遗忘、导出，还是转为全局；不得静默转移。
+
+## 7. 写入、冲突与失效规则
+
+### 7.1 允许的写入路径
+
+保存的记忆只通过以下路径产生：
+
+1. 用户明确说“记住……”；
+2. 助手提出一条具体候选内容，用户明确确认；
+3. 用户在记忆页面手动新增。
+
+助手建议在确认前只是当前运行中的待决 mutation，不是可召回记忆，也不进入正式条目表。所有助手发起的写入、修改、完成和遗忘继续经过 `llm-harness-runtime-memory` 的访问控制、幂等策略、精确 revision 和实时 mutation gate。若 runtime 缺少批量 CAS 事务，产品不得用循环单条写入伪装原子操作。
+
+### 7.2 `topic_key`
+
+`topic_key` 用于表示“这些条目在讨论同一件事”，例如 `preferred_response_language` 或 `project_alpha_deadline`。它不是模型随意展示给用户的标签：
+
+- 系统优先使用产品预定义键或从被修改条目继承；
+- 助手提出新键时，必须和候选正文一起进入确认请求；
+- 无法可靠确定主题时可以留空，此时系统只做幂等去重，不自动判定语义冲突；
+- 用户可以在冲突处理界面选择“替代旧条目”或“作为不同主题保留”。
+
+### 7.3 同一作用域内的写入决策
+
+同一 `scope + topic_key` 出现新内容时，在一个事务中执行：
+
+- **内容等价**：不新建重复条目，只更新 `last_confirmed_at`、来源和 revision；
+- **内容明确矛盾**：新条目成为 `active`，旧条目标记为 `superseded`，并通过关系记录 `supersedes`；确认界面必须同时展示新旧内容；
+- **内容只是补充**：更新现有条目或作为独立主题保存，不得未经确认丢失旧信息；
+- **关系不确定**：不写入，要求用户选择替代、合并或并存。
+
+跨作用域的同主题条目不互相替代。工作区条目可以在召回时遮蔽全局条目，但全局记录仍保持有效。
+
+### 7.4 生命周期
+
+- `active` 条目可以参与召回；
+- `goal` 或 `continuity` 完成后变为 `resolved` 并记录 `resolved_at`，默认不参与召回，但仍可在界面查看；
+- 被新事实替代的条目变为 `superseded`，默认不参与召回；
+- `valid_until` 已过的条目计算为“已过期”，不参与召回，并在界面提示用户确认、修改或遗忘；
+- 用户重新确认已过期条目时更新 `last_confirmed_at` 和 `valid_until`，同时生成新 revision；
+- 用户“遗忘”时必须移除正文、来源和全文索引内容。若为幂等和审计保留最小 tombstone，只能包含 `id`、删除时间和不可逆内容摘要，不能保留可恢复正文；
+- 历史版本只服务于并发检查和变更解释。遗忘必须同步清除历史表中的正文，不能以“版本历史”为由继续保存用户要求删除的内容。
+
+### 7.5 并发和原子性
+
+- 修改、完成、替代和遗忘都必须提交当前 `revision`；
+- revision 不匹配时失败并返回当前版本，不自动覆盖；
+- “新增条目并 supersede 旧条目”必须是同一 SQLite 事务；
+- `idempotency_key` 在同一写入策略域内唯一，重试返回原结果；
+- 冲突判定结果、用户确认内容和最终写入内容必须一致，不能在确认后再次由模型改写。
+
+## 8. 历史检索
+
+### 8.1 定义
+
+历史检索是在用户明确开启后，对既有 runtime Sessions 做跨会话只读搜索。它解决“我们上次讨论到哪里”“之前决定了什么”之类的问题，但不会把每次对话变成长期记忆。
+
+runtime Session 始终是历史正文的唯一权威来源。Folumi 可以维护可重建的本地检索索引和 runtime Session ID 映射，但不能复制一套平行会话仓库、重新实现 compaction，或把检索摘要当作权威历史。
+
+### 8.2 控制规则
+
+- 历史检索为独立开关，首版默认关闭；Memory 总开关关闭时它也必须关闭；
+- 新建会话可选择“临时对话”。临时对话不读取保存的记忆、不检索旧会话、也不产生可供未来历史检索使用的索引；
+- 删除某个 Session 后，对应历史索引必须同步删除；索引损坏或丢失时可以从仍存在且允许检索的 runtime Sessions 重建；
+- 关闭历史检索不删除 Sessions，只停止新会话使用并暂停相应索引更新；用户可以另行选择清空派生索引；再次开启时必须补建缺失投影；
+- 历史检索结果必须携带 Session、turn、时间和可打开来源，用户询问“你为什么这样说”时能够定位原对话；
+- 历史片段不能自动写入 Saved Memory。用户可以基于片段明确发起“记住”，之后仍走正常确认和冲突流程。
+
+### 8.3 检索流程
+
+```text
+当前问题
+  -> 权限与临时会话检查
+  -> 作用域、Session 状态和时间过滤
+  -> 候选检索（首版 FTS；必要时再评估向量检索）
+  -> 相关性、时间和多样性重排
+  -> 严格的片段数与 token 预算
+  -> 精确读取 runtime Session turn
+  -> 将来源明确的历史片段交给本轮上下文构建
+```
+
+搜索摘要只能帮助选择候选，不能替代精确读取。默认排除当前 Session、临时会话、已删除会话和不属于当前作用域的会话。排序应综合文本相关性、最近时间和主题多样性，避免一段很长的旧会话占满上下文。
+
+第一版先使用 SQLite FTS5。只有离线评测证明关键词检索明显不足时才增加 Embedding；启用远程 Embedding 前必须说明哪些历史文本会发送给服务商。
+
+### 8.4 runtime 依赖
+
+历史检索需要 runtime 提供或明确认可以下边界：
+
+- 按受控条件枚举 Session；
+- 对 Session turn 建立可重建检索投影；
+- 根据精确 Session/turn 引用读取正文；
+- 删除、归档和临时会话状态能够驱动索引失效；
+- 检索片段通过 runtime 上下文构建进入本轮，而不是由产品拼接平行 prompt。
+
+当前 `SessionRepo` 具备创建、读取和列表能力，但没有一等跨 Session 搜索与检索投影契约。这个框架缺口必须先记录在 `docs/framework-feedback.md`，实现阶段优先扩展/复用 runtime，不在 Folumi 内建立第二套会话系统。
+
+## 9. 召回策略
+
+一次普通回答按以下顺序处理连续性信息：
+
+1. 当前 runtime Session 的直接上下文；
+2. 当前作用域内相关的 Saved Memory；
+3. 用户开启后，按需进行 History Recall；
+4. 用户明确选择的 Knowledge Base Sources 和 Notebook Notes。
+
+这不是把四类正文全部塞进 prompt。每个来源都先经过权限、作用域、状态和预算过滤：
+
+- Saved Memory 只召回 `active`、未过期条目；`pinned` 提高排序但不绕过相关性和作用域；
+- 工作区记忆优先于同主题全局记忆；
+- History Recall 只在当前问题需要跨会话连续性时调用；
+- 搜索命中后必须精确读取正文和 revision/turn；
+- 每类来源都有独立数量与 token 上限，总预算由 runtime 上下文构建统一控制；
+- 个性化记忆可以自然使用，不强制在每个回答中展示引用；涉及“你曾经说过/决定过”的历史陈述应提供可打开的会话来源；
+- Memory 和历史对话不是外部事实证据，不能弱化 Knowledge Base 的引用要求。
+
+## 10. 存储设计
+
+新系统从第一版直接使用 SQLite，不先建设 `items.json`。冲突关系、CAS、过期、全文检索和彻底遗忘会很快让单文档原子替换变得脆弱；SQLite 更符合本地优先、可事务化和可重建索引的要求。
+
+建议表结构：
+
+```text
+memory_items
+  id, scope_type, scope_id, kind, content, topic_key,
+  status, priority, origin, created_at, updated_at,
+  last_confirmed_at, valid_until, resolved_at, revision
+
+memory_sources
+  memory_id, source_type, source_id, source_revision, metadata
+
+memory_relations
+  from_id, relation_type, to_id
+  # 首版至少支持 supersedes
+
+memory_history
+  memory_id, revision, operation, prior_value, changed_at, origin
+
+memory_idempotency
+  policy_scope, idempotency_key, result_id, result_revision, created_at
+
+memory_items_fts
+  memory_id, content, topic_key
+
+session_recall_projection
+  session_id, turn_id, scope_type, scope_id, occurred_at, content_hash
+
+session_recall_fts
+  session_id, turn_id, token postings
+  # 使用 contentless FTS，只保存可重建词项，不复制可读取的 turn 正文
+```
 
 存储层必须提供：
 
-- 对版本化文档的原子替换；
-- 进程内串行写入；
-- 幂等新增或更新；
-- 基于精确 revision 的修改和删除；
-- 稳定且不透明的条目 ID；
-- 对类型、内容长度、来源元数据和 schema 版本进行失败即关闭的校验。
+- schema version 和前向迁移；不导入旧 L1/L2/L3 文件；
+- 单事务 CAS 写入、替代、完成和遗忘；
+- 稳定且不透明的 ID；
+- 对作用域、类型、内容长度、来源、时间和状态转换进行失败即关闭的校验；
+- FTS 索引与权威表在同一事务中更新；
+- 删除/遗忘后的索引清理和可验证数据擦除；
+- 数据库备份与恢复，但不能借备份功能静默恢复用户已经遗忘的正文。
 
-## 建议的界面与 API
+## 11. 界面与 API
 
-“长期记忆”选项卡展示一个统一的条目列表。界面可以按类型分组或筛选，但不能再暴露 L1/L2/L3、文件路径、Markdown 标记或内容整理等概念。
+### 11.1 Memory 页面
 
-活动 API 建议只保留：
+页面继续使用两个页级选项卡：
 
-- `GET /api/memory/items`：列出条目及计算得到的 revision；
-- `PATCH /api/memory/items`：使用 `id` 和 `revision` 修改一条记忆；
-- `DELETE /api/memory/items`：使用 `id` 和 `revision` 遗忘一条记忆。
+1. **长期记忆**（默认）：Memory 总开关、Saved Memory 列表、作用域/类型/状态筛选、来源、编辑、置顶、完成、遗忘、历史检索开关与隐私说明；
+2. **助手配置**：助手名称和行为说明，不受 Memory 总开关影响，对新会话生效。
 
-通过对话创建记忆时，继续使用 runtime 的 `memory_write` 操作，并要求实时确认。未来可以增加明确的“添加记忆”界面和专用接口，但必须使用相同的校验规则，且不能重新引入自动提取或后台整理。
+长期记忆列表默认展示有效条目，可切换查看已完成、已替代和已过期条目。冲突替代时必须并排展示新旧内容、作用域和来源。界面不出现 L1/L2/L3、Markdown 文件、物理路径或“整理记忆”任务。
 
-## 非目标
+### 11.2 建议 API
 
-- 行为遥测或完整的活动审计日志；
-- 根据用户活动自动建立用户画像；
-- 把每次对话、每条笔记或每个知识来源都总结进记忆；
-- 把物理存储结构暴露为产品导航；
-- 多个隐藏的记忆层级；
-- 兼容已经退役的分层文件和维护 API。
+Saved Memory：
 
-## 验收标准
+- `GET /api/memory/items`：按作用域、类型和状态列出条目；
+- `POST /api/memory/items`：用户在界面中明确新增；
+- `PATCH /api/memory/items/:id`：使用 revision 修改、置顶、完成或重新确认；
+- `DELETE /api/memory/items/:id`：使用 revision 遗忘并清除正文；
+- `POST /api/memory/items/:id/resolve-conflict`：以一个事务完成替代、合并或并存决策。
+
+History Recall：
+
+- `GET /api/memory/history/settings`：读取历史检索开关和索引状态；
+- `PATCH /api/memory/history/settings`：开启、关闭或清空派生索引；
+- `GET /api/memory/history/search`：供用户界面检查历史召回结果；Agent 路径仍使用受控 runtime 边界；
+- `POST /api/sessions` 创建会话时接受明确的 `temporary` 标志。
+
+API 只是产品界面边界。Agent 侧继续使用 runtime Knowledge/Memory/Session 能力，不增加同义的第二套模型工具。
+
+## 12. 开关语义
+
+- **Memory 总开关关闭**：新会话不挂载 Saved Memory 的读取/写入能力，也不运行 History Recall；已有数据不删除；Assistant Profile 仍正常生效；
+- **History Recall 关闭**：Saved Memory 仍可用，但不跨 Session 搜索；
+- **临时对话开启**：本会话不读取或写入 Saved Memory、不检索历史，也不进入未来历史索引；
+- **单条记忆失效/完成**：只影响该条目，不关闭整个系统；
+- 所有权限在新 run 组装时重新计算，恢复旧 Session 不得沿用更宽的历史权限。
+
+## 13. 非目标
+
+- 恢复 L1/L2/L3 或任何隐藏的多层记忆；
+- 根据 Notebook、知识库操作或所有聊天自动建立用户画像；
+- 在首版运行后台自动提取、总结和合并；
+- 把 Session 正文复制进 Memory store；
+- 用 Memory 替代知识库证据、Notebook 或 Assistant Profile；
+- 在没有评测数据前引入图记忆、向量数据库或复杂衰减分数；
+- 兼容、迁移或重新读取已经退役的旧记忆文件与维护 API；
+- 为历史检索在产品仓库中重建 runtime Session、compaction 或上下文拼装系统。
+
+## 14. 分阶段实施
+
+### Phase 1：Saved Memory 基线
+
+- SQLite schema、FTS5、CAS、幂等与数据擦除测试；
+- 只开放 `global` 作用域；
+- `fact`、`preference`、`goal`、`continuity` 四种类型；
+- 显式新增、编辑、置顶、完成、重新确认和遗忘；
+- `topic_key`、冲突确认、原子 supersede、过期过滤；
+- runtime Memory/Knowledge 适配与 mutation gate；
+- Memory 页面和来源检查，不启用自动提取。
+
+### Phase 2：History Recall
+
+- 先补齐或确认 runtime 跨 Session 搜索/投影边界；
+- 历史检索独立开关，默认关闭；
+- 临时对话；
+- 本地 FTS 候选检索、精确 turn 读取、来源跳转和删除失效；
+- 建立离线评测集，记录相关率、错误召回率、延迟和上下文占用；
+- 不把历史片段自动提升为 Saved Memory。
+
+### Phase 3：Workspace Scope
+
+- 先通过单独产品决策定义逻辑工作区实体及生命周期；
+- 启用工作区记忆、Session 绑定、作用域切换与删除策略；
+- 实现“全局 + 当前工作区”召回和工作区优先规则；
+- 验证不同工作区之间无召回、索引和 mutation 越权。
+
+### Phase 4：受控增强
+
+- 助手可以提出候选记忆，但未经确认不进入召回；
+- 评测 FTS 后再决定是否增加本地或远程 Embedding；
+- 只有评测证明必要时才考虑后台候选生成、衰减或更复杂关系；
+- 任何自动化默认关闭，并需要新的隐私、撤销和质量验收。
+
+## 15. 验收标准
 
 - 活动生产代码中不存在 L1/L2/L3 事件记录或整理工作流；
-- Notebook 和知识库的任何变更都不会写入记忆；
-- 记忆页面与 API 只使用稳定条目 ID 和 revision；
-- runtime 的搜索、读取、写入和遗忘操作使用同一个扁平条目存储；
-- 助手发起的写入和遗忘必须经过实时确认；
-- 关闭记忆后，新会话不会挂载记忆能力，但已有条目不会被删除；
-- 旧分层文件不会影响新系统结果，也不会被应用静默删除；
-- 产品需求、用户文档和回归测试使用一致的扁平显式记忆模型。
+- Notebook、知识库操作和普通聊天不会自动创建 Saved Memory；
+- 保存的记忆可查看、修改、置顶、完成、重新确认和彻底遗忘；
+- 同一作用域、同一主题的明确冲突通过单事务替代，旧条目不再被召回；
+- 已完成、已替代、已过期和已删除条目不会进入正常召回；
+- revision 不匹配时不覆盖，确认内容和最终 mutation 完全一致；
+- History Recall 默认关闭，开启后只检索允许的 runtime Sessions，并能定位到精确来源；
+- 删除 Session 或开启临时对话不会留下可检索的历史正文；
+- History Recall 不自动创建 Saved Memory；
+- 全局与工作区作用域遵守可见性和覆盖规则，不把 KB、Notebook 或 Session ID 当成工作区；
+- 关闭 Memory 后新 run 不挂载记忆和历史能力，但 Assistant Profile 与已有数据保持不变；
+- Memory、历史和 Sources 各有独立预算，Memory 不会弱化知识引用要求；
+- 旧分层文件不会影响新系统，也不会被应用静默迁移或删除；
+- PRD、README、使用手册、API 文档和回归测试使用一致术语与开关语义。
 
-## 变更控制
+## 16. 变更控制
 
-如果以后需要重新引入自动采集、隐藏层级、内容整理或旧存储迁移，必须先形成新的明确产品决策，并在同一次变更中同步更新 PRD、用户文档和回归测试。
+以下变化必须先形成新的明确产品决策，并在同一次变更中同步更新 PRD、用户文档、隐私说明和回归测试：
+
+- 默认开启历史检索或自动记忆；
+- 未经用户确认把候选内容写入 Saved Memory；
+- 新增隐藏层级、后台整理、图记忆或复杂自动合并；
+- 改变工作区作用域的数据隔离或删除规则；
+- 重新读取、迁移或导入旧 L1/L2/L3 文件；
+- 将 Session 正文、Notebook 或 Knowledge Base 内容静默复制到 Memory store。

@@ -11,8 +11,12 @@
 > Profile tabs, with Long-term Memory as the default.
 >
 > Amended: 2026-08-03 — The obsolete layered Memory pipeline was retired. The
-> Long-term Memory tab remains as a redesign placeholder until a replacement
-> proposal is explicitly accepted; Assistant Profile remains available.
+> Long-term Memory tab remains as a redesign placeholder until the replacement
+> is implemented; Assistant Profile remains available.
+>
+> Amended: 2026-08-03 — The replacement proposal now defines separate Saved
+> Memory and opt-in History Recall, with global/workspace scopes and explicit
+> conflict/expiry rules. Implementation remains pending.
 >
 > Scope: Primary navigation and the product boundaries of Knowledge Base,
 > Notebook, Memory, and Settings
@@ -68,7 +72,7 @@ or component consolidation without a new explicit product decision.
   Profile** owns the name and behavior instructions used by new conversations.
 - Does not contain legacy Tutor/Quiz migration, import, or archive controls.
 - Does not capture Assistant, Notebook, or Knowledge Base activity while the
-  replacement long-term-memory design is under review.
+  revised replacement long-term-memory design awaits implementation.
 - Keeps provenance visible when available.
 - Continues to use runtime access control and mutation gates; a more prominent
   UI does not expand agent authority.

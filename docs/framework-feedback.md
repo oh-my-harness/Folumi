@@ -20,6 +20,23 @@
 
 ## Friction Points
 
+- **SessionRepo lacks a first-class cross-session recall/search projection**
+  - Checked against the product pin `ee97890` on 2026-08-03 while revising the
+    Folumi memory proposal.
+  - `SessionRepo` supports create, get, list, fork, and delete, but exposes no
+    cross-session text/semantic search, stable turn-level result reference, or
+    projection invalidation contract for deleted, archived, or temporary
+    sessions.
+  - Folumi needs opt-in History Recall without copying Session bodies into a
+    second product-owned history repository or manually injecting retrieved
+    text through a parallel prompt path.
+  - Suggestion: provide a runtime-owned `SessionRecallSource` or explicitly
+    blessed projection interface that can index authorized Session turns,
+    return stable session/turn refs, perform exact reads through the Session
+    authority, receive deletion/privacy invalidations, and feed bounded results
+    into runtime context construction. The derived index should remain
+    rebuildable and must not become a second conversation authority.
+
 - **Knowledge search requires model-provided source routing when multiple sources are visible**
   - Reproduced in the desktop app on 2026-07-30 with Learner Memory and Tutor
     Memory mounted in one runtime `KnowledgeRegistry`.

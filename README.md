@@ -17,7 +17,7 @@
 - [使用手册](./MANUAL.md)：首次配置和全部用户功能
 - [产品需求规格](./docs/specs/2026-06-26-product-requirements-spec.md)
 - [一级工作区决策](./docs/specs/2026-08-03-primary-workspaces-decision.md)：Knowledge Base、Notebook、Memory 的长期产品边界
-- [新记忆系统提案](./docs/specs/2026-08-03-user-memory-redesign.md)：退役旧分层链路后的待评审方案
+- [新记忆系统提案](./docs/specs/2026-08-03-user-memory-redesign.md)：保存的记忆、历史检索、作用域与冲突失效规则
 - [Folumi 产品收缩计划](./docs/plans/2026-07-31-personal-knowledge-assistant-product-contraction-plan.md)
 - [旧产品数据迁移清单](./docs/migrations/2026-08-01-legacy-product-data-inventory.md)
 - [桌面发布计划](./docs/plans/2026-06-28-tauri-desktop-release-plan.md)
@@ -33,7 +33,7 @@
 | Assistant | 基于 runtime session 的多轮对话，按需读取知识、引用来源并使用明确启用的工具。 |
 | Knowledge Base | 导入和管理只读资料，支持 RAG 检索、原文读取、证据引用和来源定位。 |
 | Notebook | 用户拥有的 Markdown 内容，可记录、管理、查看、链接、导入和导出；助手产出只有经用户确认才写入。 |
-| Memory | “助手配置”正常可用；旧长期记忆链路已退役，新方案评审期间不进行记忆采集、召回或维护。 |
+| Memory | “助手配置”正常可用；旧长期记忆链路已退役，修订方案已确定“保存的记忆 + 历史检索”方向，实施完成前不进行记忆采集、召回或维护。 |
 | Settings | 模型、embedding、搜索、数据目录、工具权限、外观和 Notebook 存储。 |
 
 目标主导航包含 **Assistant、Knowledge Base、Notebook、Memory、Settings**。Knowledge Base 只管理用于 RAG 的只读来源；Notebook 是记录、管理和查看 Markdown 笔记的独立工作区；Memory 统一承载助手身份、行为偏好和长期记忆控制。三个长期数据域保持清晰的数据边界。Quiz、Space、Student Profile、多 Tutor 和独立 Research 模式属于冻结范围。

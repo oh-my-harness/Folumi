@@ -128,9 +128,12 @@ Memory。
 ### 4.5 记忆始终可见、可控
 
 - Memory 总开关默认清晰可见。
-- 显式“记住”是首选写入路径。
+- 保存的记忆与历史检索是两个不同通道：前者是用户确认的长期条目，后者是可选的跨会话只读召回。
+- 显式“记住”是保存长期条目的首选写入路径。
 - 自动记忆不作为首版默认能力。
 - 每条记忆都可查看来源、编辑、遗忘和关闭后续使用。
+- 历史检索默认关闭，不能自动把旧对话晋升为保存的记忆；临时对话不读写记忆，也不进入未来历史索引。
+- 保存的记忆预留全局和逻辑工作区作用域，但在工作区实体正式定义前只启用全局作用域。
 
 ### 4.6 不维护旧产品的双轨兼容
 
@@ -202,8 +205,9 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 ### 5.5 记忆
 
 记忆页面使用两个选项卡：“长期记忆”默认打开，负责总开关、记忆列表、来源检查、编辑和遗忘；
-“助手配置”负责名称与行为说明。Memory 的读取和
-变更仍通过 runtime access control 与 mutation gate，不因提升为一级页面而放宽权限。
+“助手配置”负责名称与行为说明。“长期记忆”区分用户确认的 Saved Memory 与默认关闭的
+History Recall；后者只检索 runtime Sessions，不复制会话正文或自动形成长期条目。Memory 的
+读取和变更仍通过 runtime access control 与 mutation gate，不因提升为一级页面而放宽权限。
 
 ### 5.6 设置
 
@@ -261,6 +265,16 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 -> 保存 provenance / revision
 -> 后续会话按需检索
 -> 用户可随时查看、修改或遗忘
+```
+
+跨会话找回旧讨论使用独立流程：
+
+```text
+用户开启历史检索
+-> 当前问题确实需要旧对话
+-> 按权限和作用域搜索 runtime Sessions
+-> 精确读取相关 turn 并显示可打开来源
+-> 只用于本轮回答，不自动写入 Saved Memory
 ```
 
 ## 7. 功能取舍
@@ -366,9 +380,12 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 - [x] 在 Memory 内用“长期记忆 / 助手配置”两个选项卡分离两类操作；
 - [x] 明确显示每个会话正在使用的资料范围；
 - [x] 完成 Notes 创建、更新、移动、删除确认和恢复闭环；
-- [x] 新会话统一使用 User Memory + Assistant Continuity；旧 Tutor 私有连续性不读取、
+- [ ] 按修订提案实现 Saved Memory、冲突失效规则和全局作用域；旧 Tutor 私有连续性不读取、
   不导入，也不静默合并到当前记忆；
-- [x] 增加 Memory 总开关、逐项来源、编辑和遗忘；
+- [ ] 增加 Memory 总开关、逐项来源、编辑、完成、置顶和彻底遗忘；
+- [ ] 在 runtime 跨 Session 检索边界可用后，实现默认关闭的 History Recall、临时对话和来源跳转；
+- [ ] 通过单独产品决策定义逻辑工作区后启用 workspace 作用域，不把 Knowledge Base、Notebook
+  或单个 Session 当成工作区；
 - [ ] 使用 ContextAttachment 支持临时资料，但不默认自动召回（runtime
   尚无一等临时附件边界，已记录到 `docs/framework-feedback.md` 和
   [llm-harness-runtime#101](https://github.com/oh-my-harness/llm-harness-runtime/issues/101)，产品侧不建设平行实现）。
@@ -395,7 +412,7 @@ Knowledge Base 与 Notebook 保持不同的权威数据、检索方式和写权�
 产品收缩继续保护目标数据域，但不为旧教学模型维护迁移能力：
 
 1. Sessions、Settings、Notebook 文件和 Knowledge Base 原始文档继续保留；
-2. 已位于统一 runtime Memory 后端的数据继续由独立记忆页面管理；
+2. 旧分层 Memory 和已经退役的 runtime Memory 后端数据不读取、不转换、不导入新系统；
 3. Tutor 私有连续性、Quiz、Student Profile 与旧 workflow 数据不读取、不转换、不导出；
 4. Folumi 不主动删除这些遗留文件，需要保留时由用户直接备份应用数据目录；
 5. 派生索引可从权威 Sources 重建；
