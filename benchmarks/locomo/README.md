@@ -2,6 +2,25 @@
 
 本目录保存机器可读、只追加不覆盖的检索评测与 Agent 回答评测结果，以及由结果生成的对比图。LoCoMo 数据集采用 CC BY-NC 4.0 许可，本仓库不会复制或提交数据集正文。
 
+## 一键运行控制台
+
+在仓库根目录运行：
+
+```powershell
+.\scripts\locomo-benchmark.ps1
+```
+
+脚本会在本机打开一个 Benchmark 控制台。页面可以选择检索或端到端回答评测，配置 LoCoMo 数据集路径、Debug/Release、Sample 数、每组题目数、Run ID、模型和 API 服务，并实时显示 Cargo 日志、聚合指标、分类指标、历史结果和对比图。建议先用 `1` 个 Sample、`5` 道题做 smoke test，再逐步扩大范围；回答评测会产生真实的模型调用和费用。
+
+也可以预先指定数据集、端口，或只启动服务而不自动打开浏览器：
+
+```powershell
+.\scripts\locomo-benchmark.ps1 -Dataset 'C:\path\to\locomo\data\locomo10.json' -Port 8765
+.\scripts\locomo-benchmark.ps1 -NoBrowser
+```
+
+控制台只监听 `127.0.0.1`。页面中输入的 API Key 不写入浏览器存储、结果文件或日志，只存在于控制台进程内存及当前评测子进程环境；也可以在启动脚本前设置服务商对应的环境变量，让页面的 Key 输入框保持为空。关闭运行脚本的终端即可关闭控制台。
+
 ## 记录一次检索评测
 
 运行检索评测时，应明确指定结果输出路径和版本来源：

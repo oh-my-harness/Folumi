@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Folumi · LoCoMo Benchmark</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">FOLUMI DEVELOPER TOOL</p>
+          <h1>LoCoMo Benchmark 控制台</h1>
+          <p class="hero-copy">配置、运行并比较 History Recall 检索与 Agent 端到端回答质量。</p>
+        </div>
+        <div class="status-pill" id="statusPill" data-phase="idle">
+          <span class="status-dot"></span>
+          <span id="statusText">空闲</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="panel run-panel">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">RUN</p>
+              <h2>新建评测</h2>
+            </div>
+            <p>端到端评测会调用在线模型，建议先从 1 个 Sample、5 道题开始。</p>
+          </div>
+
+          <form id="runForm" autocomplete="off">
+            <div class="form-grid">
+              <label>
+                <span>评测类型</span>
+                <select id="kind" name="kind">
+                  <option value="retrieval">History Recall 检索</option>
+                  <option value="answer">Agent 端到端回答</option>
+                </select>
+              </label>
+
+              <label>
+                <span>构建模式</span>
+                <select id="profile" name="profile">
+                  <option value="debug">Debug · 快速验证</option>
+                  <option value="release">Release · 正式延迟基线</option>
+                </select>
+              </label>
+
+              <label class="wide-field">
+                <span>LoCoMo 数据集</span>
+                <input id="dataset" name="dataset" type="text" placeholder="C:\path\to\locomo\data\locomo10.json" required />
+                <small>填写官方仓库中的 <code>data\locomo10.json</code> 绝对路径。</small>
+              </label>
+
+              <label>
+                <span>Sample 数</span>
+                <input id="maxSamples" name="max_samples" type="number" min="1" max="10" placeholder="留空 = 全部 10 组" />
+              </label>
+
+              <label>
+                <span>每组题目数</span>
+                <input id="maxQuestions" name="max_questions" type="number" min="1" placeholder="留空 = 全部题目" />
+              </label>
+
+              <label class="wide-field">
+                <span>Run ID</span>
+                <input id="runId" name="run_id" type="text" maxlength="80" placeholder="留空自动生成；例如 runtime-hybrid-v2" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,79}" />
+              </label>
+            </div>
+
+            <div id="answerSettings" class="answer-settings" hidden>
+              <div class="subsection-title">
+                <h3>在线模型</h3>
+                <span>API Key 不写入磁盘，也不会出现在日志中</span>
+              </div>
+              <div class="form-grid">
+                <label>
+                  <span>服务商</span>
+                  <select id="provider" name="provider">
+                    <option value="anthropic">Anthropic</option>
+                    <option value="openai">OpenAI / Compatible</option>
+                    <option value="deepseek">DeepSeek</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>固定模型 ID</span>
+                  <input id="model" name="model" type="text" placeholder="例如 claude-haiku-4-5-20251001" />
+                </label>
+
+                <label class="wide-field">
+                  <span>API Key</span>
+                  <input id="apiKey" name="api_key" type="password" spellcheck="false" placeholder="留空可使用启动控制台前设置的环境变量" />
+                  <small id="keyHint">当前环境未检测到该服务商的 Key。</small>
+                </label>
+
+                <label>
+                  <span>Base URL（可选）</span>
+                  <input id="baseUrl" name="base_url" type="url" placeholder="兼容服务或代理地址" />
+                </label>
+
+                <label>
+                  <span>Chat Path（可选）</span>
+                  <input id="chatPath" name="chat_path" type="text" placeholder="例如 /v1/chat/completions" />
+                </label>
+
+                <label class="checkbox-field wide-field">
+                  <input id="includeText" name="include_text" type="checkbox" />
+                  <span>
+                    <strong>保存题目与回答正文</strong>
+                    <small>仅用于本地失败分析；包含 LoCoMo 数据正文的结果不得提交。</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div id="formError" class="form-error" role="alert" hidden></div>
+            <div class="form-actions">
+              <button class="primary-button" id="startButton" type="submit">开始评测</button>
+              <button class="secondary-button danger" id="stopButton" type="button" disabled>停止当前评测</button>
+              <span class="security-note">仅监听本机 127.0.0.1</span>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel log-panel">
+          <div class="section-heading compact">
+            <div>
+              <p class="section-kicker">LIVE</p>
+              <h2>运行日志</h2>
+            </div>
+            <div class="run-meta" id="runMeta">尚未运行</div>
+          </div>
+          <pre id="logOutput" aria-live="polite">等待开始评测……</pre>
+        </section>
+
+        <section class="panel results-panel">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">RESULTS</p>
+              <h2>历史结果</h2>
+            </div>
+            <div class="result-controls">
+              <select id="resultKind" aria-label="结果类型">
+                <option value="retrieval">检索结果</option>
+                <option value="answer">回答结果</option>
+              </select>
+              <button class="icon-button" id="refreshResults" type="button">刷新</button>
+            </div>
+          </div>
+
+          <div id="resultWarnings" class="result-warnings" hidden></div>
+          <div class="chart-frame" id="chartFrame" hidden>
+            <img id="chartImage" alt="LoCoMo Benchmark 对比图" />
+          </div>
+          <div id="resultList" class="result-list"></div>
+        </section>
+      </main>
+
+      <footer>
+        <span>结果保存在 <code>benchmarks/locomo/</code></span>
+        <a href="/api/results" target="_blank" rel="noreferrer">查看结果索引 JSON</a>
+      </footer>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>
