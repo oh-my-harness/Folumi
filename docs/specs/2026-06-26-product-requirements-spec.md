@@ -74,7 +74,7 @@ The accepted workspace boundaries and change-control rule are recorded in
 ## 5. Memory and Continuity
 
 > Transition status (2026-08-03): the former L1/L2/L3 activity-capture and
-> consolidation system is retired. REQ-400 through REQ-415 describe the
+> consolidation system is retired. REQ-400 through REQ-416 describe the
 > replacement product target. Global Saved Memory, its lifecycle rules,
 > UI controls, and runtime mutation gate are active. The default-off History
 > Recall baseline now uses the runtime cross-Session contract. Runtime Sessions
@@ -97,10 +97,13 @@ The accepted workspace boundaries and change-control rule are recorded in
   and revision.
 - **REQ-403** Saved Memory shall use the user-facing kinds fact, preference,
   goal, and continuity without creating hidden storage layers.
-- **REQ-404** Saved Memory shall only be created when the user explicitly asks
-  to remember something, confirms an assistant suggestion, or adds an item in
-  the Memory UI. Ordinary conversation, Notebook, and Knowledge Base activity
-  shall not create Saved Memory.
+- **REQ-404** Saved Memory may be created when the user explicitly asks to
+  remember something, adds an item in the Memory UI, or directly states clearly
+  durable and personally useful information such as a preferred name, stable
+  preference, goal, or continuity item and the Assistant proposes a bounded
+  write. The Assistant shall not infer unstated facts or proactively save
+  transient, third-party, secret, or sensitive details. Notebook and Knowledge
+  Base activity shall not create Saved Memory merely because it occurred.
 - **REQ-405** Saved Memory shall be global. Runtime Sessions shall own
   conversation-local continuity and may be referenced as provenance, but shall
   not be duplicated as a Saved Memory scope. Knowledge Base IDs, Notebook
@@ -135,6 +138,11 @@ The accepted workspace boundaries and change-control rule are recorded in
 - **REQ-415** A product embedding Folumi components may disable built-in Memory
   or provide its own knowledge sources and policies without adopting Folumi's
   organization.
+- **REQ-416** Assistant-initiated Saved Memory writes shall require per-item
+  approval by default. The Memory UI shall expose a separate, default-off
+  permission allowing only assistant `memory_write` operations to skip that
+  approval. Forgetting, conflict resolution, and destructive changes shall not
+  inherit the permission. Disabling Memory shall revoke the active permission.
 
 ## 6. Settings, Privacy, and Portability
 

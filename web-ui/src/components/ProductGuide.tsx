@@ -263,11 +263,11 @@ const chineseCopy = {
   },
   memory: {
     title: '配置助手和记忆',
-    description: '显式保存的长期记忆已经启用；历史检索等待 runtime 提供跨会话检索边界。',
+    description: '长期记忆与按需历史检索均可由用户控制；助手可主动提出保存持久信息。',
     open: '打开记忆',
     items: [
       { icon: <Bot size={18} />, title: '助手配置', text: '设置所有新会话共用的助手名称和行为说明。' },
-      { icon: <Brain size={18} />, title: '长期记忆', text: '管理事实、偏好、目标和连续性事项；写入始终由你明确发起或确认。' },
+      { icon: <Brain size={18} />, title: '长期记忆', text: '管理事实、偏好、目标和连续性事项，并可选择是否允许助手新增时免审批。' },
     ],
   },
 }
@@ -327,11 +327,11 @@ const englishCopy: typeof chineseCopy = {
   },
   memory: {
     title: 'Configure Assistant and Memory',
-    description: 'Explicit Saved Memory is available. History Recall waits for the runtime cross-session recall boundary.',
+    description: 'Long-term memory and on-demand History Recall are user-controlled; the Assistant may proactively propose durable details.',
     open: 'Open Memory',
     items: [
       { icon: <Bot size={18} />, title: 'Assistant profile', text: 'Set the name and behavior instructions shared by new conversations.' },
-      { icon: <Brain size={18} />, title: 'Long-term memory', text: 'Manage facts, preferences, goals, and continuity items with explicit user control.' },
+      { icon: <Brain size={18} />, title: 'Long-term memory', text: 'Manage facts, preferences, goals, and continuity items, including whether Assistant writes need approval.' },
     ],
   },
 }

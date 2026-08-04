@@ -10,8 +10,8 @@ Current product and runtime-facing specs live here.
   Saved Memory is implemented. The opt-in runtime History Recall baseline is
   integrated as visible, agent-decided tool search without pre-run automatic
   injection. Temporary conversations and persistent local SQLite/FTS5 are
-  implemented, and the Phase 2 offline baseline is recorded in
-  `../qa/history-recall-acceptance.md`.
+  implemented. The Phase 2 lexical baseline and the subsequently discovered
+  semantic-paraphrase gap are recorded in `../qa/history-recall-acceptance.md`.
 - `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
   design and remains only as historical context.
 - `2026-07-15-persistent-tutor-design.md` defines persistent tutor identity,

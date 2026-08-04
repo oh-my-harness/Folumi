@@ -116,6 +116,7 @@ async fn get_settings(State(state): State<MemoryState>) -> Response {
 struct UpdateSettingsRequest {
     enabled: Option<bool>,
     history_recall_enabled: Option<bool>,
+    assistant_write_without_approval: Option<bool>,
 }
 
 async fn update_settings(
@@ -131,6 +132,13 @@ async fn update_settings(
         input
             .history_recall_enabled
             .unwrap_or(current.history_recall_enabled)
+    } else {
+        false
+    };
+    let assistant_write_without_approval = if enabled {
+        input
+            .assistant_write_without_approval
+            .unwrap_or(current.assistant_write_without_approval)
     } else {
         false
     };
@@ -151,7 +159,11 @@ async fn update_settings(
         )
             .into_response();
     }
-    match state.store.update_settings(enabled, history_recall_enabled) {
+    match state.store.update_settings(
+        enabled,
+        history_recall_enabled,
+        assistant_write_without_approval,
+    ) {
         Ok(settings) => (StatusCode::OK, Json(settings)).into_response(),
         Err(error) => {
             if history_recall_enabled != current.history_recall_enabled {
@@ -415,16 +427,20 @@ mod tests {
                 Request::patch("/api/memory/settings")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({ "enabled": true, "history_recall_enabled": true }).to_string(),
+                        json!({
+                            "enabled": true,
+                            "history_recall_enabled": true,
+                            "assistant_write_without_approval": true
+                        })
+                        .to_string(),
                     ))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response_json(response).await["history_recall_enabled"],
-            true
-        );
+        let payload = response_json(response).await;
+        assert_eq!(payload["history_recall_enabled"], true);
+        assert_eq!(payload["assistant_write_without_approval"], true);
     }
 }

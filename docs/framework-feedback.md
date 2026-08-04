@@ -65,6 +65,15 @@
     context gates. The baseline and reproduction command are recorded in
     `docs/qa/history-recall-acceptance.md`; it does not install the automatic
     plugin or introduce a parallel retrieval path.
+  - A real product test on 2026-08-04 exposed a remaining retrieval-quality
+    gap: a durable Session containing `"I am called <name>"` was not returned
+    for a later identity question because the model-generated intent query had
+    no sufficient lexical overlap. Session projection, scope, revision, and the
+    visible tool call were all valid. The existing benchmark therefore covers
+    lexical relevance and lifecycle correctness, not semantic paraphrases.
+    Folumi will keep runtime Session Recall authoritative and needs a runtime-
+    owned hybrid/semantic index option rather than an application-side parallel
+    history search path.
 
 - **Resolved 2026-08-03: Knowledge search safely federates multiple visible sources**
   - Reproduced in the desktop app on 2026-07-30 with Learner Memory and Tutor

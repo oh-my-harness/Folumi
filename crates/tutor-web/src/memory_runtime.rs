@@ -10,9 +10,9 @@ use llm_harness_runtime_knowledge::{
     KnowledgeSourceDescriptor, SourceSearchPage, SourceSearchRequest,
 };
 use llm_harness_runtime_memory::{
-    MemoryConsistency, MemoryDeleteReceipt, MemoryMutationGate, MemoryMutationGateError,
-    MemoryMutationRequest, MemoryPolicyError, MemoryPolicyRejection, MemoryProvenance,
-    MemoryService, MemoryServiceBuildError, MemoryStore as RuntimeMemoryStore,
+    MemoryConsistency, MemoryDeleteReceipt, MemoryMutation, MemoryMutationGate,
+    MemoryMutationGateError, MemoryMutationRequest, MemoryPolicyError, MemoryPolicyRejection,
+    MemoryProvenance, MemoryService, MemoryServiceBuildError, MemoryStore as RuntimeMemoryStore,
     MemoryStoreDescriptor, MemoryVisibility, MemoryWrite, MemoryWriteIntent, MemoryWritePolicy,
     MemoryWriteReceipt, SecureMemoryWritePolicy, SecureMemoryWritePolicyBuildError,
     SecureMemoryWritePolicyConfig,
@@ -377,6 +377,45 @@ pub trait SavedMemoryApprover: Send + Sync {
     ) -> BoxFuture<'a, Result<(), MemoryMutationGateError>>;
 }
 
+pub struct SavedMemoryPermissionApprover {
+    interactive: Arc<dyn SavedMemoryApprover>,
+    assistant_write_without_approval: bool,
+}
+
+impl SavedMemoryPermissionApprover {
+    pub fn new(
+        interactive: Arc<dyn SavedMemoryApprover>,
+        assistant_write_without_approval: bool,
+    ) -> Self {
+        Self {
+            interactive,
+            assistant_write_without_approval,
+        }
+    }
+}
+
+impl SavedMemoryApprover for SavedMemoryPermissionApprover {
+    fn authorize<'a>(
+        &'a self,
+        ctx: KnowledgeRequestContext<'a>,
+        request: MemoryMutationRequest,
+        abort: CancellationToken,
+    ) -> BoxFuture<'a, Result<(), MemoryMutationGateError>> {
+        if self.assistant_write_without_approval
+            && matches!(&request.mutation, MemoryMutation::Write { .. })
+        {
+            return Box::pin(async move {
+                if abort.is_cancelled() {
+                    Err(MemoryMutationGateError::Aborted)
+                } else {
+                    Ok(())
+                }
+            });
+        }
+        self.interactive.authorize(ctx, request, abort)
+    }
+}
+
 pub struct SavedMemoryMutationGate {
     approver: Arc<dyn SavedMemoryApprover>,
 }
@@ -631,5 +670,58 @@ mod tests {
         ));
         assert_eq!(approver.calls.load(Ordering::SeqCst), 1);
         assert!(store.list(&Default::default()).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn write_permission_bypasses_only_write_approval() {
+        let directory = tempfile::tempdir().unwrap();
+        let store =
+            Arc::new(MemoryStore::new_with_path(directory.path().join("memory.sqlite3")).unwrap());
+        let interactive = Arc::new(RecordingApprover::new(false));
+        let approver = Arc::new(SavedMemoryPermissionApprover::new(
+            interactive.clone(),
+            true,
+        ));
+        let service = service(store.clone(), approver);
+        let run = run_context();
+        let context = KnowledgeRequestContext::from_run(&run).unwrap();
+
+        let receipt = service
+            .write(
+                context,
+                MemoryWriteIntent {
+                    content: "用户希望被称为 ljd。".into(),
+                    kind: Some("fact".into()),
+                    requested_ttl: None,
+                },
+                MemoryMutationOrigin::ExplicitTool {
+                    tool_use_id: "memory-write-name".into(),
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(interactive.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            store.get(&receipt.reference.item_id).unwrap().content,
+            "用户希望被称为 ljd。"
+        );
+
+        let error = service
+            .delete(
+                context,
+                receipt.reference,
+                MemoryMutationOrigin::ExplicitTool {
+                    tool_use_id: "memory-forget-name".into(),
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            MemoryServiceError::MutationGate(MemoryMutationGateError::Denied)
+        ));
+        assert_eq!(interactive.calls.load(Ordering::SeqCst), 1);
     }
 }

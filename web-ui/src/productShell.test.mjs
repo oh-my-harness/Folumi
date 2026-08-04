@@ -70,9 +70,17 @@ test('retired layered memory is replaced by explicit revisioned Saved Memory', (
 
 test('History Recall is visible tool search without hidden pre-run injection', () => {
   assert.match(memory, /不会在 run 前隐式自动召回/)
+  assert.doesNotMatch(memory, /由 runtime 提供|Runtime powered/)
   assert.match(websocketRoutes, /source_id exactly `session_recall`/)
   assert.match(websocketRoutes, /tool trace and source link/)
   assert.doesNotMatch(websocketRoutes, /with_runtime_plugin|history_recall_plugin/)
+})
+
+test('assistant memory writes are proactive but user-controlled', () => {
+  assert.match(memory, /允许助手无需审批添加记忆/)
+  assert.match(memory, /assistant_write_without_approval/)
+  assert.match(websocketRoutes, /clearly durable and personally useful context/)
+  assert.match(websocketRoutes, /Memory deletion still requires explicit user intent and separate approval/)
 })
 
 test('temporary conversations are explicit and disable memory continuity', () => {

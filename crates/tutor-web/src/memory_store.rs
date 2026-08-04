@@ -5,7 +5,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 const MAX_CONTENT_CHARS: usize = 1_200;
 const MAX_TOPIC_KEY_CHARS: usize = 120;
 
@@ -207,6 +207,7 @@ pub struct MemoryListFilter {
 pub struct MemorySettings {
     pub enabled: bool,
     pub history_recall_enabled: bool,
+    pub assistant_write_without_approval: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -272,6 +273,26 @@ fn migrate_v1_to_v2(connection: &mut Connection) -> Result<(), MemoryStoreError>
     Ok(())
 }
 
+fn migrate_v2_to_v3(connection: &mut Connection) -> Result<(), MemoryStoreError> {
+    connection.execute_batch(
+        r#"
+        BEGIN IMMEDIATE;
+        CREATE TABLE IF NOT EXISTS memory_settings (
+            singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+            enabled INTEGER NOT NULL,
+            history_recall_enabled INTEGER NOT NULL
+        );
+        INSERT OR IGNORE INTO memory_settings(singleton, enabled, history_recall_enabled)
+            VALUES(1, 0, 0);
+        ALTER TABLE memory_settings
+            ADD COLUMN assistant_write_without_approval INTEGER NOT NULL DEFAULT 0;
+        PRAGMA user_version = 3;
+        COMMIT;
+        "#,
+    )?;
+    Ok(())
+}
+
 impl MemoryStore {
     pub fn new_with_path(path: impl Into<PathBuf>) -> Result<Self, MemoryStoreError> {
         let store = Self { path: path.into() };
@@ -302,6 +323,11 @@ impl MemoryStore {
         }
         if current_version == 1 {
             migrate_v1_to_v2(&mut connection)?;
+        }
+        let current_version: i64 =
+            connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if current_version == 2 {
+            migrate_v2_to_v3(&mut connection)?;
         }
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.execute_batch(
@@ -372,10 +398,12 @@ impl MemoryStore {
             CREATE TABLE IF NOT EXISTS memory_settings (
                 singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
                 enabled INTEGER NOT NULL,
-                history_recall_enabled INTEGER NOT NULL
+                history_recall_enabled INTEGER NOT NULL,
+                assistant_write_without_approval INTEGER NOT NULL
             );
-            INSERT OR IGNORE INTO memory_settings(singleton, enabled, history_recall_enabled)
-                VALUES(1, 0, 0);
+            INSERT OR IGNORE INTO memory_settings(
+                singleton, enabled, history_recall_enabled, assistant_write_without_approval
+            ) VALUES(1, 0, 0, 0);
 
             CREATE TABLE IF NOT EXISTS memory_meta (
                 key TEXT PRIMARY KEY,
@@ -423,12 +451,14 @@ impl MemoryStore {
         let connection = self.open()?;
         connection
             .query_row(
-                "SELECT enabled, history_recall_enabled FROM memory_settings WHERE singleton = 1",
+                "SELECT enabled, history_recall_enabled, assistant_write_without_approval
+                 FROM memory_settings WHERE singleton = 1",
                 [],
                 |row| {
                     Ok(MemorySettings {
                         enabled: row.get::<_, i64>(0)? != 0,
                         history_recall_enabled: row.get::<_, i64>(1)? != 0,
+                        assistant_write_without_approval: row.get::<_, i64>(2)? != 0,
                     })
                 },
             )
@@ -439,6 +469,7 @@ impl MemoryStore {
         &self,
         enabled: bool,
         history_recall_enabled: bool,
+        assistant_write_without_approval: bool,
     ) -> Result<MemorySettings, MemoryStoreError> {
         if history_recall_enabled && !enabled {
             return Err(MemoryStoreError::Validation(
@@ -447,8 +478,15 @@ impl MemoryStore {
         }
         let connection = self.open()?;
         connection.execute(
-            "UPDATE memory_settings SET enabled = ?1, history_recall_enabled = ?2 WHERE singleton = 1",
-            params![enabled as i64, history_recall_enabled as i64],
+            "UPDATE memory_settings
+             SET enabled = ?1, history_recall_enabled = ?2,
+                 assistant_write_without_approval = ?3
+             WHERE singleton = 1",
+            params![
+                enabled as i64,
+                history_recall_enabled as i64,
+                assistant_write_without_approval as i64
+            ],
         )?;
         self.settings()
     }
@@ -1285,12 +1323,40 @@ mod tests {
     #[test]
     fn history_recall_requires_memory_and_can_be_enabled() {
         let (_directory, store) = store();
-        assert!(store.update_settings(false, true).is_err());
+        assert!(store.update_settings(false, true, false).is_err());
         assert!(
             store
-                .update_settings(true, true)
+                .update_settings(true, true, true)
                 .unwrap()
                 .history_recall_enabled
         );
+        assert!(store.settings().unwrap().assistant_write_without_approval);
+    }
+
+    #[test]
+    fn migrates_v2_settings_with_write_approval_required_by_default() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("memory.sqlite3");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE memory_settings (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                    enabled INTEGER NOT NULL,
+                    history_recall_enabled INTEGER NOT NULL
+                );
+                INSERT INTO memory_settings VALUES(1, 1, 1);
+                PRAGMA user_version = 2;
+                "#,
+            )
+            .unwrap();
+        drop(connection);
+
+        let store = MemoryStore::new_with_path(&path).unwrap();
+        let settings = store.settings().unwrap();
+        assert!(settings.enabled);
+        assert!(settings.history_recall_enabled);
+        assert!(!settings.assistant_write_without_approval);
     }
 }

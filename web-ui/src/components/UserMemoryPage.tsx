@@ -50,6 +50,7 @@ interface MemoryItem {
 interface MemorySettings {
   enabled: boolean
   history_recall_enabled: boolean
+  assistant_write_without_approval: boolean
 }
 
 interface Props {
@@ -60,7 +61,7 @@ interface Props {
   onSessionNavigate?: (sessionId: string) => void
 }
 
-const emptySettings: MemorySettings = { enabled: false, history_recall_enabled: false }
+const emptySettings: MemorySettings = { enabled: false, history_recall_enabled: false, assistant_write_without_approval: false }
 
 export function UserMemoryPage({
   language,
@@ -256,7 +257,7 @@ export function UserMemoryPage({
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Brain size={21} /></span>
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold text-gray-950">{english ? 'Memory' : '记忆'}</h1>
-          <p className="mt-1 text-sm text-gray-500">{english ? 'Manage explicit cross-session memory and the assistant profile.' : '管理明确保存的跨会话记忆与助手配置。'}</p>
+          <p className="mt-1 text-sm text-gray-500">{english ? 'Manage durable cross-session memory and the assistant profile.' : '管理持久的跨会话记忆与助手配置。'}</p>
         </div>
       </div>
 
@@ -276,12 +277,23 @@ export function UserMemoryPage({
               <div>
                 <h2 className="font-semibold text-gray-950">{english ? 'Saved Memory' : '保存的记忆'}</h2>
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">{english
-                  ? 'Only explicit or approved items are recalled. Turning Memory off keeps existing items but removes memory tools from new runs.'
-                  : '只有明确新增或确认的条目才会被召回。关闭后保留已有条目，但新 run 不再挂载记忆工具。'}</p>
+                  ? 'Only saved items are recalled. Turning Memory off keeps existing items but removes memory tools from new runs.'
+                  : '只有已经保存的条目才会被召回。关闭后保留已有条目，但新 run 不再挂载记忆工具。'}</p>
               </div>
               <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-gray-700">
                 <span>{settings.enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}</span>
                 <input className="peer sr-only" type="checkbox" checked={settings.enabled} disabled={busy || loading} onChange={(event) => void updateMemorySettings({ enabled: event.target.checked })} />
+                <span className="relative h-6 w-11 rounded-full bg-gray-300 transition peer-checked:bg-blue-600 peer-disabled:opacity-60 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
+              </label>
+            </div>
+            <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-t border-gray-100 pt-4">
+              <div className="max-w-3xl">
+                <h3 className="text-sm font-medium text-gray-900">{english ? 'Allow assistant writes without approval' : '允许助手无需审批添加记忆'}</h3>
+                <p className="mt-1 text-xs leading-5 text-gray-500">{english ? 'The Assistant may save clearly durable details you directly share, such as your preferred name, stable preferences, or ongoing goals, without asking each time. Sensitive, inferred, and transient details remain excluded; forgetting still requires approval.' : '助手可以直接保存你明确透露的姓名、稳定偏好或长期目标等持久信息，不再逐条询问。敏感、推断和临时信息仍不得主动保存；遗忘操作仍需审批。'}</p>
+              </div>
+              <label className={`flex items-center gap-3 text-sm font-medium ${settings.enabled ? 'cursor-pointer text-gray-700' : 'cursor-not-allowed text-gray-400'}`}>
+                <span>{settings.assistant_write_without_approval ? (english ? 'Allowed' : '已授权') : (english ? 'Approval required' : '需要审批')}</span>
+                <input className="peer sr-only" type="checkbox" checked={settings.assistant_write_without_approval} disabled={busy || loading || !settings.enabled} onChange={(event) => void updateMemorySettings({ assistant_write_without_approval: event.target.checked })} />
                 <span className="relative h-6 w-11 rounded-full bg-gray-300 transition peer-checked:bg-blue-600 peer-disabled:opacity-60 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
               </label>
             </div>
@@ -340,7 +352,7 @@ export function UserMemoryPage({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2"><Badge text={kindLabel(item.kind, english)} /><Badge text={stateLabel(item, english)} tone={item.expired || item.status !== 'active' ? 'muted' : 'blue'} />{item.priority === 'pinned' && <Badge text={english ? 'Pinned' : '已置顶'} tone="violet" />}{item.topic_key && <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">{item.topic_key}</code>}</div>
                           <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-900">{item.content}</p>
-                          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400"><span>{english ? 'Confirmed' : '确认于'} {formatDate(item.last_confirmed_at, language)}</span><span>{english ? 'Updated' : '更新于'} {formatDate(item.updated_at, language)}</span>{item.valid_until && <span className="inline-flex items-center gap-1"><Clock3 size={12} />{english ? 'Valid until' : '有效期至'} {formatDate(item.valid_until, language)}</span>}<span>{item.origin === 'assistant_suggested' ? (english ? 'Assistant suggestion, approved' : '助手建议，经确认') : (english ? 'Added by user' : '用户明确添加')}</span></div>
+                          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400"><span>{english ? 'Recorded' : '记录于'} {formatDate(item.last_confirmed_at, language)}</span><span>{english ? 'Updated' : '更新于'} {formatDate(item.updated_at, language)}</span>{item.valid_until && <span className="inline-flex items-center gap-1"><Clock3 size={12} />{english ? 'Valid until' : '有效期至'} {formatDate(item.valid_until, language)}</span>}<span>{item.origin === 'assistant_suggested' ? (english ? 'Added by Assistant' : '助手添加') : (english ? 'Added by user' : '用户明确添加')}</span></div>
                           {item.source_refs.length > 0 && <details className="mt-2 text-xs text-gray-500"><summary className="cursor-pointer">{english ? `${item.source_refs.length} source reference(s)` : `${item.source_refs.length} 个来源`}</summary><ul className="mt-1 space-y-1 pl-4">{item.source_refs.map((source, index) => <li key={`${source.source_id}-${index}`}>{source.source_type === 'session' && onSessionNavigate ? <button type="button" className="text-blue-600 hover:underline" onClick={() => onSessionNavigate(source.source_id)}>{english ? 'Open source conversation' : '打开来源会话'} · {source.source_id}</button> : <>{source.source_type}: {source.source_id}</>}</li>)}</ul></details>}
                         </div>
                         <div className="flex shrink-0 flex-wrap justify-end gap-1">
@@ -360,7 +372,7 @@ export function UserMemoryPage({
 
           <section className="rounded-xl border border-gray-200 bg-gray-50 p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex max-w-3xl items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700"><History size={18} /></span><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-gray-900">{english ? 'History Recall' : '历史检索'}</h2><Badge text={english ? 'Runtime powered' : '由 runtime 提供'} tone="blue" /></div><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'When enabled, the Assistant may visibly search eligible durable sessions only when you refer to earlier conversations. There is no hidden pre-run recall. Conversation bodies remain in runtime Sessions and never become Saved Memory automatically.' : '开启后，仅当你提到以前的对话时，助手才可通过可见工具按需搜索符合权限的持久会话；不会在 run 前隐式自动召回。会话正文仍只保存在 runtime Session 中，也不会自动变成 Saved Memory。'}</p>{!settings.enabled && <p className="mt-2 text-xs text-amber-700">{english ? 'Enable Memory first to use History Recall.' : '请先开启 Memory，再启用历史检索。'}</p>}</div></div>
+              <div className="flex max-w-3xl items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700"><History size={18} /></span><div><h2 className="font-semibold text-gray-900">{english ? 'History Recall' : '历史检索'}</h2><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'When enabled, the Assistant may visibly search eligible durable sessions only when you refer to earlier conversations. There is no hidden pre-run recall. Searching history does not automatically promote conversation text into Saved Memory.' : '开启后，仅当你提到以前的对话时，助手才可通过可见工具按需搜索符合权限的持久会话；不会在 run 前隐式自动召回，历史内容也不会仅因被检索就自动变成保存的记忆。'}</p>{!settings.enabled && <p className="mt-2 text-xs text-amber-700">{english ? 'Enable Memory first to use History Recall.' : '请先开启 Memory，再启用历史检索。'}</p>}</div></div>
               <label className={`flex items-center gap-3 text-sm font-medium ${settings.enabled ? 'cursor-pointer text-gray-700' : 'cursor-not-allowed text-gray-400'}`}>
                 <span>{settings.history_recall_enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}</span>
                 <input className="peer sr-only" type="checkbox" checked={settings.history_recall_enabled} disabled={busy || loading || !settings.enabled} onChange={(event) => void updateMemorySettings({ history_recall_enabled: event.target.checked })} />

@@ -9,10 +9,9 @@ use llm_harness_runtime_knowledge::{
 };
 use llm_harness_runtime_session_recall::SESSION_RECALL_SOURCE_ID;
 
-use crate::memory_approval::WebMemoryApprovalCoordinator;
 use crate::memory_runtime::{
-    SavedMemoryKnowledgeSource, USER_MEMORY_PRINCIPAL_ATTRIBUTE, USER_MEMORY_PROFILE_ATTRIBUTE,
-    USER_MEMORY_SOURCE_ID, assemble_saved_memory_service,
+    SavedMemoryApprover, SavedMemoryKnowledgeSource, USER_MEMORY_PRINCIPAL_ATTRIBUTE,
+    USER_MEMORY_PROFILE_ATTRIBUTE, USER_MEMORY_SOURCE_ID, assemble_saved_memory_service,
 };
 use crate::memory_store::MemoryStore;
 
@@ -51,7 +50,7 @@ pub(crate) fn session_recall_scope() -> SessionRecallScope {
 
 pub(crate) struct UserMemoryRuntimeInput {
     pub store: Arc<MemoryStore>,
-    pub approver: Arc<WebMemoryApprovalCoordinator>,
+    pub approver: Arc<dyn SavedMemoryApprover>,
 }
 
 #[derive(Clone)]

@@ -519,7 +519,7 @@ fn chat_system_prompt() -> String {
      Use search_notebook when Notebook is associated and saved Markdown notes may be relevant. \
      When the user references a Notebook entry, read the exact entry before relying on its content. \
      When the user explicitly asks you to create a Notebook item, use create_notebook_item. When the user explicitly asks you to modify, rename, or move an existing Notebook item, call read_notebook_item first and then use update_notebook_item or move_notebook_item with the exact returned revision. Use propose_notebook_edit only for self-initiated suggestions that the user did not explicitly request. Never delete Notebook content. \
-     When memory_write and memory_forget are available, use memory_write only when the user explicitly asks you to remember a stable fact, preference, goal, or continuity item. Never infer or capture a memory merely because it appears useful. Use memory_forget only for the exact item the user asks to forget. Memory mutations require the user's separate confirmation in the product UI. \
+     When memory_write and memory_forget are available, follow the product's Saved Memory permission instruction. You may use memory_write when the user explicitly asks, or when they directly state clearly durable, personally useful context such as a preferred name, stable preference, goal, or continuity item. Do not infer unstated facts or capture transient or sensitive details merely because they appear useful. Use memory_forget only for the exact item the user asks to forget. The product instruction states whether writes require separate confirmation; never claim success before the tool result. \
      Web verification rules are strict: when the user asks you to collect facts, trivia, \
      current information, latest information, sources, external references, or information \
      about real-world/public entities, products, games, communities, papers, libraries, \
@@ -588,9 +588,9 @@ mod tests {
         assert!(prompt.contains("never invent a citation handle"));
         assert!(prompt.contains("read the exact entry"));
         assert!(prompt.contains("propose_notebook_edit"));
-        assert!(prompt.contains("only when the user explicitly asks you to remember"));
-        assert!(prompt.contains("Never infer or capture a memory"));
-        assert!(prompt.contains("separate confirmation"));
+        assert!(prompt.contains("directly state clearly durable"));
+        assert!(prompt.contains("Do not infer unstated facts"));
+        assert!(prompt.contains("whether writes require separate confirmation"));
         assert!(prompt.contains("collect facts"));
         assert!(prompt.contains("trivia"));
         assert!(prompt.contains("must call web_search before answering"));
