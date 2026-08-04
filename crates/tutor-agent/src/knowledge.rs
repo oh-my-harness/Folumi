@@ -522,10 +522,23 @@ mod tests {
         assert!(chunks[0].text.contains("motion and force"));
         assert_eq!(chunks[0].reference, chunks[0].evidence.reference);
 
-        let error = runtime
+        let hidden = runtime
             .collect_verified_chunks(
                 access(tutor_rag::COURSE_KNOWLEDGE_NAMESPACE, Some("kb-b")),
                 "Newton",
+                5,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(hidden.is_empty());
+
+        let error = runtime
+            .collect_verified_chunks_scoped(
+                access(tutor_rag::COURSE_KNOWLEDGE_NAMESPACE, Some("kb-b")),
+                "Newton",
+                Some(tutor_rag::COURSE_KNOWLEDGE_SOURCE_ID.into()),
+                vec![],
                 5,
                 CancellationToken::new(),
             )

@@ -15,15 +15,15 @@ license = "MIT"
 
 [workspace.dependencies]
 # Core/runtime crates (same rev from llm-harness-runtime)
-llm-harness-agent = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "40c2984f2cbaead78944de4e1e493df8b47e4386", package = "llm-harness-agent" }
-llm-harness-types = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "40c2984f2cbaead78944de4e1e493df8b47e4386", package = "llm-harness-types" }
-llm-harness-loop  = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "40c2984f2cbaead78944de4e1e493df8b47e4386", package = "llm-harness-loop" }
-llm-harness-runtime = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "40c2984f2cbaead78944de4e1e493df8b47e4386", package = "llm-harness-runtime" }
-llm-harness-runtime-sandbox-os = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "40c2984f2cbaead78944de4e1e493df8b47e4386", package = "llm-harness-runtime-sandbox-os" }
-llm-harness-runtime-audit-jsonl = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "40c2984f2cbaead78944de4e1e493df8b47e4386", package = "llm-harness-runtime-audit-jsonl" }
-llm-harness-runtime-knowledge = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "40c2984f2cbaead78944de4e1e493df8b47e4386", package = "llm-harness-runtime-knowledge" }
-llm-harness-runtime-memory = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "40c2984f2cbaead78944de4e1e493df8b47e4386", package = "llm-harness-runtime-memory" }
-llm-harness-runtime-session-recall = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "40c2984f2cbaead78944de4e1e493df8b47e4386", package = "llm-harness-runtime-session-recall", features = ["sqlite"] }
+llm-harness-agent = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "66f983d0a4c024c34e70bff3587cd4c44fb3b26f", package = "llm-harness-agent" }
+llm-harness-types = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "66f983d0a4c024c34e70bff3587cd4c44fb3b26f", package = "llm-harness-types" }
+llm-harness-loop  = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "66f983d0a4c024c34e70bff3587cd4c44fb3b26f", package = "llm-harness-loop" }
+llm-harness-runtime = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "66f983d0a4c024c34e70bff3587cd4c44fb3b26f", package = "llm-harness-runtime" }
+llm-harness-runtime-sandbox-os = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "66f983d0a4c024c34e70bff3587cd4c44fb3b26f", package = "llm-harness-runtime-sandbox-os" }
+llm-harness-runtime-audit-jsonl = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "66f983d0a4c024c34e70bff3587cd4c44fb3b26f", package = "llm-harness-runtime-audit-jsonl" }
+llm-harness-runtime-knowledge = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "66f983d0a4c024c34e70bff3587cd4c44fb3b26f", package = "llm-harness-runtime-knowledge" }
+llm-harness-runtime-memory = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "66f983d0a4c024c34e70bff3587cd4c44fb3b26f", package = "llm-harness-runtime-memory" }
+llm-harness-runtime-session-recall = { git = "https://github.com/oh-my-harness/llm-harness-runtime.git", rev = "66f983d0a4c024c34e70bff3587cd4c44fb3b26f", package = "llm-harness-runtime-session-recall", features = ["sqlite"] }
 
 # LLM provider adapter
 llm_adapter = { git = "https://github.com/oh-my-harness/llm-api-adapter", rev = "193117cbb8398aadeca74a925cfd699617f8c861" }

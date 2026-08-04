@@ -354,24 +354,24 @@ Memory 页面还提供有效期修改、显式重新确认和 JSON 导出；导�
 
 ### Phase 2：History Recall
 
-状态：进行中。runtime 的跨 Session 搜索与精确 turn 投影契约已在
+状态：基线已完成，离线评测待补。runtime 的跨 Session 搜索与精确 turn 投影契约已在
 [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104)
-及 draft PR #105 中形成，Folumi 已完成第一轮下游接入和边界验证。
+及已合并的 [PR #105](https://github.com/oh-my-harness/llm-harness-runtime/pull/105)
+中形成，Folumi 已固定到合并提交 `66f983d` 并完成下游接入和边界验证。
 
 - [x] 确认并接入 runtime 跨 Session 搜索、可重建投影和精确 turn 读取边界；
 - [x] 历史检索独立开关，默认关闭；Memory 总开关关闭时不运行；
-- [ ] 临时对话；
-- [ ] 持久本地 FTS 候选索引；当前先使用 runtime 内存投影并在启动时重建；
+- [x] 临时对话；创建时使用 runtime `SessionDurability::Temporary`，不挂载 Saved Memory 或 History Recall，也不进入派生索引；
+- [x] 持久本地 SQLite/FTS5 候选索引；启动时按 Session revision 增量对账，索引可随时从权威 Session 重建；
 - [x] runtime observer 驱动的 Session 更新和删除失效；
 - [x] 模型主动执行 `knowledge_read` 时提供精确会话/turn 来源跳转；
 - [x] 首版不挂载 `HistoryRecallPlugin`；历史搜索和读取只通过可见的 Agent 工具按需发生；
 - [ ] 建立离线评测集，记录相关率、错误召回率、延迟和上下文占用；
 - [x] 不把历史片段自动提升为 Saved Memory。
 
-当前集成限制记录在 `docs/framework-feedback.md`：runtime 目前从完整
-`KnowledgeAccessContext.scope` 推导 Recall scope，因此 Folumi 的知识库选择也会参与
-精确 scope 匹配。runtime 虽提供自动注入插件，但 Folumi 首版明确不安装它；产品也不会为绕过
-框架限制另建 Session 正文库或上下文拼装链路。
+当前集成状态记录在 `docs/framework-feedback.md`：History Recall 使用独立的
+`SessionRecallAccessContext`，不会再被 Knowledge Base 选择切分；runtime 虽提供自动注入插件，
+但 Folumi 首版明确不安装它。产品不会另建 Session 正文库或上下文拼装链路。
 
 ### Phase 3：受控增强
 

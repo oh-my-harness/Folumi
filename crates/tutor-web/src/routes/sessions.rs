@@ -29,6 +29,7 @@ struct CreateSessionRequest {
     llm: Option<CreateLlmConfig>,
     search: Option<CreateSearchConfig>,
     assistant: Option<CreateAssistantConfig>,
+    temporary: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -136,6 +137,7 @@ async fn create_session(
                 .assistant
                 .map(assistant_config_from_request)
                 .unwrap_or_default(),
+            temporary: req.temporary.unwrap_or(false),
         })
         .await
     {
@@ -182,6 +184,7 @@ async fn list_sessions(State(state): State<Arc<SessionsState>>) -> impl IntoResp
                     "created_at": session.created_at,
                     "updated_at": session.updated_at,
                     "model": session.model,
+                    "temporary": session.temporary,
                     "active_run": active_run.map(|run| serde_json::json!({
                         "run_id": run.run_id,
                         "session_id": run.session_id,
@@ -337,6 +340,7 @@ async fn get_session(
             "kb": entry.kb,
             "notebook_enabled": entry.notebook_enabled,
             "assistant": entry.assistant,
+            "temporary": entry.temporary,
             "history_len": history_len,
             "metadata": {
                 "name": meta.name,
@@ -926,6 +930,53 @@ mod tests {
         let detail: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(detail["assistant"]["name"], "Folumi");
         assert_eq!(detail["assistant"]["instructions"], "Be concise");
+    }
+
+    #[tokio::test]
+    async fn creates_temporary_session_and_exposes_it_in_session_apis() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = test_app(dir.path());
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/api/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"capability":"chat","temporary":true}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(created.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let id = created["id"].as_str().unwrap();
+
+        let detail = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/sessions/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(detail.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let detail: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(detail["temporary"], true);
+
+        let list = app
+            .oneshot(Request::get("/api/sessions").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(list.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let list: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(list["sessions"][0]["temporary"], true);
     }
 
     #[tokio::test]

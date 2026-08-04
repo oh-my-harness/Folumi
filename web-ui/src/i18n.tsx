@@ -35,6 +35,7 @@ export type TranslationKey =
   | 'chat.model.configureFirst'
   | 'chat.send'
   | 'chat.stop'
+  | 'chat.temporary.sidebar'
   | 'settings.title'
   | 'settings.subtitle'
   | 'settings.saved'
@@ -99,6 +100,7 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.model.configureFirst': '请先到设置中添加 LLM 配置',
     'chat.send': '发送',
     'chat.stop': '停止生成',
+    'chat.temporary.sidebar': '临时对话 · 不使用记忆或历史检索',
     'settings.title': '设置',
     'settings.subtitle': '调整外观、配置模型服务、查看内置工具。',
     'settings.saved': '所有更改已保存',
@@ -162,6 +164,7 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.model.configureFirst': 'Add an LLM profile in Settings first',
     'chat.send': 'Send',
     'chat.stop': 'Stop generation',
+    'chat.temporary.sidebar': 'Temporary · no memory or history recall',
     'settings.title': 'Settings',
     'settings.subtitle': 'Adjust appearance, configure model services, and inspect built-in tools.',
     'settings.saved': 'All changes saved',

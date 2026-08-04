@@ -20,20 +20,22 @@
 
 ## Friction Points
 
-- **Validated 2026-08-03: runtime Session Recall is consumable; scope, navigation, and persistence gaps are resolved**
-  - Checked against the product pin `40c2984` on 2026-08-03 while revising the
-    Folumi memory proposal.
+- **Validated 2026-08-04: runtime Session Recall is merged and consumable; scope, navigation, and persistence gaps are resolved**
+  - Upstream PR #105 merged into `main` as `66f983d` on 2026-08-04; Folumi now
+    pins that merge commit rather than the former PR head `40c2984`.
   - Tracked upstream as
     [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104).
-  - Draft PR #105 commit `380635f` adds `ObservedSessionRepo`,
+  - PR #105 adds `ObservedSessionRepo`,
     `SessionRecallProjector`, `SessionRecallKnowledgeSource`, and
     `HistoryRecallPlugin`. Folumi consumes the observer, projector, and
     Knowledge source while deliberately not installing the automatic plugin:
     Session remains authoritative, the index is rebuildable, exact reads
     revalidate authority, and deletion/update invalidation flows through the
     observer.
-  - Downstream `tutor-web --lib` passes all 100 tests and strict local Clippy.
-    CI was deliberately not evaluated for this follow-up.
+  - Folumi also uses runtime `SessionDurability::Temporary` as the source of
+    truth for temporary conversations. These sessions keep Recall disabled,
+    are excluded from the derived index, and do not mount Saved Memory or
+    History Recall during a run.
   - Resolved in `380635f`: runs now carry a trusted
     `SessionRecallAccessContext` whose partition and current Session ID are
     independent of `KnowledgeAccessContext.scope`. Folumi uses one stable

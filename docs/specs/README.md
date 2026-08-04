@@ -9,8 +9,8 @@ Current product and runtime-facing specs live here.
 - `2026-08-03-user-memory-redesign.md` is the accepted Memory design. Its global
   Saved Memory is implemented. The opt-in runtime History Recall baseline is
   integrated as visible, agent-decided tool search without pre-run automatic
-  injection; temporary conversations, persistent local FTS, and offline
-  evaluation remain Phase 2 follow-up work.
+  injection. Temporary conversations and persistent local SQLite/FTS5 are
+  implemented; offline evaluation remains Phase 2 follow-up work.
 - `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
   design and remains only as historical context.
 - `2026-07-15-persistent-tutor-design.md` defines persistent tutor identity,

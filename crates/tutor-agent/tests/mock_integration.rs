@@ -7,7 +7,7 @@ use futures::{future::BoxFuture, stream};
 use llm_adapter::{
     ChatRequest, ChatResponse, Message, Provider, ProviderCapabilities, RequestContent,
     StreamHandle,
-    types::{ContentKind, StopReason, StreamEvent, Usage},
+    types::{ContentKind, StopReason, StreamEvent, Usage, UsageProvenance},
 };
 use llm_harness_agent::{JsonlSessionRepo, Session, SessionRepo, session::CreateSessionOptions};
 use llm_harness_loop::{
@@ -487,6 +487,7 @@ async fn chat_uses_runtime_knowledge_tools_and_keeps_read_bodies_out_of_session(
             cached_input_tokens: 12,
             cache_creation_input_tokens: 8,
             reasoning_tokens: 0,
+            provenance: UsageProvenance::ReportedValid,
         }),
     );
     let router = CapabilityRouter::new(

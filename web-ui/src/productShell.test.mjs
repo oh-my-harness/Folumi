@@ -75,6 +75,13 @@ test('History Recall is visible tool search without hidden pre-run injection', (
   assert.doesNotMatch(websocketRoutes, /with_runtime_plugin|history_recall_plugin/)
 })
 
+test('temporary conversations are explicit and disable memory continuity', () => {
+  assert.match(app, /临时对话/)
+  assert.match(app, /temporary: temporaryConversation/)
+  assert.match(websocketRoutes, /session_memory_features/)
+  assert.match(websocketRoutes, /entry\.temporary/)
+})
+
 test('research is a chat task action instead of a capability menu', () => {
   assert.doesNotMatch(composer, /openMenu === 'mode'/)
   assert.doesNotMatch(composer, /visibleModeOptions/)

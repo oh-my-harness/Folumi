@@ -69,6 +69,7 @@ pub struct SessionCreateConfig {
     pub search: Option<SearchSessionConfig>,
     pub embedding: Option<tutor_rag::EmbeddingConfig>,
     pub assistant: AssistantSessionConfig,
+    pub temporary: bool,
 }
 
 /// Product metadata for an active Assistant session.
@@ -82,6 +83,7 @@ pub struct SessionEntry {
     pub search: Option<SearchSessionConfig>,
     pub embedding: Option<tutor_rag::EmbeddingConfig>,
     pub assistant: AssistantSessionConfig,
+    pub temporary: bool,
     pub stream: TutorStream,
 }
 
@@ -92,6 +94,7 @@ pub struct RuntimeSessionSummary {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub model: Option<String>,
+    pub temporary: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -248,12 +251,13 @@ impl SessionPool {
         let _guard = self.history_recall_update.lock().await;
         let sessions = self.repo.list(ListSessionOptions::default()).await?;
         for metadata in sessions {
-            let policy = if enabled {
+            let recall_enabled = enabled && metadata.durability == SessionDurability::Durable;
+            let policy = if recall_enabled {
                 SessionRecallPolicy::Enabled
             } else {
                 SessionRecallPolicy::Disabled
             };
-            let scope = enabled.then(crate::knowledge_runtime::session_recall_scope);
+            let scope = recall_enabled.then(crate::knowledge_runtime::session_recall_scope);
             if metadata.recall_policy == policy && metadata.recall_scope == scope {
                 continue;
             }
@@ -287,6 +291,21 @@ impl SessionPool {
         let _guard = self.history_recall_update.lock().await;
         let session = Session::new(self.repo.open(session_id).await?);
         let metadata = session.metadata().await?;
+        if metadata.durability == SessionDurability::Temporary {
+            if metadata.recall_policy == SessionRecallPolicy::Disabled
+                && metadata.recall_scope.is_none()
+            {
+                return Ok(());
+            }
+            return session
+                .update_recall_settings(SessionRecallSettings {
+                    durability: metadata.durability,
+                    lifecycle: metadata.lifecycle,
+                    policy: SessionRecallPolicy::Disabled,
+                    scope: None,
+                })
+                .await;
+        }
         let scope = crate::knowledge_runtime::session_recall_scope();
         if metadata.recall_scope.as_ref() == Some(&scope) {
             return Ok(());
@@ -320,6 +339,7 @@ impl SessionPool {
             search,
             embedding,
             assistant: AssistantSessionConfig::default(),
+            temporary: false,
         })
         .await
     }
@@ -337,7 +357,9 @@ impl SessionPool {
             search,
             embedding,
             assistant,
+            temporary,
         } = config;
+        let recall_enabled = self.history_recall_enabled() && !temporary;
         let storage = self
             .repo
             .create(CreateSessionOptions {
@@ -345,15 +367,17 @@ impl SessionPool {
                 initial_model: llm.as_ref().map(|config| config.model.clone()),
                 initial_thinking_level: None,
                 initial_tools: vec![],
-                durability: Some(SessionDurability::Durable),
-                recall_policy: if self.history_recall_enabled() {
+                durability: Some(if temporary {
+                    SessionDurability::Temporary
+                } else {
+                    SessionDurability::Durable
+                }),
+                recall_policy: if recall_enabled {
                     SessionRecallPolicy::Enabled
                 } else {
                     SessionRecallPolicy::Disabled
                 },
-                recall_scope: self
-                    .history_recall_enabled()
-                    .then(crate::knowledge_runtime::session_recall_scope),
+                recall_scope: recall_enabled.then(crate::knowledge_runtime::session_recall_scope),
             })
             .await?;
         let meta = storage.metadata().await?;
@@ -367,6 +391,7 @@ impl SessionPool {
             search: search.clone(),
             embedding: embedding.clone(),
             assistant: assistant.clone(),
+            temporary,
             stream: TutorStream::new(128),
         };
         self.sessions.lock().unwrap().insert(id.clone(), entry);
@@ -415,6 +440,7 @@ impl SessionPool {
                 .as_ref()
                 .map(|value| value.assistant.clone())
                 .unwrap_or_default(),
+            temporary: meta.durability == SessionDurability::Temporary,
             stream: TutorStream::new(128),
         };
         self.sessions
@@ -988,6 +1014,7 @@ impl SessionPool {
                 created_at: meta.created_at,
                 updated_at: meta.updated_at,
                 model: meta.model,
+                temporary: meta.durability == SessionDurability::Temporary,
             })
             .collect())
     }
@@ -1422,6 +1449,69 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].reference.session_id, source_id);
         assert!(hits[0].snippet.contains("silver aurora"));
+    }
+
+    #[tokio::test]
+    async fn temporary_session_is_never_projected_into_history_recall() {
+        let root = std::env::temp_dir().join(format!(
+            "llm-tutor-temporary-session-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let pool = SessionPool::new_with_root_and_history_recall(root.clone(), true);
+        let id = pool
+            .create_with_config(SessionCreateConfig {
+                capability: "chat".into(),
+                kb: None,
+                notebook_enabled: false,
+                llm: None,
+                search: None,
+                embedding: None,
+                assistant: AssistantSessionConfig::default(),
+                temporary: true,
+            })
+            .await
+            .unwrap();
+        let session = pool.open_runtime_session(&id).await.unwrap();
+        session
+            .append_message(tutor_agent::chat::user_message(
+                "The temporary phrase is amber nebula.",
+            ))
+            .await
+            .unwrap();
+
+        let metadata = session.metadata().await.unwrap();
+        assert_eq!(metadata.durability, SessionDurability::Temporary);
+        assert_eq!(metadata.recall_policy, SessionRecallPolicy::Disabled);
+        assert!(metadata.recall_scope.is_none());
+        assert!(pool.get(&id).is_some_and(|entry| entry.temporary));
+        assert!(pool.list(Some(10)).await.unwrap()[0].temporary);
+
+        pool.synchronize_history_recall(true).await.unwrap();
+        let access = KnowledgeAccessContext::new(
+            crate::knowledge_runtime::agent_knowledge_scope(None),
+            PrincipalRef::new(crate::knowledge_runtime::LOCAL_USER_ID, "local_user"),
+        );
+        let hits = pool
+            .history_recall_source
+            .service()
+            .search(
+                &access,
+                &SessionRecallAccessContext::new(crate::knowledge_runtime::session_recall_scope()),
+                SessionRecallSearchRequest {
+                    query: "amber nebula".into(),
+                    limit: 3,
+                    max_snippet_bytes: 600,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(hits.is_empty());
+
+        drop(pool);
+        let reopened = SessionPool::new_with_root_and_history_recall(root.clone(), true);
+        assert!(reopened.ensure_entry(&id).await.unwrap().temporary);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]
@@ -2049,6 +2139,7 @@ mod tests {
                     name: "My Folumi".into(),
                     instructions: "Prefer short, practical answers.".into(),
                 },
+                temporary: false,
             })
             .await
             .unwrap();

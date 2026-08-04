@@ -104,6 +104,7 @@ interface RecentSession {
   title: string
   activeRun?: SessionRunSummary | null
   pinned?: boolean
+  temporary?: boolean
 }
 
 interface SessionRunSummary {
@@ -127,6 +128,7 @@ interface SessionListResponse {
     title?: string
     name?: string | null
     active_run?: SessionRunSummary | null
+    temporary?: boolean
   }>
 }
 
@@ -134,6 +136,7 @@ interface SessionDetailResponse {
   capability?: Capability
   kb?: string | null
   notebook_enabled?: boolean
+  temporary?: boolean
   llm?: { model?: string | null } | null
   messages?: Array<{
     role: 'user' | 'assistant'
@@ -186,6 +189,7 @@ export default function App() {
   const [starterDraft, setStarterDraft] = useState<{ id: number; text: string } | null>(null)
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(() => loadLlmSettings().activeLlmConfigId)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [temporaryConversation, setTemporaryConversation] = useState(false)
   const activeSessionIdRef = useRef<string | null>(null)
   const sessionSelectionVersionRef = useRef(0)
   const sessionHydrationVersionRef = useRef(0)
@@ -339,6 +343,7 @@ export default function App() {
       }
       setSelectedKnowledgeBaseId(data.kb ?? '')
       setSelectedNotebookEnabled(Boolean(data.notebook_enabled))
+      setTemporaryConversation(Boolean(data.temporary))
       const title = data.metadata?.name || restored.find((message) => message.role === 'user')?.text
       if (title) {
         updateRecentSessionTitle(setRecentSessions, id, sessionTitleFromMessage(title))
@@ -562,6 +567,7 @@ export default function App() {
       title: session.title || session.name || 'New session',
       activeRun: session.active_run ?? null,
       pinned: pinnedSessionIds.has(session.id),
+      temporary: Boolean(session.temporary),
     }))))
   }, [pinnedSessionIds])
 
@@ -705,6 +711,7 @@ export default function App() {
             capability,
             kb,
             notebook_enabled: selectedNotebookEnabled,
+            temporary: temporaryConversation,
             assistant: {
               name: llmSettings.assistantName,
               instructions: llmSettings.assistantInstructions,
@@ -722,7 +729,7 @@ export default function App() {
         createdSession = true
         pendingSessionSendRef.current = { sessionId: createdSessionId, content, mentions }
         activateSession(createdSessionId)
-        promoteRecentSession(setRecentSessions, createdSessionId, sessionTitleFromMessage(displayText))
+        promoteRecentSession(setRecentSessions, createdSessionId, sessionTitleFromMessage(displayText), temporaryConversation)
       } else {
         promoteRecentSession(setRecentSessions, sid, sessionTitleFromMessage(displayText))
       }
@@ -737,7 +744,7 @@ export default function App() {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [sessionId, capability, llmSettings, selectedLlmConfigId, selectedKnowledgeBaseId, selectedNotebookEnabled, send, pushStatus, activateSession])
+  }, [sessionId, capability, llmSettings, selectedLlmConfigId, selectedKnowledgeBaseId, selectedNotebookEnabled, temporaryConversation, send, pushStatus, activateSession])
 
   const handleStopGeneration = useCallback(() => {
     if (!running) return
@@ -791,6 +798,7 @@ export default function App() {
           capability,
           kb: selectedKnowledgeBaseId || null,
           notebook_enabled: selectedNotebookEnabled,
+          temporary: temporaryConversation,
           assistant: {
             name: llmSettings.assistantName,
             instructions: llmSettings.assistantInstructions,
@@ -806,7 +814,7 @@ export default function App() {
       const nextSessionId = data.id as string
 
       activateSession(nextSessionId)
-      promoteRecentSession(setRecentSessions, nextSessionId, sessionTitleFromMessage(nextText))
+      promoteRecentSession(setRecentSessions, nextSessionId, sessionTitleFromMessage(nextText), temporaryConversation)
       setMessages([{ role: 'user', text: nextText }])
       setTraceEntries([])
       setLatestUsage(null)
@@ -827,7 +835,7 @@ export default function App() {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [capability, llmSettings, selectedLlmConfigId, messages, pushStatus, running, selectedKnowledgeBaseId, selectedNotebookEnabled, send, sessionId, activateSession])
+  }, [capability, llmSettings, selectedLlmConfigId, messages, pushStatus, running, selectedKnowledgeBaseId, selectedNotebookEnabled, temporaryConversation, send, sessionId, activateSession])
 
   const handleSaveToNotebook = useCallback(async (markdown: string, options: SaveToNotebookOptions = {}): Promise<SaveToNotebookResult> => {
     try {
@@ -1011,6 +1019,7 @@ export default function App() {
 
   const startNewChat = useCallback(() => {
     activateSession(null)
+    setTemporaryConversation(false)
     setCapability('chat')
     setSelectedLlmConfigId(llmSettings.activeLlmConfigId)
     setMessages([])
@@ -1352,6 +1361,25 @@ export default function App() {
                   : knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId)?.name
                     ?? (llmSettings.language === 'en-US' ? 'Conversation only' : '仅当前会话')}</span>
               </div>
+              <label
+                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                  temporaryConversation
+                    ? 'border-amber-300 bg-amber-50 text-amber-800'
+                    : 'border-gray-200 bg-white text-gray-600'
+                } ${sessionId || running ? 'cursor-default' : 'cursor-pointer hover:border-gray-300'}`}
+                title={llmSettings.language === 'en-US'
+                  ? 'Do not use Saved Memory or History Recall, and do not add this chat to the recall index.'
+                  : '不使用保存的记忆或历史检索，也不把本会话加入历史检索索引。'}
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                  checked={temporaryConversation}
+                  disabled={Boolean(sessionId) || running}
+                  onChange={(event) => setTemporaryConversation(event.target.checked)}
+                />
+                <span className="font-medium">{llmSettings.language === 'en-US' ? 'Temporary chat' : '临时对话'}</span>
+              </label>
               <div className="ml-auto">
                 <BudgetPanel spent={budgetSpent} limit={llmSettings.budgetLimitUsd} warning={budgetWarning} />
               </div>
@@ -1966,6 +1994,7 @@ function promoteRecentSession(
   setRecentSessions: Dispatch<SetStateAction<RecentSession[]>>,
   id: string,
   title: string,
+  temporary = false,
 ) {
   setRecentSessions((prev) => {
     const existing = prev.find((session) => session.id === id)
@@ -1974,6 +2003,7 @@ function promoteRecentSession(
       title,
       activeRun: existing?.activeRun ?? null,
       pinned: existing?.pinned ?? false,
+      temporary: existing?.temporary ?? temporary,
     }
     const rest = prev.filter((session) => session.id !== id)
     return nextSession.pinned

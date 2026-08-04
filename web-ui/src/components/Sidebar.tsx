@@ -10,6 +10,7 @@ import {
   PanelLeftOpen,
   Pin,
   Settings,
+  ShieldOff,
   Sparkles,
   Trash2,
   X,
@@ -27,6 +28,7 @@ interface RecentSession {
     status?: string
   } | null
   pinned?: boolean
+  temporary?: boolean
 }
 
 interface Props {
@@ -217,7 +219,9 @@ export function Sidebar({
                     />
                   )}
                   <div className="pointer-events-none relative z-10 shrink-0">
-                    <FileText size={16} className={running ? 'text-blue-600' : 'text-gray-500'} />
+                    {session.temporary
+                      ? <ShieldOff size={16} className={running ? 'text-blue-600' : 'text-amber-600'} />
+                      : <FileText size={16} className={running ? 'text-blue-600' : 'text-gray-500'} />}
                     {running && (
                       <span
                         className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-white"
@@ -256,6 +260,11 @@ export function Sidebar({
                         {running && (
                           <span className="mt-0.5 block truncate text-[11px] font-medium text-blue-600">
                             Running{session.activeRun?.capability ? ` · ${capabilityLabel(session.activeRun.capability)}` : ''}
+                          </span>
+                        )}
+                        {!running && session.temporary && (
+                          <span className="mt-0.5 block truncate text-[11px] font-medium text-amber-700">
+                            {t('chat.temporary.sidebar')}
                           </span>
                         )}
                       </div>
