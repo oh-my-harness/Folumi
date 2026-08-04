@@ -23,6 +23,11 @@ const LOCAL_USER_ID: &str = "local-user";
 const LOCOMO_DATASET_ENV: &str = "FOLUMI_LOCOMO_DATASET";
 const LOCOMO_MAX_SAMPLES_ENV: &str = "FOLUMI_LOCOMO_MAX_SAMPLES";
 const LOCOMO_MAX_QUESTIONS_ENV: &str = "FOLUMI_LOCOMO_MAX_QUESTIONS";
+const LOCOMO_OUTPUT_ENV: &str = "FOLUMI_LOCOMO_OUTPUT";
+const BENCHMARK_RUN_ID_ENV: &str = "FOLUMI_BENCHMARK_RUN_ID";
+const FOLUMI_REVISION_ENV: &str = "FOLUMI_BENCHMARK_FOLUMI_REVISION";
+const RUNTIME_REVISION_ENV: &str = "FOLUMI_BENCHMARK_RUNTIME_REVISION";
+const LOCOMO_REVISION_ENV: &str = "FOLUMI_BENCHMARK_LOCOMO_REVISION";
 
 struct PositiveFixture {
     user: &'static str,
@@ -319,6 +324,8 @@ async fn locomo_history_recall_retrieval_benchmark() {
     let mut latencies = Vec::new();
     let mut context_bytes = Vec::new();
     let mut samples_run = 0usize;
+    let mut questions_seen = 0usize;
+    let mut sample_reports = Vec::new();
 
     for (sample_index, sample) in samples.into_iter().take(max_samples).enumerate() {
         samples_run += 1;
@@ -332,6 +339,7 @@ async fn locomo_history_recall_retrieval_benchmark() {
         let mut sample_metrics = RetrievalMetrics::default();
 
         for qa in sample.qa.iter().take(max_questions) {
+            questions_seen += 1;
             let evidence = normalized_evidence(&qa.evidence);
             if qa.evidence.iter().all(|item| item.trim().is_empty()) {
                 no_evidence += 1;
@@ -374,6 +382,10 @@ async fn locomo_history_recall_retrieval_benchmark() {
         }
 
         sample_metrics.report(&format!("sample={}", sample.sample_id));
+        sample_reports.push(serde_json::json!({
+            "sample_id": sample.sample_id,
+            "metrics": metric_report(&sample_metrics),
+        }));
         overall.merge(&sample_metrics);
     }
 
@@ -387,19 +399,138 @@ async fn locomo_history_recall_retrieval_benchmark() {
     }
     latencies.sort_unstable();
     context_bytes.sort_unstable();
+    let p50_latency = percentile(&latencies, 50);
+    let p95_latency = percentile(&latencies, 95);
+    let p95_context_bytes = percentile(&context_bytes, 95);
     println!(
         "locomo_retrieval diagnostics no_evidence={} no_valid_evidence={} annotation_issues={} search_p50_ms={:.3} search_p95_ms={:.3} context_p95_bytes={}",
         no_evidence,
         no_valid_evidence,
         annotation_issues,
-        duration_ms(percentile(&latencies, 50)),
-        duration_ms(percentile(&latencies, 95)),
-        percentile(&context_bytes, 95),
+        duration_ms(p50_latency),
+        duration_ms(p95_latency),
+        p95_context_bytes,
     );
     assert!(
-        percentile(&context_bytes, 95) <= SEARCH_LIMIT * HISTORY_RECALL_MAX_SNIPPET_BYTES,
+        p95_context_bytes <= SEARCH_LIMIT * HISTORY_RECALL_MAX_SNIPPET_BYTES,
         "LoCoMo search snippets exceeded the configured context bound"
     );
+    write_locomo_report(
+        &overall,
+        &by_category,
+        sample_reports,
+        LocomoDiagnostics {
+            samples_run,
+            questions_seen,
+            no_evidence,
+            no_valid_evidence,
+            annotation_issues,
+            search_p50_ms: duration_ms(p50_latency),
+            search_p95_ms: duration_ms(p95_latency),
+            context_p95_bytes: p95_context_bytes,
+        },
+    );
+}
+
+struct LocomoDiagnostics {
+    samples_run: usize,
+    questions_seen: usize,
+    no_evidence: usize,
+    no_valid_evidence: usize,
+    annotation_issues: usize,
+    search_p50_ms: f64,
+    search_p95_ms: f64,
+    context_p95_bytes: usize,
+}
+
+fn metric_report(metrics: &RetrievalMetrics) -> serde_json::Value {
+    serde_json::json!({
+        "questions": metrics.questions,
+        "hit_at_1_count": metrics.hit_at_1,
+        "hit_at_k_count": metrics.hit_at_k,
+        "evidence_total": metrics.evidence_total,
+        "evidence_recalled": metrics.evidence_recalled,
+        "hit_at_1": ratio(metrics.hit_at_1, metrics.questions),
+        "hit_at_k": ratio(metrics.hit_at_k, metrics.questions),
+        "mrr_at_k": metrics.reciprocal_rank / metrics.questions.max(1) as f64,
+        "evidence_recall_at_k": ratio(metrics.evidence_recalled, metrics.evidence_total),
+    })
+}
+
+fn write_locomo_report(
+    overall: &RetrievalMetrics,
+    by_category: &BTreeMap<u8, RetrievalMetrics>,
+    sample_reports: Vec<serde_json::Value>,
+    diagnostics: LocomoDiagnostics,
+) {
+    let Ok(output_path) = std::env::var(LOCOMO_OUTPUT_ENV) else {
+        return;
+    };
+    let generated_at = chrono::Utc::now();
+    let run_id = std::env::var(BENCHMARK_RUN_ID_ENV)
+        .unwrap_or_else(|_| generated_at.format("locomo-%Y%m%dT%H%M%SZ").to_string());
+    let category_reports = by_category
+        .iter()
+        .map(|(category, metrics)| (category.to_string(), metric_report(metrics)))
+        .collect::<serde_json::Map<_, _>>();
+    let report = serde_json::json!({
+        "schema_version": 1,
+        "benchmark": "locomo_history_recall_retrieval",
+        "run_id": run_id,
+        "generated_at": generated_at.to_rfc3339(),
+        "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
+        "provenance": {
+            "folumi_revision": env_or_unknown(FOLUMI_REVISION_ENV),
+            "runtime_revision": env_or_unknown(RUNTIME_REVISION_ENV),
+            "dataset": "LoCoMo locomo10.json",
+            "dataset_revision": env_or_unknown(LOCOMO_REVISION_ENV),
+        },
+        "configuration": {
+            "search_limit": SEARCH_LIMIT,
+            "max_snippet_bytes": HISTORY_RECALL_MAX_SNIPPET_BYTES,
+            "max_samples": positive_env_limit(LOCOMO_MAX_SAMPLES_ENV),
+            "max_questions_per_sample": positive_env_limit(LOCOMO_MAX_QUESTIONS_ENV),
+        },
+        "dataset_counts": {
+            "samples": diagnostics.samples_run,
+            "questions_seen": diagnostics.questions_seen,
+            "questions_scored": overall.questions,
+            "no_evidence": diagnostics.no_evidence,
+            "no_valid_evidence": diagnostics.no_valid_evidence,
+            "annotation_issues": diagnostics.annotation_issues,
+        },
+        "overall": metric_report(overall),
+        "categories": category_reports,
+        "samples": sample_reports,
+        "diagnostics": {
+            "search_p50_ms": diagnostics.search_p50_ms,
+            "search_p95_ms": diagnostics.search_p95_ms,
+            "context_p95_bytes": diagnostics.context_p95_bytes,
+        },
+    });
+    let output_path = Path::new(&output_path);
+    if let Some(parent) = output_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).unwrap_or_else(|error| {
+            panic!(
+                "failed to create LoCoMo report directory {}: {error}",
+                parent.display()
+            )
+        });
+    }
+    let json = serde_json::to_vec_pretty(&report).expect("serialize LoCoMo benchmark report");
+    fs::write(output_path, json).unwrap_or_else(|error| {
+        panic!(
+            "failed to write LoCoMo report {}: {error}",
+            output_path.display()
+        )
+    });
+    println!("locomo_retrieval report={}", output_path.display());
+}
+
+fn env_or_unknown(name: &str) -> String {
+    std::env::var(name).unwrap_or_else(|_| "unknown".into())
 }
 
 fn load_locomo(path: &Path) -> Vec<LocomoSample> {

@@ -74,6 +74,22 @@
     Folumi will keep runtime Session Recall authoritative and needs a runtime-
     owned hybrid/semantic index option rather than an application-side parallel
     history search path.
+  - The full external LoCoMo retrieval baseline now makes the gap measurable:
+    on 1,982 evidence-backed questions, the current SQLite/FTS5 implementation
+    reaches Hit@3 `45.5%`, MRR@3 `37.0%`, and Evidence Recall@3 `32.9%`.
+    Category 3 reaches only Hit@3 `18.5%` and Evidence Recall@3 `8.2%`.
+    Machine-readable results and the generated comparison chart live under
+    `benchmarks/locomo/`; reproduction details are in
+    `docs/qa/locomo-benchmark.md`.
+  - Current runtime behavior is trigram FTS5 candidate generation, OR-combined
+    lexical terms, BM25 ordering, and direct Top-K return. The next capability
+    should therefore remain inside `llm-harness-runtime-session-recall`: an
+    optional semantic candidate index, lexical/semantic fusion, bounded
+    neighboring-turn expansion, temporal constraints, duplicate/diversity
+    control, and an optional reranking boundary. Exact reads, revision checks,
+    scope isolation, deletion invalidation, and Session authority must remain
+    unchanged. Folumi should not implement these as a second product-side RAG
+    stack, and this work does not imply enabling automatic pre-run recall.
 
 - **Resolved 2026-08-03: Knowledge search safely federates multiple visible sources**
   - Reproduced in the desktop app on 2026-07-30 with Learner Memory and Tutor

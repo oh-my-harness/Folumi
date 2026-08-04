@@ -1,0 +1,242 @@
+{
+  "benchmark": "locomo_history_recall_retrieval",
+  "categories": {
+    "1": {
+      "evidence_recall_at_k": 0.10430839002267574,
+      "evidence_recalled": 92,
+      "evidence_total": 882,
+      "hit_at_1": 0.13829787234042554,
+      "hit_at_1_count": 39,
+      "hit_at_k": 0.2695035460992908,
+      "hit_at_k_count": 76,
+      "mrr_at_k": 0.19208037825059107,
+      "questions": 282
+    },
+    "2": {
+      "evidence_recall_at_k": 0.456,
+      "evidence_recalled": 171,
+      "evidence_total": 375,
+      "hit_at_1": 0.37383177570093457,
+      "hit_at_1_count": 120,
+      "hit_at_k": 0.5233644859813084,
+      "hit_at_k_count": 168,
+      "mrr_at_k": 0.4392523364485981,
+      "questions": 321
+    },
+    "3": {
+      "evidence_recall_at_k": 0.08173076923076923,
+      "evidence_recalled": 17,
+      "evidence_total": 208,
+      "hit_at_1": 0.09782608695652174,
+      "hit_at_1_count": 9,
+      "hit_at_k": 0.18478260869565216,
+      "hit_at_k_count": 17,
+      "mrr_at_k": 0.13768115942028986,
+      "questions": 92
+    },
+    "4": {
+      "evidence_recall_at_k": 0.4782122905027933,
+      "evidence_recalled": 428,
+      "evidence_total": 895,
+      "hit_at_1": 0.34244946492271106,
+      "hit_at_1_count": 288,
+      "hit_at_k": 0.5017835909631391,
+      "hit_at_k_count": 422,
+      "mrr_at_k": 0.41141498216409017,
+      "questions": 841
+    },
+    "5": {
+      "evidence_recall_at_k": 0.4782608695652174,
+      "evidence_recalled": 220,
+      "evidence_total": 460,
+      "hit_at_1": 0.336322869955157,
+      "hit_at_1_count": 150,
+      "hit_at_k": 0.4910313901345291,
+      "hit_at_k_count": 219,
+      "mrr_at_k": 0.40171898355754854,
+      "questions": 446
+    }
+  },
+  "configuration": {
+    "max_questions_per_sample": null,
+    "max_samples": null,
+    "max_snippet_bytes": 1024,
+    "search_limit": 3
+  },
+  "dataset_counts": {
+    "annotation_issues": 3,
+    "no_evidence": 4,
+    "no_valid_evidence": 0,
+    "questions_scored": 1982,
+    "questions_seen": 1986,
+    "samples": 10
+  },
+  "diagnostics": {
+    "context_p95_bytes": 659,
+    "search_p50_ms": 6.3321000000000005,
+    "search_p95_ms": 9.1456
+  },
+  "generated_at": "2026-08-04T08:09:27.010575300+00:00",
+  "overall": {
+    "evidence_recall_at_k": 0.32907801418439714,
+    "evidence_recalled": 928,
+    "evidence_total": 2820,
+    "hit_at_1": 0.3057517658930373,
+    "hit_at_1_count": 606,
+    "hit_at_k": 0.45509586276488395,
+    "hit_at_k_count": 902,
+    "mrr_at_k": 0.3698284561049445,
+    "questions": 1982
+  },
+  "profile": "debug",
+  "provenance": {
+    "dataset": "LoCoMo locomo10.json",
+    "dataset_revision": "3eb6f2c585f5e1699204e3c3bdf7adc5c28cb376",
+    "folumi_revision": "78b90df3dc77d07679c502e7fc210d178035760b",
+    "runtime_revision": "66f983d0a4c024c34e70bff3587cd4c44fb3b26f"
+  },
+  "run_id": "runtime-66f983d-fts5-debug",
+  "samples": [
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.3745019920318725,
+        "evidence_recalled": 94,
+        "evidence_total": 251,
+        "hit_at_1": 0.2893401015228426,
+        "hit_at_1_count": 57,
+        "hit_at_k": 0.4720812182741117,
+        "hit_at_k_count": 93,
+        "mrr_at_k": 0.3671742808798646,
+        "questions": 197
+      },
+      "sample_id": "conv-26"
+    },
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.4122137404580153,
+        "evidence_recalled": 54,
+        "evidence_total": 131,
+        "hit_at_1": 0.3047619047619048,
+        "hit_at_1_count": 32,
+        "hit_at_k": 0.4857142857142857,
+        "hit_at_k_count": 51,
+        "mrr_at_k": 0.3857142857142858,
+        "questions": 105
+      },
+      "sample_id": "conv-30"
+    },
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.3944223107569721,
+        "evidence_recalled": 99,
+        "evidence_total": 251,
+        "hit_at_1": 0.3471502590673575,
+        "hit_at_1_count": 67,
+        "hit_at_k": 0.5077720207253886,
+        "hit_at_k_count": 98,
+        "mrr_at_k": 0.4119170984455959,
+        "questions": 193
+      },
+      "sample_id": "conv-41"
+    },
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.30294906166219837,
+        "evidence_recalled": 113,
+        "evidence_total": 373,
+        "hit_at_1": 0.3,
+        "hit_at_1_count": 78,
+        "hit_at_k": 0.41923076923076924,
+        "hit_at_k_count": 109,
+        "mrr_at_k": 0.34743589743589737,
+        "questions": 260
+      },
+      "sample_id": "conv-42"
+    },
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.3556851311953353,
+        "evidence_recalled": 122,
+        "evidence_total": 343,
+        "hit_at_1": 0.2809917355371901,
+        "hit_at_1_count": 68,
+        "hit_at_k": 0.49586776859504134,
+        "hit_at_k_count": 120,
+        "mrr_at_k": 0.3787878787878787,
+        "questions": 242
+      },
+      "sample_id": "conv-43"
+    },
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.2857142857142857,
+        "evidence_recalled": 68,
+        "evidence_total": 238,
+        "hit_at_1": 0.2848101265822785,
+        "hit_at_1_count": 45,
+        "hit_at_k": 0.4240506329113924,
+        "hit_at_k_count": 67,
+        "mrr_at_k": 0.34071729957805913,
+        "questions": 158
+      },
+      "sample_id": "conv-44"
+    },
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.3020408163265306,
+        "evidence_recalled": 74,
+        "evidence_total": 245,
+        "hit_at_1": 0.24210526315789474,
+        "hit_at_1_count": 46,
+        "hit_at_k": 0.37894736842105264,
+        "hit_at_k_count": 72,
+        "mrr_at_k": 0.3026315789473685,
+        "questions": 190
+      },
+      "sample_id": "conv-47"
+    },
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.3313953488372093,
+        "evidence_recalled": 114,
+        "evidence_total": 344,
+        "hit_at_1": 0.33472803347280333,
+        "hit_at_1_count": 80,
+        "hit_at_k": 0.4602510460251046,
+        "hit_at_k_count": 110,
+        "mrr_at_k": 0.3919107391910739,
+        "questions": 239
+      },
+      "sample_id": "conv-48"
+    },
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.25,
+        "evidence_recalled": 94,
+        "evidence_total": 376,
+        "hit_at_1": 0.33163265306122447,
+        "hit_at_1_count": 65,
+        "hit_at_k": 0.45408163265306123,
+        "hit_at_k_count": 89,
+        "mrr_at_k": 0.38180272108843544,
+        "questions": 196
+      },
+      "sample_id": "conv-49"
+    },
+    {
+      "metrics": {
+        "evidence_recall_at_k": 0.3582089552238806,
+        "evidence_recalled": 96,
+        "evidence_total": 268,
+        "hit_at_1": 0.33663366336633666,
+        "hit_at_1_count": 68,
+        "hit_at_k": 0.4603960396039604,
+        "hit_at_k_count": 93,
+        "mrr_at_k": 0.3902640264026403,
+        "questions": 202
+      },
+      "sample_id": "conv-50"
+    }
+  ],
+  "schema_version": 1
+}

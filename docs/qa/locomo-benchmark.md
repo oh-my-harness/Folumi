@@ -83,7 +83,7 @@ LoCoMo 不替代以下 Folumi 自有门禁：临时 Session 隔离、删除失�
 
 ## 6. 首次诊断基线
 
-2026-08-04 在 Folumi `704c3e5` 之后的工作树、runtime `66f983d`、LoCoMo `3eb6f2c` 上完成首次全量 Debug 运行。共读取 10 组 conversation、1986 道题；1982 道有可用 evidence 的题进入检索评分，4 道无 evidence。适配器报告 3 个 annotation issue，其中可用证据仍足以评分；没有题目因完全缺少有效证据被丢弃。
+2026-08-04 在 Folumi `78b90df`、runtime `66f983d`、LoCoMo `3eb6f2c` 上完成首次全量 Debug 运行。共读取 10 组 conversation、1986 道题；1982 道有可用 evidence 的题进入检索评分，4 道无 evidence。适配器报告 3 个 annotation issue，其中可用证据仍足以评分；没有题目因完全缺少有效证据被丢弃。
 
 | 范围 | 题数 | Hit@1 | Hit@3 | MRR@3 | Evidence Recall@3 |
 |---|---:|---:|---:|---:|---:|
@@ -94,6 +94,8 @@ LoCoMo 不替代以下 Folumi 自有门禁：临时 Session 隔离、删除失�
 | Category 4 | 841 | 34.2% | 50.2% | 41.1% | 47.8% |
 | Category 5 | 446 | 33.6% | 49.1% | 40.2% | 47.8% |
 
-本次 Debug 运行的检索 P50 为 9.474 ms、P95 为 12.731 ms，Context P95 为 659 字节。性能数字只用于确认量级和上下文边界，正式性能基线仍应使用 Release 模式。
+本次已保存 Debug 运行的检索 P50 为 6.332 ms、P95 为 9.146 ms，Context P95 为 659 字节。性能数字只用于确认量级和上下文边界，正式性能基线仍应使用 Release 模式。
 
 这个结果不是验收通过：它表明当前 FTS5 词法召回在长历史中只能覆盖不足一半的问题，Category 1 的多证据聚合和 Category 3 的推理题尤其薄弱。下一轮 runtime 检索改进应以同一适配器复测，优先提升 Hit@3 和 Evidence Recall@3；在有第二个可比实现前暂不设置硬门槛。
+
+完整原始计数、分类/单 conversation 结果和 provenance 保存在 `benchmarks/locomo/results/`；可重建对比图位于 `benchmarks/locomo/charts/retrieval-comparison.svg`。新增结果和重新生成图表的方法见 `benchmarks/locomo/README.md`。
