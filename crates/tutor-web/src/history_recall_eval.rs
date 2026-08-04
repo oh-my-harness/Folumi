@@ -237,6 +237,8 @@ struct LocomoSample {
 struct LocomoQuestion {
     question: String,
     #[serde(default)]
+    answer: serde_json::Value,
+    #[serde(default)]
     evidence: Vec<String>,
     category: u8,
 }
@@ -246,6 +248,8 @@ struct LocomoTurn {
     speaker: String,
     dia_id: String,
     text: String,
+    #[serde(default)]
+    blip_caption: Option<String>,
 }
 
 #[derive(Default)]
@@ -488,6 +492,7 @@ fn write_locomo_report(
         "configuration": {
             "search_limit": SEARCH_LIMIT,
             "max_snippet_bytes": HISTORY_RECALL_MAX_SNIPPET_BYTES,
+            "conversation_import": "date_and_blip_caption_prefixed_utterances",
             "max_samples": positive_env_limit(LOCOMO_MAX_SAMPLES_ENV),
             "max_questions_per_sample": positive_env_limit(LOCOMO_MAX_QUESTIONS_ENV),
         },
@@ -554,16 +559,23 @@ async fn import_locomo_conversation(
     sessions.sort_unstable_by_key(|(number, _)| *number);
     let mut evidence_uris = HashMap::new();
 
-    for (_, value) in sessions {
+    for (number, value) in sessions {
         let turns = serde_json::from_value::<Vec<LocomoTurn>>(value.clone())
             .expect("parse LoCoMo conversation session");
+        let date = sample
+            .conversation
+            .get(&format!("session_{number}_date_time"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unknown date");
         let session_id = create_session(pool, false).await;
         let session = pool.open_runtime_session(&session_id).await.unwrap();
         for turn in turns {
             // LoCoMo contains a conversation between two people, not user/assistant roles.
             // Importing each utterance as a user entry preserves every evidence turn in
             // runtime's existing turn projector without inventing a second recall index.
-            let text = format!("{}: {}", turn.speaker, turn.text);
+            // The official QA context also contains the Session date and any BLIP image
+            // caption, both of which are required to answer temporal or image questions.
+            let text = locomo_turn_text(date, &turn);
             let entry_id = session
                 .append_message(tutor_agent::chat::user_message(&text))
                 .await
@@ -572,6 +584,19 @@ async fn import_locomo_conversation(
         }
     }
     evidence_uris
+}
+
+fn locomo_turn_text(date: &str, turn: &LocomoTurn) -> String {
+    let mut text = format!("DATE: {date}\n{}: {}", turn.speaker, turn.text);
+    if let Some(caption) = turn
+        .blip_caption
+        .as_deref()
+        .filter(|caption| !caption.trim().is_empty())
+    {
+        text.push_str("\nSHARED IMAGE: ");
+        text.push_str(caption.trim());
+    }
+    text
 }
 
 fn session_number(key: &str) -> Option<usize> {
@@ -637,6 +662,23 @@ fn locomo_adapter_recognizes_sessions_and_normalizes_combined_evidence() {
         ])
     );
     assert_eq!(evidence.malformed, 2);
+}
+
+#[test]
+fn locomo_import_preserves_date_and_image_caption() {
+    let text = locomo_turn_text(
+        "7 May 2023",
+        &LocomoTurn {
+            speaker: "Caroline".into(),
+            dia_id: "D1:3".into(),
+            text: "I went to the support group.".into(),
+            blip_caption: Some("a sunrise painting".into()),
+        },
+    );
+    assert_eq!(
+        text,
+        "DATE: 7 May 2023\nCaroline: I went to the support group.\nSHARED IMAGE: a sunrise painting"
+    );
 }
 
 async fn create_session(pool: &Arc<SessionPool>, temporary: bool) -> String {
@@ -725,3 +767,5 @@ fn percentile<T: Copy>(values: &[T], percentile: usize) -> T {
 fn duration_ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1000.0
 }
+
+mod answer;

@@ -243,6 +243,8 @@ runtime Session 始终是历史正文的唯一权威来源。Folumi 可以维护
 
 长期记忆质量采用两层评测：runtime Session Recall 的证据检索层与完整 Agent 的最终回答层。LoCoMo 作为外部长对话困难集，不替代临时会话、删除失效、Saved Memory 审批/冲突、中文改写和自然表达等产品自有门禁。数据不随产品仓库分发，具体协议和复现方法见 `docs/qa/locomo-benchmark.md`。
 
+助手主动保存 Saved Memory 暂不纳入 LoCoMo 分数。LoCoMo 没有按 Folumi 的持久性、安全、第三方信息、审批和冲突规则标注“这一轮应该形成什么记忆条目”；把全部对话事实当成应保存内容会反向鼓励过度记忆。在建立带 gold mutation、负例和跨 Session 生命周期验证的产品自有数据集前，主动保存只保留权限、审批、幂等、冲突和安全边界测试，不以临时拼出的单一 benchmark 分数宣称质量。
+
 ## 10. 存储设计
 
 新系统从第一版直接使用 SQLite，不先建设 `items.json`。冲突关系、CAS、过期、全文检索和彻底遗忘会很快让单文档原子替换变得脆弱；SQLite 更符合本地优先、可事务化和可重建索引的要求。
