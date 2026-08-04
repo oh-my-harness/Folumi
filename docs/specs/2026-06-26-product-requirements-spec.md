@@ -143,6 +143,17 @@ The accepted workspace boundaries and change-control rule are recorded in
   permission allowing only assistant `memory_write` operations to skip that
   approval. Forgetting, conflict resolution, and destructive changes shall not
   inherit the permission. Disabling Memory shall revoke the active permission.
+- **REQ-417** The Assistant shall perform routine tool and Memory operations
+  without narrating implementation steps such as “I will check Memory” or “I
+  will search History,” and shall answer in a natural voice consistent with the
+  Assistant Profile. It may explain process when work is materially long,
+  consent is required, an operation fails or leaves important uncertainty, or
+  the user asks for the process or source. Product tool traces remain visible.
+- **REQ-418** Long-term conversation quality shall be evaluated in separate
+  retrieval and end-to-end answer layers. External LoCoMo results shall be
+  reported by category with dataset revision and model/runtime provenance, and
+  shall supplement rather than replace Folumi lifecycle, permission, privacy,
+  Chinese-language, Saved Memory, and interaction-style regression tests.
 
 ## 6. Settings, Privacy, and Portability
 

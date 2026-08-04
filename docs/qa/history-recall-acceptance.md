@@ -73,3 +73,5 @@ cargo test -p tutor-web --lib --release history_recall_offline_quality_latency_a
 ## 7. 决策
 
 当前 FTS5 仍满足词面检索、失效、延迟和上下文预算门槛，但已有实际证据表明它不足以单独承担自然语言意图改写。Folumi 不在产品仓库建立第二套 Session 检索；应先扩充困难集，并推动或复用 runtime 的混合/语义索引能力。若采用远程 Embedding，必须另行评估历史文本外发范围、用户开关、成本和可删除性。
+
+LoCoMo 外部长对话困难集的适配方式、分层指标、许可边界和复现命令见 [`locomo-benchmark.md`](./locomo-benchmark.md)。原固定基线继续承担生命周期和性能门禁，LoCoMo 检索层负责暴露长历史、时间、多证据和对抗问题下的质量差距；两者不能互相替代。

@@ -1,3 +1,6 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -11,11 +14,15 @@ use llm_harness_runtime_knowledge::{
 };
 use llm_harness_runtime_session_recall::SessionRecallAccessContext;
 use llm_harness_types::{RunContext, RunRequest};
+use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 const SEARCH_LIMIT: usize = 3;
 const SESSION_RECALL_NAMESPACE: &str = "folumi-session-history";
 const LOCAL_USER_ID: &str = "local-user";
+const LOCOMO_DATASET_ENV: &str = "FOLUMI_LOCOMO_DATASET";
+const LOCOMO_MAX_SAMPLES_ENV: &str = "FOLUMI_LOCOMO_MAX_SAMPLES";
+const LOCOMO_MAX_QUESTIONS_ENV: &str = "FOLUMI_LOCOMO_MAX_QUESTIONS";
 
 struct PositiveFixture {
     user: &'static str,
@@ -212,6 +219,293 @@ context_p95_occupancy={p95_context_occupancy:.3}",
         p95_latency <= Duration::from_millis(50),
         "warm local search P95 exceeded 50 ms"
     );
+}
+
+#[derive(Deserialize)]
+struct LocomoSample {
+    sample_id: String,
+    qa: Vec<LocomoQuestion>,
+    conversation: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct LocomoQuestion {
+    question: String,
+    #[serde(default)]
+    evidence: Vec<String>,
+    category: u8,
+}
+
+#[derive(Deserialize)]
+struct LocomoTurn {
+    speaker: String,
+    dia_id: String,
+    text: String,
+}
+
+#[derive(Default)]
+struct RetrievalMetrics {
+    questions: usize,
+    hit_at_1: usize,
+    hit_at_k: usize,
+    evidence_total: usize,
+    evidence_recalled: usize,
+    reciprocal_rank: f64,
+}
+
+struct NormalizedEvidence {
+    ids: HashSet<String>,
+    malformed: usize,
+}
+
+impl RetrievalMetrics {
+    fn record(&mut self, relevant: &HashSet<String>, hits: &[String]) {
+        self.questions += 1;
+        self.evidence_total += relevant.len();
+        self.evidence_recalled += hits.iter().filter(|uri| relevant.contains(*uri)).count();
+        if hits.first().is_some_and(|uri| relevant.contains(uri)) {
+            self.hit_at_1 += 1;
+        }
+        if let Some(rank) = hits.iter().position(|uri| relevant.contains(uri)) {
+            self.hit_at_k += 1;
+            self.reciprocal_rank += 1.0 / (rank + 1) as f64;
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.questions += other.questions;
+        self.hit_at_1 += other.hit_at_1;
+        self.hit_at_k += other.hit_at_k;
+        self.evidence_total += other.evidence_total;
+        self.evidence_recalled += other.evidence_recalled;
+        self.reciprocal_rank += other.reciprocal_rank;
+    }
+
+    fn report(&self, label: &str) {
+        println!(
+            "locomo_retrieval {label} questions={} hit_at_1={:.3} hit_at_{}={:.3} mrr_at_{}={:.3} evidence_recall_at_{}={:.3}",
+            self.questions,
+            ratio(self.hit_at_1, self.questions),
+            SEARCH_LIMIT,
+            ratio(self.hit_at_k, self.questions),
+            SEARCH_LIMIT,
+            self.reciprocal_rank / self.questions.max(1) as f64,
+            SEARCH_LIMIT,
+            ratio(self.evidence_recalled, self.evidence_total),
+        );
+    }
+}
+
+/// Runs LoCoMo as a retrieval benchmark against the exact runtime-owned Session Recall
+/// source used by Folumi. The CC BY-NC 4.0 dataset is deliberately not vendored.
+#[tokio::test]
+#[ignore = "external LoCoMo benchmark; set FOLUMI_LOCOMO_DATASET and run explicitly"]
+async fn locomo_history_recall_retrieval_benchmark() {
+    let dataset_path = std::env::var(LOCOMO_DATASET_ENV).unwrap_or_else(|_| {
+        panic!("set {LOCOMO_DATASET_ENV} to the official LoCoMo data/locomo10.json path")
+    });
+    let max_samples = positive_env_limit(LOCOMO_MAX_SAMPLES_ENV).unwrap_or(usize::MAX);
+    let max_questions = positive_env_limit(LOCOMO_MAX_QUESTIONS_ENV).unwrap_or(usize::MAX);
+    let samples = load_locomo(Path::new(&dataset_path));
+    assert!(!samples.is_empty(), "LoCoMo dataset contained no samples");
+
+    let benchmark_root = tempfile::tempdir().expect("create LoCoMo benchmark root");
+    let access = recall_knowledge_access();
+    let mut overall = RetrievalMetrics::default();
+    let mut by_category = BTreeMap::<u8, RetrievalMetrics>::new();
+    let mut no_evidence = 0usize;
+    let mut annotation_issues = 0usize;
+    let mut no_valid_evidence = 0usize;
+    let mut latencies = Vec::new();
+    let mut context_bytes = Vec::new();
+    let mut samples_run = 0usize;
+
+    for (sample_index, sample) in samples.into_iter().take(max_samples).enumerate() {
+        samples_run += 1;
+        let sample_root = benchmark_root.path().join(format!("sample-{sample_index}"));
+        let pool = SessionPool::new_with_root_and_history_recall(&sample_root, true);
+        let evidence_uris = import_locomo_conversation(&pool, &sample).await;
+        pool.synchronize_history_recall(true)
+            .await
+            .expect("synchronize imported LoCoMo sessions");
+        let source = pool.history_recall_knowledge_source();
+        let mut sample_metrics = RetrievalMetrics::default();
+
+        for qa in sample.qa.iter().take(max_questions) {
+            let evidence = normalized_evidence(&qa.evidence);
+            if qa.evidence.iter().all(|item| item.trim().is_empty()) {
+                no_evidence += 1;
+                continue;
+            }
+            annotation_issues += evidence.malformed;
+            let relevant = evidence
+                .ids
+                .iter()
+                .filter_map(|dia_id| match evidence_uris.get(dia_id) {
+                    Some(uri) => Some(uri.clone()),
+                    None => {
+                        annotation_issues += 1;
+                        eprintln!(
+                            "locomo_retrieval annotation_issue sample={} question={:?} unmapped_evidence={dia_id}",
+                            sample.sample_id, qa.question
+                        );
+                        None
+                    }
+                })
+                .collect::<HashSet<_>>();
+            if relevant.is_empty() {
+                no_valid_evidence += 1;
+                continue;
+            }
+            let started = Instant::now();
+            let page = search(&source, &access, &qa.question).await;
+            latencies.push(started.elapsed());
+            context_bytes.push(page.hits.iter().map(|hit| hit.snippet.len()).sum::<usize>());
+            let hits = page
+                .hits
+                .iter()
+                .filter_map(|hit| hit.uri.clone())
+                .collect::<Vec<_>>();
+            sample_metrics.record(&relevant, &hits);
+            by_category
+                .entry(qa.category)
+                .or_default()
+                .record(&relevant, &hits);
+        }
+
+        sample_metrics.report(&format!("sample={}", sample.sample_id));
+        overall.merge(&sample_metrics);
+    }
+
+    assert!(
+        overall.questions > 0,
+        "LoCoMo selection contained no evidence-backed questions"
+    );
+    overall.report(&format!("overall samples={samples_run}"));
+    for (category, metrics) in &by_category {
+        metrics.report(&format!("category={category}"));
+    }
+    latencies.sort_unstable();
+    context_bytes.sort_unstable();
+    println!(
+        "locomo_retrieval diagnostics no_evidence={} no_valid_evidence={} annotation_issues={} search_p50_ms={:.3} search_p95_ms={:.3} context_p95_bytes={}",
+        no_evidence,
+        no_valid_evidence,
+        annotation_issues,
+        duration_ms(percentile(&latencies, 50)),
+        duration_ms(percentile(&latencies, 95)),
+        percentile(&context_bytes, 95),
+    );
+    assert!(
+        percentile(&context_bytes, 95) <= SEARCH_LIMIT * HISTORY_RECALL_MAX_SNIPPET_BYTES,
+        "LoCoMo search snippets exceeded the configured context bound"
+    );
+}
+
+fn load_locomo(path: &Path) -> Vec<LocomoSample> {
+    let bytes = fs::read(path).unwrap_or_else(|error| {
+        panic!("failed to read LoCoMo dataset {}: {error}", path.display())
+    });
+    serde_json::from_slice(&bytes).unwrap_or_else(|error| {
+        panic!("failed to parse LoCoMo dataset {}: {error}", path.display())
+    })
+}
+
+async fn import_locomo_conversation(
+    pool: &Arc<SessionPool>,
+    sample: &LocomoSample,
+) -> HashMap<String, String> {
+    let mut sessions = sample
+        .conversation
+        .iter()
+        .filter_map(|(key, value)| session_number(key).map(|number| (number, value)))
+        .collect::<Vec<_>>();
+    sessions.sort_unstable_by_key(|(number, _)| *number);
+    let mut evidence_uris = HashMap::new();
+
+    for (_, value) in sessions {
+        let turns = serde_json::from_value::<Vec<LocomoTurn>>(value.clone())
+            .expect("parse LoCoMo conversation session");
+        let session_id = create_session(pool, false).await;
+        let session = pool.open_runtime_session(&session_id).await.unwrap();
+        for turn in turns {
+            // LoCoMo contains a conversation between two people, not user/assistant roles.
+            // Importing each utterance as a user entry preserves every evidence turn in
+            // runtime's existing turn projector without inventing a second recall index.
+            let text = format!("{}: {}", turn.speaker, turn.text);
+            let entry_id = session
+                .append_message(tutor_agent::chat::user_message(&text))
+                .await
+                .expect("append LoCoMo turn");
+            evidence_uris.insert(turn.dia_id, format!("chat:{session_id}:{entry_id}"));
+        }
+    }
+    evidence_uris
+}
+
+fn session_number(key: &str) -> Option<usize> {
+    key.strip_prefix("session_")?.parse().ok()
+}
+
+fn normalized_evidence(raw: &[String]) -> NormalizedEvidence {
+    let mut ids = HashSet::new();
+    let mut malformed = 0usize;
+    for token in raw
+        .iter()
+        .flat_map(|item| item.split(|ch: char| ch == ';' || ch.is_whitespace()))
+        .map(|item| {
+            item.trim()
+                .trim_matches(|ch| ch == '(' || ch == ')' || ch == ',')
+        })
+        .filter(|item| !item.is_empty())
+    {
+        if let Some(id) = canonical_dialog_id(token) {
+            ids.insert(id);
+        } else {
+            malformed += 1;
+        }
+    }
+    NormalizedEvidence { ids, malformed }
+}
+
+fn canonical_dialog_id(raw: &str) -> Option<String> {
+    let repaired = raw
+        .strip_prefix("D:")
+        .map(|rest| format!("D{rest}"))
+        .unwrap_or_else(|| raw.to_string());
+    let (session, turn) = repaired.strip_prefix('D')?.split_once(':')?;
+    let session = session.parse::<usize>().ok()?;
+    let turn = turn.parse::<usize>().ok()?;
+    Some(format!("D{session}:{turn}"))
+}
+
+fn positive_env_limit(name: &str) -> Option<usize> {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+}
+
+fn ratio(numerator: usize, denominator: usize) -> f64 {
+    numerator as f64 / denominator.max(1) as f64
+}
+
+#[test]
+fn locomo_adapter_recognizes_sessions_and_normalizes_combined_evidence() {
+    assert_eq!(session_number("session_17"), Some(17));
+    assert_eq!(session_number("session_17_date_time"), None);
+    assert_eq!(session_number("speaker_a"), None);
+    let evidence = normalized_evidence(&["(D8:6); D9:17 D30:05".into(), "D:11:26 | D".into()]);
+    assert_eq!(
+        evidence.ids,
+        HashSet::from([
+            "D8:6".into(),
+            "D9:17".into(),
+            "D30:5".into(),
+            "D11:26".into(),
+        ])
+    );
+    assert_eq!(evidence.malformed, 2);
 }
 
 async fn create_session(pool: &Arc<SessionPool>, temporary: bool) -> String {
