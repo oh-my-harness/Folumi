@@ -1,6 +1,6 @@
 # Folumi 用户记忆系统重设计
 
-> 状态：已接受（Accepted）——Phase 1 Saved Memory 已实现；Phase 2 History Recall 基线已接入，剩余增强项仍在推进
+> 状态：已接受（Accepted）——Phase 1 Saved Memory 与 Phase 2 History Recall 已实现并通过离线验收，受控增强项进入 Phase 3
 >
 > 决策日期：2026-08-03
 >
@@ -354,7 +354,7 @@ Memory 页面还提供有效期修改、显式重新确认和 JSON 导出；导�
 
 ### Phase 2：History Recall
 
-状态：基线已完成，离线评测待补。runtime 的跨 Session 搜索与精确 turn 投影契约已在
+状态：已完成。runtime 的跨 Session 搜索与精确 turn 投影契约已在
 [llm-harness-runtime#104](https://github.com/oh-my-harness/llm-harness-runtime/issues/104)
 及已合并的 [PR #105](https://github.com/oh-my-harness/llm-harness-runtime/pull/105)
 中形成，Folumi 已固定到合并提交 `66f983d` 并完成下游接入和边界验证。
@@ -366,12 +366,14 @@ Memory 页面还提供有效期修改、显式重新确认和 JSON 导出；导�
 - [x] runtime observer 驱动的 Session 更新和删除失效；
 - [x] 模型主动执行 `knowledge_read` 时提供精确会话/turn 来源跳转；
 - [x] 首版不挂载 `HistoryRecallPlugin`；历史搜索和读取只通过可见的 Agent 工具按需发生；
-- [ ] 建立离线评测集，记录相关率、错误召回率、延迟和上下文占用；
+- [x] 建立离线评测集，记录相关率、错误召回率、延迟和上下文占用；Release 基线与复现方法见 [`docs/qa/history-recall-acceptance.md`](../qa/history-recall-acceptance.md)；
 - [x] 不把历史片段自动提升为 Saved Memory。
 
 当前集成状态记录在 `docs/framework-feedback.md`：History Recall 使用独立的
 `SessionRecallAccessContext`，不会再被 Knowledge Base 选择切分；runtime 虽提供自动注入插件，
 但 Folumi 首版明确不安装它。产品不会另建 Session 正文库或上下文拼装链路。
+固定数据集上的 FTS5 离线基线已通过，因此当前不增加 Embedding；后续必须先用更难、
+更大规模的数据扩充评测，再决定是否进入语义检索。
 
 ### Phase 3：受控增强
 

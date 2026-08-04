@@ -23,6 +23,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::stream::TutorStream;
 
+pub(crate) const HISTORY_RECALL_MAX_SNIPPET_BYTES: usize = 1024;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LlmSessionConfig {
     pub provider: String,
@@ -227,11 +229,11 @@ impl SessionPool {
             product_metadata_path,
             repo,
             history_recall_source: Arc::new(
-                SessionRecallKnowledgeSource::new(service).with_uri_mapper(
-                    |target: &SessionRecallNavigationTarget| {
+                SessionRecallKnowledgeSource::new(service)
+                    .with_max_snippet_bytes(HISTORY_RECALL_MAX_SNIPPET_BYTES)
+                    .with_uri_mapper(|target: &SessionRecallNavigationTarget| {
                         Some(format!("chat:{}:{}", target.session_id, target.entry_id))
-                    },
-                ),
+                    }),
             ),
             history_recall_projector: projector,
             history_recall_enabled: AtomicBool::new(history_recall_enabled),

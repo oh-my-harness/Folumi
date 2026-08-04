@@ -386,7 +386,7 @@ History Recall；后者只检索 runtime Sessions，不复制会话正文或自�
 - [x] 接入默认关闭的 runtime History Recall 基线，包括可重建投影、精确 turn 读取、删除失效和模型主动读取的会话来源跳转；
 - [x] 首版不挂载 run 前自动召回插件；历史搜索与精确读取只通过可见的 Agent 工具按需发生；
 - [x] 完成临时对话和持久本地 SQLite/FTS5；临时会话使用 runtime Temporary 生命周期，不读写 Saved Memory、不检索历史且不进入索引；
-- [ ] 完成 History Recall 离线评测；
+- [x] 完成 History Recall 离线评测；固定数据集的 Release 基线、指标定义和复现方法见 `docs/qa/history-recall-acceptance.md`；
 - [x] 明确不引入 workspace 记忆作用域；runtime Session 负责会话内连续性，并仅作为 Saved Memory 的来源引用；
 - [ ] 使用 ContextAttachment 支持临时资料，但不默认自动召回（runtime
   尚无一等临时附件边界，已记录到 `docs/framework-feedback.md` 和

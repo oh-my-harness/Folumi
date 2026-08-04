@@ -60,6 +60,11 @@
     navigation target and accepts an application URI mapper. Folumi configures
     `chat:<session>:<entry>` directly on the runtime source and removed its
     delegating Knowledge-source wrapper.
+  - Downstream validation is complete: Folumi's fixed offline Release benchmark
+    passes relevance, temporary/deleted-session exclusion, latency, and bounded
+    context gates. The baseline and reproduction command are recorded in
+    `docs/qa/history-recall-acceptance.md`; it does not install the automatic
+    plugin or introduce a parallel retrieval path.
 
 - **Resolved 2026-08-03: Knowledge search safely federates multiple visible sources**
   - Reproduced in the desktop app on 2026-07-30 with Learner Memory and Tutor
