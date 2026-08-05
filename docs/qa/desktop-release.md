@@ -33,6 +33,7 @@ Use this checklist after running:
 - [ ] Change one setting, restart the app, and confirm it was restored from `settings.json`.
 - [ ] Configure one LLM provider.
 - [ ] Send a chat message and confirm streaming output.
+- [ ] Confirm the Assistant header does not duplicate the composer’s source selector; Temporary Chat and the localized session cost remain compact and legible.
 - [ ] Configure one embedding provider.
 - [ ] Create a knowledge base and upload a text file.
 - [ ] Create a knowledge base and upload a PDF file.

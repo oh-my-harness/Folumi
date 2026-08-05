@@ -1349,39 +1349,33 @@ export default function App() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {view === 'assistant' && (
           <>
-            <header className="flex items-center gap-4 bg-white px-6 py-3">
-              <div>
+            <header className="flex items-center gap-5 border-b border-gray-100 bg-white px-6 py-3.5">
+              <div className="min-w-0">
                 <h1 className="text-lg font-semibold text-gray-900">{llmSettings.assistantName || t('chat.title')}</h1>
                 <p className="text-xs text-gray-500">{t('chat.subtitle')}</p>
               </div>
-              <div className="hidden items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 lg:flex">
-                <span className="font-medium">{llmSettings.language === 'en-US' ? 'Context' : '资料范围'}</span>
-                <span>{selectedNotebookEnabled
-                  ? (llmSettings.language === 'en-US' ? 'Notes' : '笔记')
-                  : knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId)?.name
-                    ?? (llmSettings.language === 'en-US' ? 'Conversation only' : '仅当前会话')}</span>
-              </div>
-              <label
-                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                  temporaryConversation
-                    ? 'border-amber-300 bg-amber-50 text-amber-800'
-                    : 'border-gray-200 bg-white text-gray-600'
-                } ${sessionId || running ? 'cursor-default' : 'cursor-pointer hover:border-gray-300'}`}
-                title={llmSettings.language === 'en-US'
-                  ? 'Do not use Saved Memory or History Recall, and do not add this chat to the recall index.'
-                  : '不使用保存的记忆或历史检索，也不把本会话加入历史检索索引。'}
-              >
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                  checked={temporaryConversation}
-                  disabled={Boolean(sessionId) || running}
-                  onChange={(event) => setTemporaryConversation(event.target.checked)}
-                />
-                <span className="font-medium">{llmSettings.language === 'en-US' ? 'Temporary chat' : '临时对话'}</span>
-              </label>
-              <div className="ml-auto">
-                <BudgetPanel spent={budgetSpent} limit={llmSettings.budgetLimitUsd} warning={budgetWarning} />
+              <div className="ml-auto flex items-center gap-4">
+                <label
+                  className={`flex items-center gap-2.5 text-xs font-medium transition-colors ${
+                    temporaryConversation ? 'text-amber-800' : 'text-gray-600'
+                  } ${sessionId || running ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
+                  title={llmSettings.language === 'en-US'
+                    ? 'Do not use Saved Memory or History Recall, and do not add this chat to the recall index.'
+                    : '不使用保存的记忆或历史检索，也不把本会话加入历史检索索引。'}
+                >
+                  <span>{llmSettings.language === 'en-US' ? 'Temporary chat' : '临时对话'}</span>
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    checked={temporaryConversation}
+                    disabled={Boolean(sessionId) || running}
+                    onChange={(event) => setTemporaryConversation(event.target.checked)}
+                  />
+                  <span className="relative h-5 w-9 rounded-full bg-gray-300 transition peer-checked:bg-amber-500 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-200 peer-disabled:opacity-70 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-sm after:transition peer-checked:after:translate-x-4" />
+                </label>
+                <div className="hidden border-l border-gray-200 pl-4 md:block">
+                  <BudgetPanel spent={budgetSpent} limit={llmSettings.budgetLimitUsd} warning={budgetWarning} language={llmSettings.language} />
+                </div>
               </div>
             </header>
             <div className="flex min-h-0 flex-1 overflow-hidden">
