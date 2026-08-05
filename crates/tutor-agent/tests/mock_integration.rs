@@ -38,7 +38,7 @@ use tutor_agent::{
 use tutor_rag::{EmbeddingConfig, LanceDbKnowledgeSource, LanceDbRag};
 
 fn make_governance(audit: Option<Arc<dyn AuditSink>>) -> GovernanceConfig {
-    GovernanceConfig::new(100.0, audit, false)
+    GovernanceConfig::new(audit, false)
 }
 
 fn make_router(responses: Vec<MockResponse>, governance: GovernanceConfig) -> CapabilityRouter {

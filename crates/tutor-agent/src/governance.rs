@@ -7,9 +7,6 @@ use uuid::Uuid;
 /// Session-wide governance configuration shared across all harnesses.
 #[derive(Clone)]
 pub struct GovernanceConfig {
-    /// Session budget limit in USD. The product stores the limit here while
-    /// runtime budget-policy APIs are still being hardened.
-    pub budget_limit_usd: f64,
     /// Optional audit sink for writing structured learning-trail events.
     pub audit: Option<Arc<dyn AuditSink>>,
     /// Optional human approval gate.
@@ -19,13 +16,8 @@ pub struct GovernanceConfig {
 }
 
 impl GovernanceConfig {
-    pub fn new(
-        budget_limit_usd: f64,
-        audit: Option<Arc<dyn AuditSink>>,
-        require_code_exec_approval: bool,
-    ) -> Self {
+    pub fn new(audit: Option<Arc<dyn AuditSink>>, require_code_exec_approval: bool) -> Self {
         Self {
-            budget_limit_usd,
             audit,
             approval: None,
             require_code_exec_approval,
@@ -74,8 +66,7 @@ mod tests {
 
     #[test]
     fn governance_config_builds_without_approval() {
-        let cfg = GovernanceConfig::new(2.0, None, false);
+        let cfg = GovernanceConfig::new(None, false);
         assert!(!cfg.require_code_exec_approval);
-        assert_eq!(cfg.budget_limit_usd, 2.0);
     }
 }

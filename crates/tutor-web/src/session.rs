@@ -33,7 +33,6 @@ pub struct LlmSessionConfig {
     pub base_url: Option<String>,
     pub chat_path: Option<String>,
     pub context_window_tokens: Option<u32>,
-    pub budget_limit_usd: Option<f64>,
     pub require_approval: bool,
 }
 
@@ -1594,7 +1593,6 @@ mod tests {
                 "output_tokens": 5,
                 "cache_read_tokens": 3,
                 "cache_write_tokens": 2,
-                "cost_usd": 0.01,
             }),
         )
         .await
@@ -2092,7 +2090,6 @@ mod tests {
                     base_url: Some("https://api.deepseek.com".into()),
                     chat_path: Some("/chat/completions".into()),
                     context_window_tokens: Some(128_000),
-                    budget_limit_usd: Some(2.0),
                     require_approval: false,
                 }),
                 None,

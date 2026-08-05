@@ -581,11 +581,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         let cwd = std::env::current_dir()
             .map_err(|err| tutor_agent::TutorError::Internal(err.to_string()))?;
         let env = Arc::new(OsEnv::new(cwd));
-        let budget_limit = entry
-            .llm
-            .as_ref()
-            .and_then(|config| config.budget_limit_usd)
-            .unwrap_or(2.0);
         let audit_path = std::env::temp_dir().join(format!("tutor_web_{}.jsonl", entry.id));
         let audit = Arc::new(JsonlAuditSink::new(&audit_path));
         let require_approval = entry
@@ -593,7 +588,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             .as_ref()
             .map(|config| config.require_approval)
             .unwrap_or(false);
-        let governance = GovernanceConfig::new(budget_limit, Some(audit), require_approval);
+        let governance = GovernanceConfig::new(Some(audit), require_approval);
         let sink: SharedEventSink = Arc::new(PersistedEventSink {
             pool: pool.clone(),
             session_id: entry.id.clone(),

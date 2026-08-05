@@ -18,11 +18,11 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // Governance: $2.00 session budget + JSONL audit log.
+    // Governance: JSONL audit log and optional tool approval.
     let audit_path = std::env::temp_dir().join("tutor_audit.jsonl");
     let audit = Arc::new(JsonlAuditSink::new(&audit_path));
 
-    let governance = GovernanceConfig::new(2.00, Some(audit), false);
+    let governance = GovernanceConfig::new(Some(audit), false);
 
     let router = CapabilityRouter::new(env, llm, governance);
 

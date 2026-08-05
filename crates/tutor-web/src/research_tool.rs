@@ -300,7 +300,7 @@ mod tests {
         let router = tutor_agent::CapabilityRouter::new(
             Arc::new(OsEnv::new(std::env::temp_dir())),
             tutor_agent::LlmConfig::anthropic("test-model", "test-key"),
-            tutor_agent::governance::GovernanceConfig::new(1.0, None, false),
+            tutor_agent::governance::GovernanceConfig::new(None, false),
         );
         let tool = CreateResearchReportTool::new(router);
         let schema = tool.parameters_schema();

@@ -37,7 +37,6 @@ struct UsageTotals {
     output_tokens: u64,
     cache_read_tokens: u64,
     cache_write_tokens: u64,
-    cost_usd: f64,
 }
 
 impl UsageTotals {
@@ -46,7 +45,6 @@ impl UsageTotals {
         self.output_tokens += other.output_tokens;
         self.cache_read_tokens += other.cache_read_tokens;
         self.cache_write_tokens += other.cache_write_tokens;
-        self.cost_usd += other.cost_usd;
     }
 }
 
@@ -85,7 +83,6 @@ impl TraceRecorder {
                 trace.usage.output_tokens += json_u64(data.get("output_tokens"));
                 trace.usage.cache_read_tokens += json_u64(data.get("cache_read_tokens"));
                 trace.usage.cache_write_tokens += json_u64(data.get("cache_write_tokens"));
-                trace.usage.cost_usd += data.get("cost_usd").and_then(Value::as_f64).unwrap_or(0.0);
             }
         }
         trace
@@ -233,14 +230,10 @@ async fn locomo_agent_answer_accuracy_benchmark() {
             ANSWER_BENCHMARK_INSTRUCTION.into(),
         ]
         .join("\n\n");
-        let router = CapabilityRouter::new(
-            env,
-            llm.clone(),
-            GovernanceConfig::new(f64::MAX, None, false),
-        )
-        .with_client(client.clone())
-        .with_event_sink(sink)
-        .with_product_instruction(instruction);
+        let router = CapabilityRouter::new(env, llm.clone(), GovernanceConfig::new(None, false))
+            .with_client(client.clone())
+            .with_event_sink(sink)
+            .with_product_instruction(instruction);
         let router = crate::knowledge_runtime::install_agent_knowledge_and_memory(
             router,
             None,
@@ -341,10 +334,9 @@ async fn locomo_agent_answer_accuracy_benchmark() {
     let p50_ms = duration_ms(percentile(&latencies, 50));
     let p95_ms = duration_ms(percentile(&latencies, 95));
     println!(
-        "locomo_answer diagnostics latency_p50_ms={p50_ms:.1} latency_p95_ms={p95_ms:.1} input_tokens={} output_tokens={} cost_usd={:.6} unexpected_tool_calls={} tool_narrations={}",
+        "locomo_answer diagnostics latency_p50_ms={p50_ms:.1} latency_p95_ms={p95_ms:.1} input_tokens={} output_tokens={} unexpected_tool_calls={} tool_narrations={}",
         usage.input_tokens,
         usage.output_tokens,
-        usage.cost_usd,
         overall.unexpected_tool_calls,
         overall.tool_narrations,
     );
@@ -715,7 +707,6 @@ fn usage_report(usage: &UsageTotals) -> Value {
         "output_tokens": usage.output_tokens,
         "cache_read_tokens": usage.cache_read_tokens,
         "cache_write_tokens": usage.cache_write_tokens,
-        "cost_usd": usage.cost_usd,
     })
 }
 

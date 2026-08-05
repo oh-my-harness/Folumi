@@ -15,8 +15,8 @@
 |------|---------|---------|
 | `BeforeToolCallHook` | Human approval for sensitive tools | ✅ worked as designed |
 | `PrepareNextTurnHook` | Historical PhaseManager active-tool filtering | ✅ worked; now replaced by workflow step tool scopes |
-| `AfterProviderResponseHook` | BudgetControlAdapter cost accumulation | ✅ worked; now awaiting safer app-level budget policy |
-| `ShouldStopHook` | BudgetControlAdapter loop stop policy | ⚠️ unsafe for ordinary one-turn chat with current semantics |
+| `AfterProviderResponseHook` | Runtime token accounting | ✅ works and remains useful for diagnostics |
+| `ShouldStopHook` | Historical BudgetControlAdapter evaluation | Historical; Folumi no longer exposes monetary budgets |
 
 ## Friction Points
 
@@ -275,11 +275,10 @@
   - Actual: `WorkflowEngine::cancel()` exists but the engine is not cloneable, so a route that awaits `run()` directly cannot also call `cancel()` from an external `CancellationToken` without changing ownership structure.
   - Suggestion: expose `run_with_cancel(token)` or a lightweight cloneable `WorkflowHandle` returned by `start()`, so product routes can wire stop buttons consistently across ordinary harness turns and multi-step workflows.
 
-- **Budget control still needs a safer runtime API**
-  - Product code no longer constructs `BudgetControlAdapter` directly for ordinary harness setup; it now carries only the session budget limit in `GovernanceConfig`.
-  - Attempting to wire `HarnessBuilder::budget(..., None)` into ordinary one-turn Chat/Code Exec harnesses still makes mock integration tests hang on runtime `eea964b`, matching the earlier `ShouldStopHook` semantic issue: `false` means "continue loop", not "allow this call and finish normally". This has not been re-enabled on `cc0b737`.
-  - `WorkflowEngineConfig` exposes hooks and step cost aggregation, but does not yet expose a simple builder-style `budget(...)` / shared budget policy API for multi-step workflows.
-  - Follow-up: add runtime budget helpers that distinguish per-call budget accounting from agent-loop stop decisions, and expose the same policy for ordinary harnesses and workflows.
+- **Historical: product-side budget control was retired**
+  - Earlier Folumi revisions evaluated `BudgetControlAdapter` for per-session USD limits and found awkward ordinary-loop and multi-step workflow semantics.
+  - On 2026-08-05 the product removed USD cost display, budget settings and enforcement rather than maintaining an unreliable billing layer across official, proxy, custom-compatible and local providers.
+  - Runtime token accounting remains in use for context diagnostics. A generic runtime budget API may still be useful to other consumers, but it is no longer a Folumi blocker or requested product dependency.
 
 - **`BeforeToolCallCtx` requires a live `AssistantMessage` reference, making unit tests noisy**
   - Expected: construct a minimal mock in test code to verify hook logic
@@ -470,7 +469,7 @@
 ## Positive Validations
 
 - **CompositeBeforeToolCallHook** can layer domain-specific + cross-cutting hooks; current product code only needs human approval hooks after moving replan into workflow routing
-- **BudgetControlAdapter** dual-role as `AfterProviderResponseHook` + `ShouldStopHook` is elegant — one instance, two contracts
+- **BudgetControlAdapter** was useful during historical budget experiments; Folumi no longer exposes that product capability
 - **`active_tools` in `NextTurnDirective`** was useful for historical PhaseManager-style filtering; current workflow paths prefer runtime step `allowed_tools`
 - **`HarnessHooks::none()`** pattern with struct update syntax (`..HarnessHooks::none()`) makes selective hook wiring readable
 - **`AgentHarness::subscribe()` before `prompt()`** pattern allows reliable event collection without race conditions
@@ -487,7 +486,6 @@
 | No typed structured-output helper | Product flows must duplicate JSON extraction, schema hints, validation, and retry policy | Medium |
 | No public declarative/no-op workflow judge helper | Product workflows need a tiny marker judge to opt into runtime's built-in declarative edge router | Low |
 | No declarative bounded semantic repair policy | Quiz still needs a thin product judge to cap verifier-driven repair loops | Medium |
-| No safe app-level budget policy helper | Ordinary one-turn harnesses and multi-step workflows cannot share budget accounting without app-layer loop-risk or hook boilerplate | Medium |
 | No normalized model metadata API | Apps duplicate `/models` probing, auth headers, context-window parsing, and embedding dimension capability discovery | Medium |
 
 ## Proposed v0.3 Changes
@@ -502,8 +500,7 @@
 8. Add normalized model metadata discovery in the adapter/runtime boundary
 9. Expose a public no-op/declarative workflow judge helper or `WorkflowEngine::new_declarative` constructor
 10. Continue hardening `WorkflowEngine` examples for app-level workflows that mix executor steps, LLM steps, and subagent reviewers
-11. Add a safe app-level budget helper/policy API that separates cost accounting from loop continuation
-12. Add declarative bounded semantic repair policies for verifier-driven workflow loops
-13. Add source/domain-scoped Knowledge citation requirements for mixed registries
-14. Define an application transaction or batch/CAS Memory contract
-15. Document or provide a trusted, single-use Memory mutation approval contract
+11. Add declarative bounded semantic repair policies for verifier-driven workflow loops
+12. Add source/domain-scoped Knowledge citation requirements for mixed registries
+13. Define an application transaction or batch/CAS Memory contract
+14. Document or provide a trusted, single-use Memory mutation approval contract

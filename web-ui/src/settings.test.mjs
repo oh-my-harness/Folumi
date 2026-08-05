@@ -115,4 +115,6 @@ test('builds runtime settings from an explicitly selected model config', () => {
   assert.equal(selected.model, 'model-b-name')
   assert.equal(selected.api_key, 'key-b')
   assert.equal(selected.context_window_tokens, 200000)
+  assert.equal('budget_limit_usd' in selected, false)
+  assert.equal('budgetLimitUsd' in defaultLlmSettings, false)
 })

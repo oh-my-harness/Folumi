@@ -492,7 +492,6 @@ async fn emit_workflow_runtime_usage(sink: &Option<SharedEventSink>, cost: &Cost
             "output_tokens": cost.total_output_tokens,
             "cache_read_tokens": cost.total_cache_read_tokens,
             "cache_write_tokens": cost.total_cache_write_tokens,
-            "cost_usd": cost.total_cost,
         }),
     )
     .await;

@@ -45,7 +45,6 @@ struct CreateLlmConfig {
     base_url: Option<String>,
     chat_path: Option<String>,
     context_window_tokens: Option<u32>,
-    budget_limit_usd: Option<f64>,
     require_approval: Option<bool>,
 }
 
@@ -421,7 +420,6 @@ async fn get_session(
                 "base_url": config.base_url,
                 "chat_path": config.chat_path,
                 "context_window_tokens": config.context_window_tokens,
-                "budget_limit_usd": config.budget_limit_usd,
                 "require_approval": config.require_approval,
             })),
             "search": entry.search.map(|config| serde_json::json!({
@@ -776,7 +774,6 @@ fn llm_config_from_request(config: CreateLlmConfig) -> LlmSessionConfig {
         base_url: config.base_url.filter(|value| !value.trim().is_empty()),
         chat_path: config.chat_path.filter(|value| !value.trim().is_empty()),
         context_window_tokens: config.context_window_tokens,
-        budget_limit_usd: config.budget_limit_usd,
         require_approval: config.require_approval.unwrap_or(false),
     }
 }

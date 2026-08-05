@@ -15,6 +15,9 @@ Current product and runtime-facing specs live here.
   The external LoCoMo long-conversation retrieval adapter, licensing boundary,
   layered metrics, and reproduction command are documented in
   `../qa/locomo-benchmark.md`.
+- `2026-08-05-remove-product-billing-decision.md` records the accepted removal
+  of product-side USD cost display and budget controls while retaining token
+  and context usage for diagnostics and benchmarks.
 - `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
   design and remains only as historical context.
 - `2026-07-15-persistent-tutor-design.md` defines persistent tutor identity,

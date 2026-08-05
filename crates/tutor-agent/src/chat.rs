@@ -428,7 +428,6 @@ pub(crate) async fn emit_runtime_usage(
             "output_tokens": usage.total_output_tokens,
             "cache_read_tokens": usage.total_cache_read_tokens,
             "cache_write_tokens": usage.total_cache_write_tokens,
-            "cost_usd": usage.total_cost,
         }),
     )
     .await;

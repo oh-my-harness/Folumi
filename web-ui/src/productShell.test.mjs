@@ -9,7 +9,6 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const knowledge = readFileSync(new URL('./components/KnowledgeBasePage.tsx', import.meta.url), 'utf8')
 const settings = readFileSync(new URL('./components/SettingsPage.tsx', import.meta.url), 'utf8')
 const memory = readFileSync(new URL('./components/UserMemoryPage.tsx', import.meta.url), 'utf8')
-const budgetPanel = readFileSync(new URL('./components/BudgetPanel.tsx', import.meta.url), 'utf8')
 const backendMain = readFileSync(new URL('../../crates/tutor-web/src/main.rs', import.meta.url), 'utf8')
 const backendRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/mod.rs', import.meta.url), 'utf8')
 const notebookRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/notebook.rs', import.meta.url), 'utf8')
@@ -99,11 +98,11 @@ test('temporary conversations are explicit and disable memory continuity', () =>
   assert.match(websocketRoutes, /entry\.temporary/)
 })
 
-test('assistant header avoids duplicate source scope and keeps compact session controls', () => {
+test('assistant header avoids duplicate source scope and keeps Temporary Chat compact', () => {
   assert.doesNotMatch(app, /资料范围|Conversation only/)
   assert.match(app, /peer-checked:bg-amber-500/)
-  assert.match(budgetPanel, /会话费用/)
-  assert.doesNotMatch(budgetPanel, />Budget</)
+  assert.doesNotMatch(app, /BudgetPanel|budgetSpent|budget_warning/)
+  assert.doesNotMatch(settings, /Session budget|budgetLimitUsd/)
 })
 
 test('research is a chat task action instead of a capability menu', () => {

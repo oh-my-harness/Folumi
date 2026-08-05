@@ -58,7 +58,6 @@ export interface LlmSettings {
   apiKey: string
   baseUrl: string
   chatPath: string
-  budgetLimitUsd: number
   requireApproval: boolean
   llmConfigs: LlmModelConfig[]
   activeLlmConfigId: string | null
@@ -83,7 +82,6 @@ export const defaultLlmSettings: LlmSettings = {
   apiKey: '',
   baseUrl: 'https://api.deepseek.com',
   chatPath: '/chat/completions',
-  budgetLimitUsd: 2,
   requireApproval: false,
   llmConfigs: [],
   activeLlmConfigId: null,
@@ -152,7 +150,6 @@ export function settingsForSession(
     base_url: (config?.baseUrl ?? settings.baseUrl).trim() || null,
     chat_path: (config?.chatPath ?? settings.chatPath).trim() || null,
     context_window_tokens: Number(config?.contextWindowTokens || DEFAULT_CONTEXT_WINDOW_TOKENS),
-    budget_limit_usd: settings.budgetLimitUsd,
     require_approval: settings.requireApproval,
   }
 }
@@ -370,6 +367,10 @@ function normalizeLlmConfigs(value: unknown, legacy: Partial<LlmSettings>): LlmM
 }
 
 function normalizeLlmSettings(parsed: Partial<LlmSettings>): LlmSettings {
+  const {
+    budgetLimitUsd: _retiredBudgetLimitUsd,
+    ...currentSettings
+  } = parsed as Partial<LlmSettings> & { budgetLimitUsd?: unknown }
   const llmConfigs = normalizeLlmConfigs(parsed.llmConfigs, parsed)
   const activeLlmConfigId = normalizeActiveConfigId(parsed.activeLlmConfigId, llmConfigs)
   const activeLlmConfig = llmConfigs.find((config) => config.id === activeLlmConfigId) ?? null
@@ -378,12 +379,11 @@ function normalizeLlmSettings(parsed: Partial<LlmSettings>): LlmSettings {
 
   return {
     ...defaultLlmSettings,
-    ...parsed,
+    ...currentSettings,
     ...(activeLlmConfig ? llmConfigToLegacyFields(activeLlmConfig) : {}),
     provider: activeLlmConfig
       ? activeLlmConfig.provider
       : normalizeLlmProvider((parsed as { provider?: unknown }).provider),
-    budgetLimitUsd: Number(parsed.budgetLimitUsd ?? defaultLlmSettings.budgetLimitUsd),
     requireApproval: Boolean(parsed.requireApproval),
     assistantName: typeof parsed.assistantName === 'string' && parsed.assistantName.trim()
       ? parsed.assistantName.trim()

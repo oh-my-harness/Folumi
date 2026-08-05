@@ -146,7 +146,9 @@ These items come from the earlier Phase 1-5 plans. They should be closed before 
 
 - [x] Wire top-level `Capability::CodeExec` instead of returning `UnsupportedCapability`.
 - [x] Decide whether `code_exec` requires approval in CLI, Web, both, or only when configured.
-- [ ] Re-enable runtime budget enforcement once `llm-harness-runtime` exposes a safe app-level budget policy for ordinary one-turn harnesses and workflows. Current code keeps session budget configuration but avoids direct `BudgetControlAdapter` wiring because the latest tested hook semantics can hang Chat/Code Exec mock runs.
+- [x] Retire product-side USD cost display and budget enforcement. The accepted
+  2026-08-05 decision keeps token/context usage for diagnostics but delegates
+  authoritative monetary billing to the configured provider.
 - [x] Historical: emit real `TutorStream::trace` events from Chat and the former Deep Solve workflow.
 - [x] Confirm WebSocket output semantics: final-only response, chunked text stream, or mixed content/trace/status stream.
 - [x] Historical: replace the former Deep Solve `run_pre_retrieve` stub with real retrieval or an explicit no-KB branch.

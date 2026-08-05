@@ -1201,21 +1201,7 @@ export function SettingsPage({
           )}
 
           {activeTab === 'governance' && (
-            <SettingsPanel icon={Activity} title="能力" description="预算和工具执行审批会影响新建会话。">
-              <Field label="Session budget">
-                <div className="flex items-center gap-3">
-                  <TextInput
-                    className="w-36"
-                    min="0"
-                    step="0.25"
-                    type="number"
-                    value={String(settings.budgetLimitUsd)}
-                    onChange={(value) => update('budgetLimitUsd', Number(value))}
-                  />
-                  <span className="text-sm text-gray-600">USD</span>
-                </div>
-              </Field>
-
+            <SettingsPanel icon={Activity} title="能力" description="配置工具执行审批与本地运行选项。">
               <label className="flex items-center gap-3 text-sm text-gray-800">
                 <input
                   className="h-4 w-4"

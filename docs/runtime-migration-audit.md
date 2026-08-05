@@ -113,8 +113,9 @@ Date: 2026-07-29
 - Quiz generation and Memory workflows now return runtime `TaskResult.cost`
   alongside their domain output, so callers no longer need to reconstruct
   workflow usage from product-side state.
-- The web UI consumes `runtime_usage` as the live context-usage fallback and
-  budget spent source when provider message usage is unavailable.
+- The web UI consumes `runtime_usage` as the live context-usage fallback when
+  provider message usage is unavailable. Product-side USD conversion was
+  removed by the accepted 2026-08-05 billing decision.
 - Session restore also derives `latest_usage` from persisted `runtime_usage`
   trace entries, so archived conversations keep runtime token usage even when
   provider message usage is absent.
@@ -149,9 +150,9 @@ mentions, and citations.
 - Text streaming still emits raw `TextDelta` because runtime deltas do not carry
   final/progress classification; classification is only available on
   `MessageEnd`.
-- Budget limits are stored in product config but direct runtime budget hook
-  wiring is disabled until runtime exposes a safe app-level budget policy for
-  ordinary one-turn harnesses and workflows.
+- Product configuration no longer stores USD budget limits. Runtime token
+  accounting remains useful for context and diagnostics, while monetary
+  billing and enforcement are outside Folumi's product boundary.
 
 ## Latest Runtime API Recheck
 
@@ -175,7 +176,7 @@ baseline.
 | Final answer contract | Runtime exposes `FinalAnswerMode`, `AgentEvent::as_final_answer()`, `AgentEvent::as_progress()`, and final/progress assistant message kinds. | Chat and Code Exec consume these APIs; tests cover both paths. |
 | Streaming deltas | Runtime still emits raw `TextDelta` without final/progress classification; classification is available at terminal message events. | Keep live streaming as raw text for now, while durable bubbles use final-answer events. |
 | Model metadata | Runtime accepts `ModelInfo` for context budgeting and compaction, but does not provide provider-normalized metadata discovery. | Keep product settings diagnostics for `/models` probing and inference until adapter/runtime owns discovery. |
-| Budget policy | Runtime still exposes `BudgetControlAdapter` as a `ShouldStopHook`, and `HarnessBuilder::budget` wires it into loop stop behavior. `HarnessBuilder` does inject `CostAccumulatorHook`, and the harness exposes `usage()`. | Emit and consume runtime usage traces from `AgentHarness::usage()` for observability, but keep budget limits as product config only until runtime separates accounting from loop continuation. |
+| Usage accounting | `HarnessBuilder` injects `CostAccumulatorHook`, and the harness exposes `usage()`. | Emit and consume token usage traces for context diagnostics; do not convert them to USD or expose product budget controls. |
 | Workflow usage | `WorkflowEngine::run()` returns `TaskResult.cost`, aggregated from step results. `WorkflowEngine::total_cost()` is also available for an active engine. | Quiz, Memory, and Research workflow helpers return runtime cost with their domain output. |
 | Tool-call adjacency | The reviewed baseline retains provider-neutral ordering for consecutive tool results. | Keep provider-specific normalization in runtime/adapter code and cover product multi-tool paths through integration tests. |
 
@@ -184,9 +185,8 @@ baseline.
 1. Public declarative workflow constructor or no-op judge helper.
 2. Declarative bounded semantic repair / step visit policies.
 3. Provider-aware typed structured domain output helper.
-4. Safe budget policy helper that separates accounting from loop continuation.
-5. Normalized model metadata discovery.
-6. Per-delta final/progress classification for streaming UI.
+4. Normalized model metadata discovery.
+5. Per-delta final/progress classification for streaming UI.
 
 ## Verification Coverage
 

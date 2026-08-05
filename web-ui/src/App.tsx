@@ -3,7 +3,6 @@ import type { Dispatch, SetStateAction } from 'react'
 import { ChatBox } from './components/ChatBox'
 import type { ChatAttachment, ContextStats, NotebookEditProposal, NotebookMention, SaveToNotebookOptions } from './components/ChatBox'
 import { TracePanel, TraceEntry } from './components/TracePanel'
-import { BudgetPanel } from './components/BudgetPanel'
 import { SettingsPage, type SettingsTab } from './components/SettingsPage'
 import { KnowledgeBasePage } from './components/KnowledgeBasePage'
 import { NotesPage } from './components/NotesPage'
@@ -210,8 +209,6 @@ export default function App() {
   const pendingNotebookEditProposalRef = useRef<NotebookEditProposal | undefined>(undefined)
   const pendingResearchPlanRef = useRef<ResearchPlan | undefined>(undefined)
   const pendingResearchReportRef = useRef<ResearchReportTraceData | undefined>(undefined)
-  const [budgetSpent, setBudgetSpent] = useState(0)
-  const [budgetWarning, setBudgetWarning] = useState(false)
   const [running, setRunning] = useState(false)
   const [memoryApproval, setMemoryApproval] = useState<MemoryApprovalRequest | null>(null)
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
@@ -427,9 +424,6 @@ export default function App() {
         const runtimeUsage = tokenUsageFromRuntimeTrace(event.payload as Record<string, unknown>)
         if (runtimeUsage) {
           setLatestUsage(runtimeUsage)
-          if (typeof event.payload.cost_usd === 'number') {
-            setBudgetSpent(event.payload.cost_usd)
-          }
         }
         const citations = citationsFromTrace(event.payload as Record<string, unknown>)
         if (citations.length > 0) {
@@ -474,9 +468,6 @@ export default function App() {
           }
         } else if (kind === 'approval_response_received' || kind === 'approval_response_rejected') {
           setMemoryApproval((current) => current?.requestId === payload.request_id ? null : current)
-        } else if (kind === 'budget_warning') {
-          setBudgetWarning(true)
-          setBudgetSpent((payload.spent_usd as number) ?? 0)
         } else if (kind === 'running') {
           setRunning(true)
           updateRecentSessionRun(setRecentSessions, sourceSessionId, runSummaryFromStatusPayload(payload))
@@ -1033,7 +1024,6 @@ export default function App() {
     pendingResearchPlanRef.current = undefined
     pendingResearchReportRef.current = undefined
     setLatestUsage(null)
-    setBudgetWarning(false)
     setRunning(false)
     setView('assistant')
   }, [activateSession, llmSettings.activeLlmConfigId])
@@ -1354,7 +1344,7 @@ export default function App() {
                 <h1 className="text-lg font-semibold text-gray-900">{llmSettings.assistantName || t('chat.title')}</h1>
                 <p className="text-xs text-gray-500">{t('chat.subtitle')}</p>
               </div>
-              <div className="ml-auto flex items-center gap-4">
+              <div className="ml-auto">
                 <label
                   className={`flex items-center gap-2.5 text-xs font-medium transition-colors ${
                     temporaryConversation ? 'text-amber-800' : 'text-gray-600'
@@ -1373,9 +1363,6 @@ export default function App() {
                   />
                   <span className="relative h-5 w-9 rounded-full bg-gray-300 transition peer-checked:bg-amber-500 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-200 peer-disabled:opacity-70 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-sm after:transition peer-checked:after:translate-x-4" />
                 </label>
-                <div className="hidden border-l border-gray-200 pl-4 md:block">
-                  <BudgetPanel spent={budgetSpent} limit={llmSettings.budgetLimitUsd} warning={budgetWarning} language={llmSettings.language} />
-                </div>
               </div>
             </header>
             <div className="flex min-h-0 flex-1 overflow-hidden">
