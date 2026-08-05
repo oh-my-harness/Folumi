@@ -44,6 +44,9 @@ Use this checklist after running:
 - [ ] Turn Memory off and confirm a new conversation neither recalls nor proposes long-term Memory.
 - [ ] Confirm Memory defaults to the Long-term Memory tab, then switch to Assistant Profile, change the name and behavior instructions, and verify a new conversation uses them while Settings has no duplicate Assistant tab.
 - [ ] Turn Memory on, review one item, edit it, then forget it.
+- [ ] With Saved Memory and History Recall enabled, save a preferred name, start a new conversation, ask the short follow-up `我呢`, and confirm the agent searches Saved Memory and reads the exact result before answering instead of claiming not to know.
+- [ ] Mention a transient event in one conversation, start another conversation, ask indirectly about that event (for example `我早上吃了什么`), and confirm the agent searches History Recall without needing a reminder. If the first query misses, confirm it retries once with simpler content keywords or a federated search.
+- [ ] For both recall checks, confirm the tool trace remains visible but the answer does not narrate `我查一下记忆` or equivalent implementation steps.
 - [ ] Confirm Memory contains no legacy Tutor/Quiz migration or archive controls.
 - [ ] Confirm requests to `/api/migration/legacy` return `404 Not Found`.
 - [ ] Close and restart the app.
