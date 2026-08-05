@@ -10,6 +10,7 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const knowledge = readFileSync(new URL('./components/KnowledgeBasePage.tsx', import.meta.url), 'utf8')
 const settings = readFileSync(new URL('./components/SettingsPage.tsx', import.meta.url), 'utf8')
 const memory = readFileSync(new URL('./components/UserMemoryPage.tsx', import.meta.url), 'utf8')
+const notebook = readFileSync(new URL('./components/NotesPage.tsx', import.meta.url), 'utf8')
 const backendMain = readFileSync(new URL('../../crates/tutor-web/src/main.rs', import.meta.url), 'utf8')
 const backendRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/mod.rs', import.meta.url), 'utf8')
 const notebookRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/notebook.rs', import.meta.url), 'utf8')
@@ -35,6 +36,19 @@ test('Notebook and Memory are standalone workspaces while Knowledge Base stays R
   assert.doesNotMatch(knowledge, /NotesPage|Search Sources and Notes/)
   assert.doesNotMatch(settings, /UserMemoryPage|LegacyMigrationPanel/)
   assert.doesNotMatch(memory, /LegacyMigrationPanel|\/api\/migration\/legacy/)
+})
+
+test('Notebook keeps its IDE-like workspace instead of regressing to a flat note list', () => {
+  assert.match(notebook, /function NotebookFileTree/)
+  assert.match(notebook, /function NotebookRelationsPanel/)
+  assert.match(notebook, /NOTEBOOK_TREE_ROW_HEIGHT/)
+  assert.match(notebook, /openDesktopContextMenu/)
+  assert.match(notebook, /\/api\/notebook\/folders/)
+  assert.match(notebook, /wikiLinkResolver/)
+  assert.match(notebook, /onWikiLinkCreate/)
+  assert.match(notebook, /backlinks/)
+  assert.match(notebook, /局部关系图/)
+  assert.match(notebook, /Vault 正在监听/)
 })
 
 test('assistant profile is managed from Memory instead of Settings', () => {

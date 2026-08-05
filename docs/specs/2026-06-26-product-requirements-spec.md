@@ -10,6 +10,8 @@ The accepted workspace boundaries and change-control rule are recorded in
 [`2026-08-03-primary-workspaces-decision.md`](./2026-08-03-primary-workspaces-decision.md).
 The removal of the dedicated Research product path is recorded in
 [`2026-08-05-remove-research-mode-decision.md`](./2026-08-05-remove-research-mode-decision.md).
+The retained Notebook workspace capabilities are recorded in
+[`2026-08-05-notebook-workspace-capabilities-decision.md`](./2026-08-05-notebook-workspace-capabilities-decision.md).
 
 ## 1. Product Definition
 
@@ -77,6 +79,14 @@ The removal of the dedicated Research product path is recorded in
   require confirmation with a recovery path.
 - **REQ-304** Source and Note results may appear in one search response but
   shall preserve their data type, provenance, and authority boundary.
+- **REQ-305** The standalone Notebook UI shall retain an editor-style workspace
+  with a hierarchical and virtualized file tree, folder-local creation,
+  desktop context actions, Markdown editing and preview, persisted expansion
+  state, and visible Vault refresh/watch status. It shall not regress to a flat
+  CRUD list as a consequence of removing Space or other retired products.
+- **REQ-306** The Notebook relation surface shall expose tags, outgoing Wiki
+  links, unresolved-link creation, backlinks, and a collapsible local graph;
+  users shall be able to navigate resolved links without leaving Notebook.
 
 ## 5. Memory and Continuity
 

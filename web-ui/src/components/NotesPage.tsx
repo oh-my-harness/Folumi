@@ -1,9 +1,34 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Edit3, FileText, Plus, RefreshCw, Save, Trash2, Undo2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { MouseEvent } from 'react'
+import {
+  AlertTriangle,
+  BookMarked,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Edit3,
+  FileText,
+  Folder,
+  FolderOpen,
+  Link2,
+  Network,
+  NotebookPen,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  RefreshCw,
+  Save,
+  Tags,
+  Trash2,
+  Undo2,
+  X,
+} from 'lucide-react'
+import { writeClipboardText } from '../api'
+import { openDesktopContextMenu } from '../desktop'
 import { MarkdownMessage } from './MarkdownMessage'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
 
-interface NoteEntry {
+interface NotebookEntry {
   id: string
   space_id: string
   entry_type: string
@@ -15,7 +40,44 @@ interface NoteEntry {
   source_message_id?: string | null
   created_at: string
   updated_at: string
+  tags?: string[]
+  links?: NotebookLink[]
+  backlinks?: NotebookBacklink[]
   revision?: string
+}
+
+interface NotebookLink {
+  raw: string
+  target: string
+  alias?: string | null
+  target_id?: string | null
+  target_title?: string | null
+  resolved: boolean
+}
+
+interface NotebookBacklink {
+  source_entry_id: string
+  source_title: string
+  raw: string
+  alias?: string | null
+  snippet: string
+}
+
+interface NotebookWatchInfo {
+  watching?: boolean
+  root?: string | null
+  last_refreshed_at?: string | null
+  last_result?: NotebookRefreshResult | null
+  last_error?: string | null
+}
+
+interface NotebookRefreshResult {
+  entries?: number
+  folders?: number
+  added?: number
+  changed?: number
+  unchanged?: number
+  removed?: number
 }
 
 interface Props {
@@ -25,201 +87,915 @@ interface Props {
 }
 
 export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
-  const [notes, setNotes] = useState<NoteEntry[]>([])
+  const english = language === 'en-US'
+  const [entries, setEntries] = useState<NotebookEntry[]>([])
+  const [folders, setFolders] = useState<string[]>([])
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(loadExpandedNotebookFolders)
+  const knownFolderPathsRef = useRef<Set<string> | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<NoteEntry | null>(null)
-  const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState('')
-  const [path, setPath] = useState('')
-  const [markdown, setMarkdown] = useState('')
-  const [deleted, setDeleted] = useState<NoteEntry | null>(null)
+  const [detail, setDetail] = useState<NotebookEntry | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editPath, setEditPath] = useState('')
+  const [editMarkdown, setEditMarkdown] = useState('')
+  const [recentlyDeleted, setRecentlyDeleted] = useState<NotebookEntry | null>(null)
+  const [watch, setWatch] = useState<NotebookWatchInfo | null>(null)
+  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('')
 
-  const active = detail?.id === activeId ? detail : notes.find((note) => note.id === activeId) ?? null
-  const sorted = useMemo(() => [...notes].sort((left, right) => (left.path || left.title).localeCompare(right.path || right.title)), [notes])
+  const activeEntry = detail?.id === activeId
+    ? detail
+    : entries.find((entry) => entry.id === activeId) ?? null
+  const allFolderPaths = useMemo(
+    () => collectNotebookFolderPaths(buildNotebookTree(entries, folders)),
+    [entries, folders],
+  )
+  const filteredEntries = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase()
+    if (!normalized) return entries
+    return entries.filter((entry) => [entry.title, entry.path ?? '', ...(entry.tags ?? [])]
+      .some((value) => value.toLocaleLowerCase().includes(normalized)))
+  }, [entries, query])
+  const filteredFolders = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase()
+    if (!normalized) return folders
+    return folders.filter((folder) => folder.toLocaleLowerCase().includes(normalized))
+  }, [folders, query])
+  const notebookTree = useMemo(
+    () => buildNotebookTree(filteredEntries, filteredFolders),
+    [filteredEntries, filteredFolders],
+  )
+  const visibleExpandedFolders = useMemo(
+    () => query.trim() ? new Set(collectNotebookFolderPaths(notebookTree)) : expandedFolders,
+    [expandedFolders, notebookTree, query],
+  )
 
-  const load = useCallback(async () => {
+  const loadNotebook = useCallback(async (forceVaultRefresh = false) => {
     setLoading(true)
     try {
-      const response = await fetch('/api/notebook/entries?space_id=default')
+      const response = await fetch(
+        forceVaultRefresh ? '/api/notebook/refresh' : '/api/notebook/entries?space_id=default',
+        forceVaultRefresh ? { method: 'POST' } : undefined,
+      )
       const data = await safeJson(response)
       if (!response.ok) throw new Error(errorMessage(data, response.status))
-      const next = (data.entries ?? []) as NoteEntry[]
-      setNotes(next)
-      setActiveId((current) => current && next.some((note) => note.id === current) ? current : next[0]?.id ?? null)
-      setStatus('')
+      const nextEntries = (data.entries ?? []) as NotebookEntry[]
+      const nextFolders = ((data.folders ?? []) as string[]).filter(Boolean)
+      setEntries(nextEntries)
+      setFolders(nextFolders)
+      setWatch((data.watch ?? null) as NotebookWatchInfo | null)
+      // Force the active detail to reload so external Vault edits and rebuilt
+      // link/backlink relations become visible immediately after refresh.
+      setDetail(null)
+      setActiveId((current) => current && nextEntries.some((entry) => entry.id === current)
+        ? current
+        : nextEntries[0]?.id ?? null)
+      if (forceVaultRefresh) {
+        const refresh = (data.refresh ?? {}) as NotebookRefreshResult
+        setStatus(english
+          ? `Vault refreshed: ${refresh.entries ?? nextEntries.length} notes, ${refresh.added ?? 0} added, ${refresh.changed ?? 0} changed, ${refresh.removed ?? 0} removed`
+          : `Vault 已刷新：${refresh.entries ?? nextEntries.length} 篇笔记，新增 ${refresh.added ?? 0}，更新 ${refresh.changed ?? 0}，移除 ${refresh.removed ?? 0}`)
+      } else {
+        setStatus('')
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [english])
 
-  const loadDetail = useCallback(async (id: string) => {
+  const loadDetail = useCallback(async (entryId: string) => {
     try {
-      const response = await fetch(`/api/notebook/entries/${encodeURIComponent(id)}`)
+      const response = await fetch(`/api/notebook/entries/${encodeURIComponent(entryId)}`)
       const data = await safeJson(response)
       if (!response.ok) throw new Error(errorMessage(data, response.status))
-      const entry = { ...(data.entry as NoteEntry), revision: data.revision as string }
+      const entry = { ...(data.entry as NotebookEntry), revision: data.revision as string }
       setDetail(entry)
-      setNotes((items) => items.map((item) => item.id === id ? { ...item, ...entry } : item))
+      setEntries((items) => items.map((item) => item.id === entry.id ? { ...item, ...entry } : item))
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     }
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void loadNotebook() }, [loadNotebook])
+
   useEffect(() => {
-    if (focusTarget?.entryId) setActiveId(focusTarget.entryId)
-  }, [focusTarget?.entryId])
-  useEffect(() => {
-    if (!activeId) { setDetail(null); return }
+    if (!activeId) {
+      setDetail(null)
+      return
+    }
     if (detail?.id !== activeId) void loadDetail(activeId)
   }, [activeId, detail?.id, loadDetail])
 
-  const startEdit = (note: NoteEntry) => {
-    setTitle(note.title)
-    setPath(note.path ?? '')
-    setMarkdown(note.markdown ?? '')
-    setEditing(true)
-  }
+  useEffect(() => {
+    if (!focusTarget?.entryId) return
+    setActiveId(focusTarget.entryId)
+    setEditingId(null)
+  }, [focusTarget?.entryId])
 
-  const create = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch('/api/notebook/entries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ space_id: 'default', entry_type: 'note', title: 'Untitled note', markdown: '# Untitled note\n\n' }),
-      })
-      const data = await safeJson(response)
-      if (!response.ok) throw new Error(errorMessage(data, response.status))
-      const note = { ...(data.entry as NoteEntry), revision: data.revision as string }
-      setNotes((items) => [note, ...items])
-      setActiveId(note.id)
-      setDetail(note)
-      startEdit(note)
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const save = async () => {
-    if (!active || !markdown.trim()) return
-    setLoading(true)
-    try {
-      let revision = active.revision
-      if (!revision) {
-        const response = await fetch(`/api/notebook/entries/${encodeURIComponent(active.id)}`)
-        const data = await safeJson(response)
-        if (!response.ok) throw new Error(errorMessage(data, response.status))
-        revision = data.revision as string
+  useEffect(() => {
+    if (allFolderPaths.length === 0 && !knownFolderPathsRef.current) return
+    const currentPaths = new Set(allFolderPaths)
+    const knownPaths = knownFolderPathsRef.current
+    setExpandedFolders((current) => {
+      const next = new Set<string>()
+      for (const folderPath of current) {
+        if (currentPaths.has(folderPath)) next.add(folderPath)
       }
-      const nextTitle = title.trim() || 'Untitled note'
-      const response = await fetch(`/api/notebook/entries/${encodeURIComponent(active.id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ expected_revision: revision, title: nextTitle, path: path.trim() || `${nextTitle}.md`, markdown }),
-      })
-      const data = await safeJson(response)
-      if (!response.ok) throw new Error(errorMessage(data, response.status))
-      const updated = { ...(data.entry as NoteEntry), revision: data.revision as string }
-      setNotes((items) => items.map((item) => item.id === updated.id ? updated : item))
-      setDetail(updated)
-      setEditing(false)
-      setStatus(language === 'en-US' ? 'Note saved' : '笔记已保存')
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const remove = async (note: NoteEntry) => {
-    if (!window.confirm(language === 'en-US' ? `Delete "${note.title}"?` : `确定删除“${note.title}”吗？`)) return
-    try {
-      let restorable = detail?.id === note.id ? detail : note
-      if (!restorable.markdown) {
-        const response = await fetch(`/api/notebook/entries/${encodeURIComponent(note.id)}`)
-        const data = await safeJson(response)
-        if (!response.ok) throw new Error(errorMessage(data, response.status))
-        restorable = data.entry as NoteEntry
+      if (knownPaths) {
+        for (const folderPath of currentPaths) {
+          if (!knownPaths.has(folderPath)) next.add(folderPath)
+        }
       }
-      const response = await fetch(`/api/notebook/entries/${encodeURIComponent(note.id)}`, { method: 'DELETE' })
-      if (!response.ok) throw new Error(errorMessage(await safeJson(response), response.status))
-      setDeleted(restorable)
-      setNotes((items) => items.filter((item) => item.id !== note.id))
-      setActiveId((current) => current === note.id ? null : current)
-      setDetail(null)
-      setEditing(false)
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
-    }
-  }
+      return setsEqual(current, next) ? current : next
+    })
+    knownFolderPathsRef.current = currentPaths
+  }, [allFolderPaths])
 
-  const restore = async () => {
-    if (!deleted) return
+  useEffect(() => {
+    saveExpandedNotebookFolders(expandedFolders)
+  }, [expandedFolders])
+
+  const toggleFolder = useCallback((folderPath: string) => {
+    setExpandedFolders((current) => {
+      const next = new Set(current)
+      if (next.has(folderPath)) next.delete(folderPath)
+      else next.add(folderPath)
+      return next
+    })
+  }, [])
+
+  const expandFolderPath = useCallback((folderPath?: string) => {
+    if (!folderPath) return
+    const segments = notebookPathSegments(folderPath)
+    setExpandedFolders((current) => {
+      const next = new Set(current)
+      for (let index = 0; index < segments.length; index += 1) {
+        next.add(segments.slice(0, index + 1).join('/'))
+      }
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (activeEntry?.path) expandFolderPath(parentFolder(activeEntry.path))
+  }, [activeEntry?.id, activeEntry?.path, expandFolderPath])
+
+  const startEdit = useCallback((entry: NotebookEntry) => {
+    setEditTitle(entry.title)
+    setEditPath(entry.path ?? '')
+    setEditMarkdown(entry.markdown ?? '')
+    setEditingId(entry.id)
+  }, [])
+
+  const createEntry = useCallback(async (folderPath?: string, linkedTitle?: string) => {
+    const fallbackTitle = english ? 'Untitled note' : '未命名笔记'
+    const title = linkedTitle?.trim() || fallbackTitle
+    const path = folderPath ? `${folderPath.replace(/\/+$/, '')}/${title}.md` : undefined
     setLoading(true)
     try {
       const response = await fetch('/api/notebook/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          space_id: deleted.space_id,
-          entry_type: deleted.entry_type,
-          title: deleted.title,
-          path: deleted.path,
-          markdown: deleted.markdown,
-          metadata: deleted.metadata,
-          source_session_id: deleted.source_session_id,
-          source_message_id: deleted.source_message_id,
+          space_id: 'default',
+          entry_type: 'note',
+          title,
+          path,
+          markdown: `# ${title}\n\n`,
+          metadata: linkedTitle ? { created_from_unresolved_link: true } : undefined,
         }),
       })
       const data = await safeJson(response)
       if (!response.ok) throw new Error(errorMessage(data, response.status))
-      const restored = { ...(data.entry as NoteEntry), revision: data.revision as string }
-      setNotes((items) => [restored, ...items])
-      setActiveId(restored.id)
-      setDetail(restored)
-      setDeleted(null)
+      const entry = { ...(data.entry as NotebookEntry), revision: data.revision as string }
+      expandFolderPath(folderPath)
+      setEntries((items) => [entry, ...items.filter((item) => item.id !== entry.id)])
+      setActiveId(entry.id)
+      setDetail(entry)
+      setQuery('')
+      startEdit(entry)
+      setStatus(linkedTitle
+        ? (english ? `Created linked note: ${entry.title}` : `已创建关联笔记：${entry.title}`)
+        : (english ? 'Note created' : '笔记已创建'))
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
-  }
+  }, [english, expandFolderPath, startEdit])
 
-  return <main className="flex h-full min-h-0 flex-col bg-white">
-    <header className="flex items-start gap-3 border-b border-gray-200 px-6 py-4">
-      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileText size={21} /></span>
-      <div>
-        <h1 className="text-xl font-semibold text-gray-950">{language === 'en-US' ? 'Notebook' : '笔记'}</h1>
-        <p className="mt-1 text-sm text-gray-500">{language === 'en-US' ? 'Record, organize, read, and edit your Markdown notes.' : '记录、整理、查看和编辑你拥有的 Markdown 笔记。'}</p>
+  const createFolder = useCallback(async (parentPath?: string) => {
+    const name = window.prompt(english ? 'Folder name' : '文件夹名称')
+    if (!name?.trim()) return
+    const path = parentPath ? `${parentPath.replace(/\/+$/, '')}/${name.trim()}` : name.trim()
+    setLoading(true)
+    try {
+      const response = await fetch('/api/notebook/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      })
+      const data = await safeJson(response)
+      if (!response.ok) throw new Error(errorMessage(data, response.status))
+      const nextFolders = ((data.folders ?? []) as string[]).filter(Boolean)
+      const createdPath = ((data.folder as { path?: string } | undefined)?.path ?? path)
+      setFolders(nextFolders)
+      expandFolderPath(createdPath)
+      setQuery('')
+      setStatus(english ? `Created folder: ${createdPath}` : `已创建文件夹：${createdPath}`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [english, expandFolderPath])
+
+  const saveEntry = useCallback(async (entry: NotebookEntry) => {
+    if (!editMarkdown.trim()) return
+    setLoading(true)
+    try {
+      let revision = entry.revision
+      if (!revision) {
+        const detailResponse = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`)
+        const detailData = await safeJson(detailResponse)
+        if (!detailResponse.ok) throw new Error(errorMessage(detailData, detailResponse.status))
+        revision = detailData.revision as string
+      }
+      const title = editTitle.trim() || (english ? 'Untitled note' : '未命名笔记')
+      const response = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_revision: revision,
+          title,
+          path: editPath.trim() || `${title}.md`,
+          markdown: editMarkdown,
+        }),
+      })
+      const data = await safeJson(response)
+      if (!response.ok) throw new Error(errorMessage(data, response.status))
+      const updated = { ...(data.entry as NotebookEntry), revision: data.revision as string }
+      setEntries((items) => items.map((item) => item.id === updated.id ? updated : item))
+      setDetail(updated)
+      setEditingId(null)
+      expandFolderPath(parentFolder(updated.path))
+      setStatus(english ? 'Note saved' : '笔记已保存')
+      await loadDetail(updated.id)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [editMarkdown, editPath, editTitle, english, expandFolderPath, loadDetail])
+
+  const deleteEntry = useCallback(async (entry: NotebookEntry) => {
+    if (!window.confirm(english ? `Delete “${entry.title}”?` : `确定删除“${entry.title}”吗？`)) return
+    const previousEntries = entries
+    try {
+      let restorable = detail?.id === entry.id ? detail : entry
+      if (restorable.markdown === undefined) {
+        const detailResponse = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`)
+        const detailData = await safeJson(detailResponse)
+        if (!detailResponse.ok) throw new Error(errorMessage(detailData, detailResponse.status))
+        restorable = { ...(detailData.entry as NotebookEntry), revision: detailData.revision as string }
+      }
+      setEntries((items) => items.filter((item) => item.id !== entry.id))
+      setActiveId((current) => current === entry.id ? null : current)
+      setEditingId((current) => current === entry.id ? null : current)
+      const response = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`, { method: 'DELETE' })
+      if (!response.ok) throw new Error(errorMessage(await safeJson(response), response.status))
+      setRecentlyDeleted(restorable)
+      setStatus(english ? 'Note deleted' : '笔记已删除')
+    } catch (error) {
+      setEntries(previousEntries)
+      setStatus(error instanceof Error ? error.message : String(error))
+    }
+  }, [detail, english, entries])
+
+  const restoreRecentlyDeleted = useCallback(async () => {
+    if (!recentlyDeleted) return
+    setLoading(true)
+    try {
+      const response = await fetch('/api/notebook/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          space_id: recentlyDeleted.space_id,
+          entry_type: recentlyDeleted.entry_type,
+          title: recentlyDeleted.title,
+          path: recentlyDeleted.path,
+          markdown: recentlyDeleted.markdown,
+          metadata: recentlyDeleted.metadata,
+          source_session_id: recentlyDeleted.source_session_id,
+          source_message_id: recentlyDeleted.source_message_id,
+        }),
+      })
+      const data = await safeJson(response)
+      if (!response.ok) throw new Error(errorMessage(data, response.status))
+      const restored = { ...(data.entry as NotebookEntry), revision: data.revision as string }
+      setEntries((items) => [restored, ...items])
+      setActiveId(restored.id)
+      setDetail(restored)
+      expandFolderPath(parentFolder(restored.path))
+      setRecentlyDeleted(null)
+      setStatus(english ? 'Note restored' : '笔记已恢复')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [english, expandFolderPath, recentlyDeleted])
+
+  return (
+    <main className="flex h-full min-h-0 flex-col bg-white">
+      <header className="flex items-center gap-4 border-b border-gray-200 px-6 py-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+          <BookMarked size={21} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-semibold text-gray-950">{english ? 'Notebook' : '笔记'}</h1>
+          <p className="mt-0.5 truncate text-sm text-gray-500">
+            {english ? 'Your Markdown workspace for writing, organizing, and connecting ideas.' : '用于书写、整理和连接想法的 Markdown 工作区。'}
+          </p>
+        </div>
+        <VaultStatus watch={watch} language={language} />
+        <button
+          className={iconButtonClassName}
+          type="button"
+          disabled={loading}
+          title={english ? 'Refresh Vault' : '刷新 Vault'}
+          aria-label={english ? 'Refresh Vault' : '刷新 Vault'}
+          onClick={() => void loadNotebook(true)}
+        >
+          <RefreshCw size={17} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        <aside className="flex w-80 shrink-0 flex-col border-r border-gray-200 bg-gray-50/70">
+          <div className="border-b border-gray-200 px-3 py-3">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                {english ? 'Explorer' : '资源管理器'}
+              </span>
+              <span className="text-[11px] tabular-nums text-gray-400">
+                {entries.length} {english ? 'notes' : '篇'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button className={primaryCompactButtonClassName} type="button" disabled={loading} onClick={() => void createEntry()}>
+                <Plus size={14} />{english ? 'New note' : '新建笔记'}
+              </button>
+              <button className={compactButtonClassName} type="button" disabled={loading} onClick={() => void createFolder()}>
+                <Folder size={14} />{english ? 'New folder' : '新建目录'}
+              </button>
+            </div>
+            <input
+              className={`${inputClassName} mt-2 h-8 py-1.5 text-xs`}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={english ? 'Filter title, path, or tag' : '筛选标题、路径或标签'}
+              aria-label={english ? 'Filter notes' : '筛选笔记'}
+            />
+          </div>
+
+          {recentlyDeleted && (
+            <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span className="min-w-0 flex-1 truncate">
+                {english ? `Deleted “${recentlyDeleted.title}”` : `已删除“${recentlyDeleted.title}”`}
+              </span>
+              <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => void restoreRecentlyDeleted()}>
+                <Undo2 size={13} />{english ? 'Undo' : '撤销'}
+              </button>
+              <button type="button" aria-label={english ? 'Dismiss' : '关闭'} onClick={() => setRecentlyDeleted(null)}><X size={13} /></button>
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 px-2 py-2">
+            {notebookTree.length === 0 ? (
+              <div className="px-3 py-10 text-center text-sm text-gray-400">
+                {query
+                  ? (english ? 'No matching notes' : '没有匹配的笔记')
+                  : (english ? 'No notes yet' : '还没有笔记')}
+              </div>
+            ) : (
+              <NotebookFileTree
+                nodes={notebookTree}
+                activeEntryId={activeId}
+                expandedFolders={visibleExpandedFolders}
+                language={language}
+                onToggleFolder={toggleFolder}
+                onSelectEntry={(id) => { setActiveId(id); setEditingId(null) }}
+                onCreateEntry={(folderPath) => void createEntry(folderPath)}
+                onCreateFolder={(folderPath) => void createFolder(folderPath)}
+                onDeleteEntry={(entry) => void deleteEntry(entry)}
+              />
+            )}
+          </div>
+          {(status || watch?.last_error) && (
+            <div className={`border-t px-3 py-2 text-xs ${watch?.last_error ? 'border-red-100 bg-red-50 text-red-700' : 'border-gray-200 text-gray-500'}`}>
+              {watch?.last_error || status}
+            </div>
+          )}
+        </aside>
+
+        <NotebookEditor
+          entry={activeEntry}
+          editing={Boolean(activeEntry && editingId === activeEntry.id)}
+          loading={loading}
+          language={language}
+          editTitle={editTitle}
+          editPath={editPath}
+          editMarkdown={editMarkdown}
+          onEditTitleChange={setEditTitle}
+          onEditPathChange={setEditPath}
+          onEditMarkdownChange={setEditMarkdown}
+          onStartEdit={startEdit}
+          onCancelEdit={() => setEditingId(null)}
+          onSave={(entry) => void saveEntry(entry)}
+          onDelete={(entry) => void deleteEntry(entry)}
+          onCreateEntry={() => void createEntry()}
+          onCreateLinkedEntry={(title) => void createEntry(undefined, title)}
+          onSelectEntry={(id) => { setActiveId(id); setEditingId(null) }}
+          onSourceNavigate={onSourceNavigate}
+        />
       </div>
-    </header>
-    <div className="flex min-h-0 flex-1">
-    <aside className="flex w-80 shrink-0 flex-col border-r border-gray-200 bg-gray-50/70">
-      <div className="flex items-center gap-2 border-b border-gray-200 p-4">
-        <button className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 text-sm font-medium text-white" type="button" disabled={loading} onClick={() => void create()}><Plus size={16} />{language === 'en-US' ? 'New note' : '新建笔记'}</button>
-        <button className="rounded-lg border border-gray-200 bg-white p-2 text-gray-600" type="button" disabled={loading} onClick={() => void load()} aria-label="Refresh notes"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button>
-      </div>
-      {deleted && <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900"><span className="min-w-0 flex-1 truncate">{language === 'en-US' ? `Deleted “${deleted.title}”` : `已删除“${deleted.title}”`}</span><button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => void restore()}><Undo2 size={13} />{language === 'en-US' ? 'Undo' : '撤销'}</button><button type="button" onClick={() => setDeleted(null)}><X size={13} /></button></div>}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">{sorted.map((note) => <button key={note.id} type="button" className={`mb-1 flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left ${note.id === activeId ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-700 hover:bg-white'}`} onClick={() => { setActiveId(note.id); setEditing(false) }}><FileText size={16} className="mt-0.5 shrink-0" /><span className="min-w-0"><span className="block truncate text-sm font-medium">{note.title}</span><span className="block truncate text-xs text-gray-400">{note.path || 'Unfiled'}</span></span></button>)}</div>
-      {status && <div className="border-t border-gray-200 px-4 py-2 text-xs text-gray-500">{status}</div>}
-    </aside>
-    <section className="flex min-w-0 flex-1 flex-col">{!active ? <div className="m-auto text-center text-gray-400"><FileText className="mx-auto" size={34} /><p className="mt-3 text-sm">{language === 'en-US' ? 'Create or select a note' : '新建或选择一条笔记'}</p></div> : <>
-      <header className="flex items-start gap-4 border-b border-gray-100 px-7 py-4"><div className="min-w-0 flex-1">{editing ? <div className="grid max-w-2xl gap-2"><input className={inputClassName} value={title} onChange={(event) => setTitle(event.target.value)} aria-label="Note title" /><input className={`${inputClassName} font-mono text-xs`} value={path} onChange={(event) => setPath(event.target.value)} aria-label="Note path" placeholder="folder/note.md" /></div> : <><h2 className="truncate text-xl font-semibold text-gray-950">{active.title}</h2><p className="mt-1 truncate text-xs text-gray-400">{active.path}</p></>}</div><div className="flex gap-2">{editing ? <><button className={buttonClassName} type="button" disabled={loading || !markdown.trim()} onClick={() => void save()}><Save size={15} />{language === 'en-US' ? 'Save' : '保存'}</button><button className={buttonClassName} type="button" onClick={() => setEditing(false)}><X size={15} />{language === 'en-US' ? 'Cancel' : '取消'}</button></> : <><button className={buttonClassName} type="button" onClick={() => startEdit(active)}><Edit3 size={15} />{language === 'en-US' ? 'Edit' : '编辑'}</button><button className={buttonClassName} type="button" onClick={() => void remove(active)}><Trash2 size={15} />{language === 'en-US' ? 'Delete' : '删除'}</button></>}</div></header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">{editing ? <textarea className={`${inputClassName} min-h-[65vh] resize-y font-mono leading-6`} value={markdown} onChange={(event) => setMarkdown(event.target.value)} /> : <div className="max-w-4xl rounded-lg border border-gray-200 bg-gray-50 p-5"><MarkdownMessage text={active.markdown || ' '} onSourceNavigate={onSourceNavigate} /></div>}</div>
-    </>}</section>
-    </div>
-  </main>
+    </main>
+  )
 }
 
-const inputClassName = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
-const buttonClassName = 'inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50'
+function NotebookEditor({
+  entry,
+  editing,
+  loading,
+  language,
+  editTitle,
+  editPath,
+  editMarkdown,
+  onEditTitleChange,
+  onEditPathChange,
+  onEditMarkdownChange,
+  onStartEdit,
+  onCancelEdit,
+  onSave,
+  onDelete,
+  onCreateEntry,
+  onCreateLinkedEntry,
+  onSelectEntry,
+  onSourceNavigate,
+}: {
+  entry: NotebookEntry | null
+  editing: boolean
+  loading: boolean
+  language: 'zh-CN' | 'en-US'
+  editTitle: string
+  editPath: string
+  editMarkdown: string
+  onEditTitleChange: (value: string) => void
+  onEditPathChange: (value: string) => void
+  onEditMarkdownChange: (value: string) => void
+  onStartEdit: (entry: NotebookEntry) => void
+  onCancelEdit: () => void
+  onSave: (entry: NotebookEntry) => void
+  onDelete: (entry: NotebookEntry) => void
+  onCreateEntry: () => void
+  onCreateLinkedEntry: (title: string) => void
+  onSelectEntry: (id: string) => void
+  onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
+}) {
+  const english = language === 'en-US'
+  const [relationsCollapsed, setRelationsCollapsed] = useState(false)
+
+  const wikiLinkResolver = useCallback((target: string): SourceReference | undefined => {
+    if (!entry) return undefined
+    const normalized = target.trim().toLocaleLowerCase()
+    const link = (entry.links ?? []).find((item) => item.target.trim().toLocaleLowerCase() === normalized
+      || item.target_title?.trim().toLocaleLowerCase() === normalized
+      || item.target_id === target)
+    const title = link?.alias || link?.target_title || link?.target || target
+    if (link?.target_id) {
+      return {
+        id: `wiki:${entry.id}:${target}`,
+        label: title,
+        raw: `notebook:${link.target_id}`,
+        surface: 'notebook',
+        title,
+        target: { type: 'notebook', entryId: link.target_id },
+      }
+    }
+    return {
+      id: `wiki:${entry.id}:${target}`,
+      label: title,
+      raw: `notebook:${target}`,
+      surface: 'notebook',
+      title,
+      metadata: { missingReason: english ? 'Create linked note' : '创建关联笔记' },
+    }
+  }, [english, entry])
+
+  if (!entry) {
+    return (
+      <section className="flex min-w-0 flex-1 items-center justify-center px-6">
+        <div className="max-w-md text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><BookMarked size={28} /></div>
+          <h2 className="mt-5 text-xl font-semibold text-gray-950">{english ? 'Create or select a note' : '创建或选择一份笔记'}</h2>
+          <p className="mt-2 text-sm leading-6 text-gray-500">
+            {english ? 'Use folders, Wiki links, tags, and backlinks to build your personal knowledge network.' : '使用目录、Wiki 链接、标签和反向链接构建你的个人知识网络。'}
+          </p>
+          <button className={`${primaryCompactButtonClassName} mx-auto mt-5 px-4`} type="button" onClick={onCreateEntry}>
+            <Plus size={15} />{english ? 'New note' : '新建笔记'}
+          </button>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="flex min-w-0 flex-1 flex-col">
+      <header className="flex items-start gap-4 border-b border-gray-200 px-7 py-4">
+        <div className="min-w-0 flex-1">
+          {editing ? (
+            <div className="grid max-w-2xl gap-2">
+              <input className={`${inputClassName} text-base font-semibold`} value={editTitle} onChange={(event) => onEditTitleChange(event.target.value)} aria-label={english ? 'Note title' : '笔记标题'} />
+              <input className={`${inputClassName} font-mono text-xs`} value={editPath} onChange={(event) => onEditPathChange(event.target.value)} aria-label={english ? 'Note path' : '笔记路径'} placeholder="folder/note.md" />
+            </div>
+          ) : (
+            <>
+              <h2 className="truncate text-xl font-semibold text-gray-950">{entry.title}</h2>
+              <p className="mt-1 truncate font-mono text-xs text-gray-400">{entry.path || `${entry.title}.md`}</p>
+            </>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {editing ? (
+            <>
+              <button className={compactButtonClassName} type="button" disabled={loading || !editMarkdown.trim()} onClick={() => onSave(entry)}><Save size={15} />{english ? 'Save' : '保存'}</button>
+              <button className={compactButtonClassName} type="button" disabled={loading} onClick={onCancelEdit}><X size={15} />{english ? 'Cancel' : '取消'}</button>
+            </>
+          ) : (
+            <>
+              <button className={compactButtonClassName} type="button" disabled={loading} onClick={() => onStartEdit(entry)}><Edit3 size={15} />{english ? 'Edit' : '编辑'}</button>
+              <button className={iconButtonClassName} type="button" disabled={loading} title={english ? 'Delete note' : '删除笔记'} aria-label={english ? 'Delete note' : '删除笔记'} onClick={() => onDelete(entry)}><Trash2 size={16} /></button>
+            </>
+          )}
+        </div>
+      </header>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-w-0 flex-1 overflow-y-auto px-7 py-6">
+          {editing ? (
+            <textarea
+              className={`${inputClassName} min-h-[calc(100vh-245px)] resize-y font-mono leading-6`}
+              value={editMarkdown}
+              onChange={(event) => onEditMarkdownChange(event.target.value)}
+              spellCheck={false}
+              aria-label={english ? 'Markdown editor' : 'Markdown 编辑器'}
+            />
+          ) : (
+            <article className="mx-auto max-w-4xl rounded-xl border border-gray-200 bg-gray-50/60 p-6">
+              <MarkdownMessage
+                text={entry.markdown || ' '}
+                onSourceNavigate={(target, reference) => {
+                  if (target.type === 'notebook') onSelectEntry(target.entryId)
+                  else onSourceNavigate?.(target, reference)
+                }}
+                wikiLinkResolver={wikiLinkResolver}
+                onWikiLinkCreate={onCreateLinkedEntry}
+              />
+            </article>
+          )}
+        </div>
+        {!editing && (
+          <NotebookRelationsPanel
+            entry={entry}
+            collapsed={relationsCollapsed}
+            language={language}
+            onCollapsedChange={setRelationsCollapsed}
+            onSelectEntry={onSelectEntry}
+            onCreateLinkedEntry={onCreateLinkedEntry}
+          />
+        )}
+      </div>
+    </section>
+  )
+}
+
+function NotebookRelationsPanel({ entry, collapsed, language, onCollapsedChange, onSelectEntry, onCreateLinkedEntry }: {
+  entry: NotebookEntry
+  collapsed: boolean
+  language: 'zh-CN' | 'en-US'
+  onCollapsedChange: (collapsed: boolean) => void
+  onSelectEntry: (id: string) => void
+  onCreateLinkedEntry: (title: string) => void
+}) {
+  const english = language === 'en-US'
+  const tags = entry.tags ?? []
+  const links = entry.links ?? []
+  const backlinks = entry.backlinks ?? []
+  const unresolvedLinks = links.filter((link) => !link.resolved)
+  const [localGraphCollapsed, setLocalGraphCollapsed] = useState(false)
+
+  if (collapsed) {
+    return (
+      <aside className="hidden w-12 shrink-0 border-l border-gray-200 bg-white px-1.5 py-4 xl:flex xl:flex-col xl:items-center">
+        <button className={iconButtonClassName} type="button" title={english ? 'Expand relations' : '展开关联信息'} aria-label={english ? 'Expand relations' : '展开关联信息'} onClick={() => onCollapsedChange(false)}><PanelRightOpen size={18} /></button>
+        <div className="mt-5 rotate-90 whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-gray-400">{english ? 'Relations' : '关联'}</div>
+      </aside>
+    )
+  }
+
+  return (
+    <aside className="hidden w-80 shrink-0 overflow-y-auto border-l border-gray-200 bg-white px-4 py-4 xl:block">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{english ? 'Relations' : '关联信息'}</div>
+          <button className={iconButtonClassName} type="button" title={english ? 'Collapse relations' : '收起关联信息'} aria-label={english ? 'Collapse relations' : '收起关联信息'} onClick={() => onCollapsedChange(true)}><PanelRightClose size={16} /></button>
+        </div>
+
+        <NotebookLocalGraph entry={entry} links={links} backlinks={backlinks} collapsed={localGraphCollapsed} language={language} onCollapsedChange={setLocalGraphCollapsed} onSelectEntry={onSelectEntry} onCreateLinkedEntry={onCreateLinkedEntry} />
+
+        <RelationSection icon={AlertTriangle} title={english ? 'Unresolved links' : '未解析链接'}>
+          {unresolvedLinks.length === 0 ? <EmptyRelation text={english ? 'All outgoing links resolve' : '所有出链均已解析'} /> : (
+            <div className="space-y-2">{unresolvedLinks.map((link) => (
+              <button key={`unresolved:${link.raw}:${link.target}`} className="w-full rounded-lg border border-dashed border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm text-amber-800 hover:bg-amber-100" type="button" onClick={() => onCreateLinkedEntry(link.target)}>
+                <span className="block truncate font-medium">{link.alias || link.target}</span>
+                <span className="mt-0.5 block truncate text-xs text-amber-700">{english ? 'Create note' : '点击创建笔记'} · {link.raw}</span>
+              </button>
+            ))}</div>
+          )}
+        </RelationSection>
+
+        <RelationSection icon={Tags} title={english ? 'Tags' : '标签'}>
+          {tags.length === 0 ? <EmptyRelation text={english ? 'No tags yet' : '暂无标签'} /> : (
+            <div className="flex flex-wrap gap-2">{tags.map((tag) => <span key={tag} className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">#{tag}</span>)}</div>
+          )}
+        </RelationSection>
+
+        <RelationSection icon={Link2} title={english ? 'Outgoing links' : '出链'}>
+          {links.length === 0 ? <EmptyRelation text={english ? 'No outgoing links' : '暂无出链'} /> : (
+            <div className="space-y-2">{links.map((link) => (
+              <button key={`${link.raw}:${link.target_id ?? link.target}`} className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${link.resolved ? 'border-blue-100 bg-blue-50/60 text-blue-800 hover:bg-blue-100' : 'border-dashed border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'}`} type="button" onClick={() => link.target_id ? onSelectEntry(link.target_id) : onCreateLinkedEntry(link.target)}>
+                <span className="block truncate font-medium">{link.alias || link.target_title || link.target}</span>
+                <span className="mt-0.5 block text-xs opacity-75">{link.resolved ? (english ? 'Resolved note' : '已解析笔记') : (english ? 'Create note' : '创建笔记')}</span>
+              </button>
+            ))}</div>
+          )}
+        </RelationSection>
+
+        <RelationSection icon={NotebookPen} title={english ? 'Backlinks' : '反向链接'}>
+          {backlinks.length === 0 ? <EmptyRelation text={english ? 'No backlinks yet' : '暂无反向链接'} /> : (
+            <div className="space-y-2">{backlinks.map((backlink) => (
+              <button key={`${backlink.source_entry_id}:${backlink.raw}`} className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-left text-sm text-gray-700 hover:border-blue-100 hover:bg-blue-50" type="button" onClick={() => onSelectEntry(backlink.source_entry_id)}>
+                <span className="block truncate font-medium text-gray-900">{backlink.source_title}</span>
+                <span className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500">{backlink.snippet}</span>
+              </button>
+            ))}</div>
+          )}
+        </RelationSection>
+      </div>
+    </aside>
+  )
+}
+
+function RelationSection({ icon: Icon, title, children }: { icon: typeof Tags; title: string; children: React.ReactNode }) {
+  return <section><div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500"><Icon size={14} />{title}</div>{children}</section>
+}
+
+function EmptyRelation({ text }: { text: string }) {
+  return <div className="text-sm text-gray-400">{text}</div>
+}
+
+function NotebookLocalGraph({ entry, links, backlinks, collapsed, language, onCollapsedChange, onSelectEntry, onCreateLinkedEntry }: {
+  entry: NotebookEntry
+  links: NotebookLink[]
+  backlinks: NotebookBacklink[]
+  collapsed: boolean
+  language: 'zh-CN' | 'en-US'
+  onCollapsedChange: (collapsed: boolean) => void
+  onSelectEntry: (id: string) => void
+  onCreateLinkedEntry: (title: string) => void
+}) {
+  const english = language === 'en-US'
+  const outgoing = links.slice(0, 5)
+  const incoming = backlinks.slice(0, 5)
+  const hasNodes = outgoing.length > 0 || incoming.length > 0
+  return (
+    <section>
+      <button className="mb-2 flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 hover:bg-gray-50 hover:text-blue-700" type="button" aria-expanded={!collapsed} onClick={() => onCollapsedChange(!collapsed)}>
+        <Network size={14} /><span className="flex-1">{english ? 'Local graph' : '局部关系图'}</span><ChevronRight size={14} className={collapsed ? '' : 'rotate-90'} />
+      </button>
+      {!collapsed && <div className="rounded-xl border border-blue-50 bg-gradient-to-b from-blue-50/70 to-white p-3">
+        <div className="flex justify-center"><div className="max-w-full truncate rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm">{entry.title}</div></div>
+        {!hasNodes ? <div className="mt-3 text-center text-xs text-gray-400">{english ? 'No linked notes yet' : '暂无关联笔记'}</div> : (
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <GraphColumn label={english ? 'Out' : '出链'} empty={english ? 'None' : '无'}>
+              {outgoing.map((link) => <button key={`graph-out:${link.raw}:${link.target_id ?? link.target}`} className={`w-full truncate rounded-lg border px-2 py-1.5 text-left text-xs ${link.resolved ? 'border-blue-100 bg-white text-blue-800 hover:bg-blue-50' : 'border-dashed border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'}`} type="button" onClick={() => link.target_id ? onSelectEntry(link.target_id) : onCreateLinkedEntry(link.target)}>{link.alias || link.target_title || link.target}</button>)}
+            </GraphColumn>
+            <GraphColumn label={english ? 'In' : '反链'} empty={english ? 'None' : '无'}>
+              {incoming.map((backlink) => <button key={`graph-in:${backlink.source_entry_id}:${backlink.raw}`} className="w-full truncate rounded-lg border border-gray-100 bg-white px-2 py-1.5 text-left text-xs text-gray-700 hover:border-blue-100 hover:bg-blue-50" type="button" onClick={() => onSelectEntry(backlink.source_entry_id)}>{backlink.source_title}</button>)}
+            </GraphColumn>
+          </div>
+        )}
+      </div>}
+    </section>
+  )
+}
+
+function GraphColumn({ label, empty, children }: { label: string; empty: string; children: React.ReactNode }) {
+  const items = Array.isArray(children) ? children : [children]
+  return <div className="space-y-2"><div className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">{label}</div>{items.length === 0 ? <div className="text-xs text-gray-400">{empty}</div> : children}</div>
+}
+
+function VaultStatus({ watch, language }: { watch: NotebookWatchInfo | null; language: 'zh-CN' | 'en-US' }) {
+  const english = language === 'en-US'
+  if (!watch) return null
+  const healthy = watch.watching && !watch.last_error
+  return (
+    <div className={`hidden max-w-xs items-center gap-2 rounded-lg border px-3 py-2 text-xs lg:flex ${healthy ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-600'}`} title={watch.root ?? undefined}>
+      {healthy ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
+      <span className="truncate">{watch.last_error || (healthy ? (english ? 'Vault watching' : 'Vault 正在监听') : (english ? 'Vault watcher off' : 'Vault 监听未开启'))}</span>
+    </div>
+  )
+}
+
+type NotebookTreeNode =
+  | { type: 'folder'; name: string; path: string; children: NotebookTreeNode[] }
+  | { type: 'entry'; name: string; path: string; entry: NotebookEntry }
+
+type FlatNotebookTreeRow = { node: NotebookTreeNode; depth: number }
+
+const NOTEBOOK_TREE_ROW_HEIGHT = 32
+const NOTEBOOK_TREE_OVERSCAN_ROWS = 12
+const NOTEBOOK_EXPANDED_FOLDERS_KEY = 'folumi:notebook-expanded-folders:v3'
+
+function NotebookFileTree({ nodes, activeEntryId, expandedFolders, language, onToggleFolder, onSelectEntry, onCreateEntry, onCreateFolder, onDeleteEntry }: {
+  nodes: NotebookTreeNode[]
+  activeEntryId: string | null
+  expandedFolders: Set<string>
+  language: 'zh-CN' | 'en-US'
+  onToggleFolder: (folderPath: string) => void
+  onSelectEntry: (id: string) => void
+  onCreateEntry: (folderPath?: string) => void
+  onCreateFolder: (parentPath?: string) => void
+  onDeleteEntry: (entry: NotebookEntry) => void
+}) {
+  const english = language === 'en-US'
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(360)
+  const visibleRows = useMemo(() => flattenVisibleNotebookTree(nodes, expandedFolders), [nodes, expandedFolders])
+  const totalHeight = visibleRows.length * NOTEBOOK_TREE_ROW_HEIGHT
+  const startIndex = Math.max(0, Math.floor(scrollTop / NOTEBOOK_TREE_ROW_HEIGHT) - NOTEBOOK_TREE_OVERSCAN_ROWS)
+  const endIndex = Math.min(visibleRows.length, Math.ceil((scrollTop + viewportHeight) / NOTEBOOK_TREE_ROW_HEIGHT) + NOTEBOOK_TREE_OVERSCAN_ROWS)
+  const renderedRows = visibleRows.slice(startIndex, endIndex)
+
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element) return
+    const measure = () => setViewportHeight(element.clientHeight || 360)
+    measure()
+    const resizeObserver = new ResizeObserver(measure)
+    resizeObserver.observe(element)
+    return () => resizeObserver.disconnect()
+  }, [])
+
+  const openFolderContextMenu = useCallback((event: MouseEvent, node: Extract<NotebookTreeNode, { type: 'folder' }>) => {
+    const opened = openDesktopContextMenu(event.clientX, event.clientY, [
+      { label: expandedFolders.has(node.path) ? (english ? 'Collapse Folder' : '折叠目录') : (english ? 'Expand Folder' : '展开目录'), run: () => onToggleFolder(node.path) },
+      { label: english ? 'New Note Here' : '在此新建笔记', run: () => onCreateEntry(node.path) },
+      { label: english ? 'New Folder Here' : '在此新建目录', run: () => onCreateFolder(node.path) },
+      { label: english ? 'Copy Folder Path' : '复制目录路径', run: () => { void writeClipboardText(node.path) } },
+    ])
+    if (opened) event.preventDefault()
+  }, [english, expandedFolders, onCreateEntry, onCreateFolder, onToggleFolder])
+
+  const openEntryContextMenu = useCallback((event: MouseEvent, entry: NotebookEntry) => {
+    const opened = openDesktopContextMenu(event.clientX, event.clientY, [
+      { label: english ? 'Open Note' : '打开笔记', run: () => onSelectEntry(entry.id) },
+      { label: english ? 'Copy Note Path' : '复制笔记路径', run: () => { void writeClipboardText(entry.path ?? entry.title) } },
+      { label: english ? 'Delete Note' : '删除笔记', run: () => onDeleteEntry(entry) },
+    ])
+    if (opened) event.preventDefault()
+  }, [english, onDeleteEntry, onSelectEntry])
+
+  return (
+    <div ref={containerRef} className="h-full overflow-y-auto" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+      <div className="relative" style={{ height: `${totalHeight}px` }}>
+        <div className="absolute left-0 right-0 top-0" style={{ transform: `translateY(${startIndex * NOTEBOOK_TREE_ROW_HEIGHT}px)` }}>
+          {renderedRows.map(({ node, depth }) => node.type === 'folder' ? (
+            <div key={`folder:${node.path}`} data-surface-context-menu="true" className="group flex h-8 w-full items-center gap-1 rounded-md pr-1 text-sm text-gray-700 hover:bg-white" style={{ paddingLeft: `${6 + depth * 14}px` }} onContextMenu={(event) => openFolderContextMenu(event, node)}>
+              <button className="flex min-w-0 flex-1 items-center gap-1.5 text-left" type="button" onClick={() => onToggleFolder(node.path)}>
+                <ChevronDown size={14} className={`shrink-0 text-gray-400 transition-transform ${expandedFolders.has(node.path) ? '' : '-rotate-90'}`} />
+                {expandedFolders.has(node.path) ? <FolderOpen size={16} className="shrink-0 text-blue-500" /> : <Folder size={16} className="shrink-0 text-gray-500" />}
+                <span className="min-w-0 flex-1 truncate font-medium">{node.name}</span>
+              </button>
+              <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New note here' : '在此新建笔记'} onClick={() => onCreateEntry(node.path)}><FileText size={13} /></button>
+              <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New folder here' : '在此新建目录'} onClick={() => onCreateFolder(node.path)}><Folder size={13} /></button>
+            </div>
+          ) : (
+            <div key={node.entry.id} data-surface-context-menu="true" className={`group flex h-8 w-full items-center rounded-md pr-1 text-sm ${activeEntryId === node.entry.id ? 'bg-white shadow-sm ring-1 ring-blue-100' : 'hover:bg-white'}`} style={{ paddingLeft: `${26 + depth * 14}px` }} onContextMenu={(event) => openEntryContextMenu(event, node.entry)}>
+              <button className="flex min-w-0 flex-1 items-center gap-2 text-left" type="button" title={node.entry.path ?? node.entry.title} onClick={() => onSelectEntry(node.entry.id)}>
+                <FileText size={15} className="shrink-0 text-blue-600" /><span className="min-w-0 flex-1 truncate font-medium text-gray-900">{node.name.replace(/\.md$/i, '')}</span>
+              </button>
+              <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100" type="button" title={english ? 'Delete note' : '删除笔记'} onClick={() => onDeleteEntry(node.entry)}><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function buildNotebookTree(entries: NotebookEntry[], folderPaths: string[]): NotebookTreeNode[] {
+  const root: NotebookTreeNode[] = []
+  const folders = new Map<string, Extract<NotebookTreeNode, { type: 'folder' }>>()
+  const ensureFolder = (segments: string[]) => {
+    let children = root
+    let currentPath = ''
+    for (const segment of segments) {
+      currentPath = currentPath ? `${currentPath}/${segment}` : segment
+      let folder = folders.get(currentPath)
+      if (!folder) {
+        folder = { type: 'folder', name: segment, path: currentPath, children: [] }
+        folders.set(currentPath, folder)
+        children.push(folder)
+        sortNotebookTreeNodes(children)
+      }
+      children = folder.children
+    }
+    return children
+  }
+  for (const folderPath of folderPaths) ensureFolder(notebookPathSegments(folderPath))
+  for (const entry of entries) {
+    const segments = notebookEntryPathSegments(entry)
+    const fileName = segments.pop() ?? `${entry.title || 'Untitled note'}.md`
+    const children = ensureFolder(segments)
+    children.push({ type: 'entry', name: fileName, path: [...segments, fileName].join('/'), entry })
+    sortNotebookTreeNodes(children)
+  }
+  sortNotebookTreeNodes(root)
+  return root
+}
+
+function collectNotebookFolderPaths(nodes: NotebookTreeNode[]) {
+  const paths: string[] = []
+  const visit = (items: NotebookTreeNode[]) => items.forEach((item) => {
+    if (item.type === 'folder') { paths.push(item.path); visit(item.children) }
+  })
+  visit(nodes)
+  return paths
+}
+
+function flattenVisibleNotebookTree(nodes: NotebookTreeNode[], expandedFolders: Set<string>) {
+  const rows: FlatNotebookTreeRow[] = []
+  const visit = (items: NotebookTreeNode[], depth: number) => items.forEach((item) => {
+    rows.push({ node: item, depth })
+    if (item.type === 'folder' && expandedFolders.has(item.path)) visit(item.children, depth + 1)
+  })
+  visit(nodes, 0)
+  return rows
+}
+
+function loadExpandedNotebookFolders() {
+  try {
+    const raw = window.localStorage.getItem(NOTEBOOK_EXPANDED_FOLDERS_KEY)
+    if (!raw) return new Set<string>()
+    const values = JSON.parse(raw)
+    return Array.isArray(values) ? new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)) : new Set<string>()
+  } catch { return new Set<string>() }
+}
+
+function saveExpandedNotebookFolders(folders: Set<string>) {
+  try { window.localStorage.setItem(NOTEBOOK_EXPANDED_FOLDERS_KEY, JSON.stringify([...folders].sort())) } catch { /* localStorage may be unavailable. */ }
+}
+
+function notebookEntryPathSegments(entry: NotebookEntry) {
+  return notebookPathSegments(entry.path || `${entry.title || 'Untitled note'}.md`, `${entry.title || 'Untitled note'}.md`)
+}
+
+function notebookPathSegments(path: string, fallback = '') {
+  const segments = (path || fallback).replace(/\\/g, '/').split('/').map((segment) => segment.trim()).filter((segment) => segment && segment !== '.' && segment !== '..')
+  return segments.length === 0 && fallback ? [fallback] : segments
+}
+
+function parentFolder(path?: string | null) {
+  if (!path) return undefined
+  const segments = notebookPathSegments(path)
+  segments.pop()
+  return segments.join('/') || undefined
+}
+
+function sortNotebookTreeNodes(nodes: NotebookTreeNode[]) {
+  nodes.sort((left, right) => left.type !== right.type ? (left.type === 'folder' ? -1 : 1) : left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true }))
+}
+
+function setsEqual(left: Set<string>, right: Set<string>) {
+  if (left.size !== right.size) return false
+  for (const item of left) if (!right.has(item)) return false
+  return true
+}
 
 async function safeJson(response: Response): Promise<Record<string, unknown>> {
   try { return await response.json() as Record<string, unknown> } catch { return {} }
@@ -228,3 +1004,8 @@ async function safeJson(response: Response): Promise<Record<string, unknown>> {
 function errorMessage(data: Record<string, unknown>, status: number) {
   return typeof data.error === 'string' ? data.error : `HTTP ${status}`
 }
+
+const inputClassName = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
+const compactButtonClassName = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50'
+const primaryCompactButtonClassName = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400'
+const iconButtonClassName = 'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50'
