@@ -510,7 +510,7 @@ fn last_assistant_text(messages: &[AgentMessage]) -> Option<String> {
 }
 
 fn chat_system_prompt() -> String {
-    "You are a knowledgeable tutor. When knowledge_search and knowledge_read are available, \
+    "Use the product-provided Assistant Profile, when present, for identity and communication style. When knowledge_search and knowledge_read are available, \
      use them for facts from the selected Knowledge Base. For a selected Knowledge Base search, set source_id to exactly `course_knowledge`. Search first, then read only the exact \
      opaque references returned by knowledge_search. Base Knowledge Base claims on content returned \
      by knowledge_read, and cite only the citation handles returned by that read. Never cite a \
@@ -529,8 +529,7 @@ fn chat_system_prompt() -> String {
      inventing facts from memory. Use code_exec when the user asks to run or verify code. \
      For non-trivial numeric calculations, approximations, transcendental functions, \
      statistics, simulations, or any answer where exact arithmetic matters, call code_exec \
-     with Python to compute or verify the result before answering. Answer clearly and \
-     concisely."
+     with Python to compute or verify the result before answering."
         .into()
 }
 

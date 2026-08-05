@@ -151,14 +151,10 @@ async fn create_session(
 }
 
 fn assistant_config_from_request(config: CreateAssistantConfig) -> AssistantSessionConfig {
-    AssistantSessionConfig {
-        name: config
-            .name
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "Folumi Assistant".into()),
-        instructions: config.instructions.unwrap_or_default().trim().to_string(),
-    }
+    crate::assistant_profile::normalize_assistant_profile(
+        config.name.as_deref().unwrap_or_default(),
+        config.instructions.as_deref().unwrap_or_default(),
+    )
 }
 
 async fn list_sessions(State(state): State<Arc<SessionsState>>) -> impl IntoResponse {

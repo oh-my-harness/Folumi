@@ -9,9 +9,12 @@ use llm_harness_loop::test_utils::NoOpEnv;
 use llm_harness_types::ExecutionEnv;
 use nltk_porter::{Mode, PorterStemmer};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use tutor_agent::event_sink::{EventSink, SharedEventSink};
 use tutor_agent::governance::GovernanceConfig;
 use tutor_agent::{Capability, CapabilityRouter, LlmConfig};
+
+use crate::session::AssistantSessionConfig;
 
 use super::{
     BENCHMARK_RUN_ID_ENV, FOLUMI_REVISION_ENV, LOCOMO_DATASET_ENV, LOCOMO_MAX_QUESTIONS_ENV,
@@ -22,7 +25,10 @@ use super::{
 
 const LOCOMO_ANSWER_OUTPUT_ENV: &str = "FOLUMI_LOCOMO_ANSWER_OUTPUT";
 const LOCOMO_INCLUDE_TEXT_ENV: &str = "FOLUMI_LOCOMO_INCLUDE_TEXT";
-const ANSWER_PROMPT_REVISION: &str = "folumi-locomo-agent-answer-v1";
+const LOCOMO_ASSISTANT_NAME_ENV: &str = "FOLUMI_LOCOMO_ASSISTANT_NAME";
+const LOCOMO_ASSISTANT_INSTRUCTIONS_ENV: &str = "FOLUMI_LOCOMO_ASSISTANT_INSTRUCTIONS";
+const LOCOMO_ASSISTANT_PROFILE_SOURCE_ENV: &str = "FOLUMI_LOCOMO_ASSISTANT_PROFILE_SOURCE";
+const ANSWER_PROMPT_REVISION: &str = "folumi-locomo-agent-answer-v2";
 const ANSWER_BENCHMARK_INSTRUCTION: &str = "You are being evaluated on questions about earlier conversations. Use History Recall when needed and do not use web search, code execution, or outside factual sources. Answer with only a short phrase, using exact words from the recalled conversations whenever possible. Do not describe searches, tools, or reasoning. If the earlier conversations do not support an answer, reply exactly: No information available.";
 
 #[derive(Clone, Default)]
@@ -48,6 +54,11 @@ impl UsageTotals {
 struct AnswerTrace {
     tool_calls: Vec<String>,
     usage: UsageTotals,
+}
+
+struct BenchmarkAssistantProfile {
+    config: AssistantSessionConfig,
+    source: &'static str,
 }
 
 #[derive(Default)]
@@ -189,6 +200,7 @@ async fn locomo_agent_answer_accuracy_benchmark() {
     let model = llm.model.clone();
     let context_window_tokens = llm.context_window_tokens;
     let client = llm.build_client();
+    let assistant_profile = benchmark_assistant_profile();
     let samples = load_locomo(Path::new(&dataset_path));
     assert!(!samples.is_empty(), "LoCoMo dataset contained no samples");
 
@@ -215,9 +227,10 @@ async fn locomo_agent_answer_accuracy_benchmark() {
         let sink: SharedEventSink = recorder.clone();
         let env = Arc::new(NoOpEnv) as Arc<dyn ExecutionEnv>;
         let instruction = [
-            crate::routes::ws::ASSISTANT_INTERACTION_STYLE_INSTRUCTION,
-            crate::routes::ws::HISTORY_RECALL_TOOL_INSTRUCTION,
-            ANSWER_BENCHMARK_INSTRUCTION,
+            crate::assistant_profile::assistant_profile_instruction(&assistant_profile.config),
+            crate::routes::ws::ASSISTANT_INTERACTION_STYLE_INSTRUCTION.into(),
+            crate::routes::ws::HISTORY_RECALL_TOOL_INSTRUCTION.into(),
+            ANSWER_BENCHMARK_INSTRUCTION.into(),
         ]
         .join("\n\n");
         let router = CapabilityRouter::new(
@@ -339,6 +352,7 @@ async fn locomo_agent_answer_accuracy_benchmark() {
         provider: &provider,
         model: &model,
         context_window_tokens,
+        assistant_profile: &assistant_profile,
         overall: &overall,
         by_category: &by_category,
         samples: sample_reports,
@@ -349,6 +363,40 @@ async fn locomo_agent_answer_accuracy_benchmark() {
         usage: &usage,
         include_text,
     });
+}
+
+fn benchmark_assistant_profile() -> BenchmarkAssistantProfile {
+    let name = std::env::var(LOCOMO_ASSISTANT_NAME_ENV).ok();
+    let instructions = std::env::var(LOCOMO_ASSISTANT_INSTRUCTIONS_ENV).ok();
+    let source = std::env::var(LOCOMO_ASSISTANT_PROFILE_SOURCE_ENV).ok();
+    benchmark_assistant_profile_from_values(
+        name.as_deref(),
+        instructions.as_deref(),
+        source.as_deref(),
+    )
+}
+
+fn benchmark_assistant_profile_from_values(
+    name: Option<&str>,
+    instructions: Option<&str>,
+    source: Option<&str>,
+) -> BenchmarkAssistantProfile {
+    let overridden = name.is_some_and(|value| !value.trim().is_empty())
+        || instructions.is_some_and(|value| !value.trim().is_empty());
+    let defaults = AssistantSessionConfig::default();
+    BenchmarkAssistantProfile {
+        config: crate::assistant_profile::normalize_assistant_profile(
+            name.unwrap_or(&defaults.name),
+            instructions.unwrap_or(&defaults.instructions),
+        ),
+        source: match source.map(str::trim) {
+            Some("product_settings") => "product_settings",
+            Some("benchmark_override") => "benchmark_override",
+            Some("product_default") => "product_default",
+            _ if overridden => "benchmark_override",
+            _ => "product_default",
+        },
+    }
 }
 
 fn answer_prompt(qa: &LocomoQuestion) -> String {
@@ -543,6 +591,7 @@ struct AnswerReportInput<'a> {
     provider: &'a str,
     model: &'a str,
     context_window_tokens: Option<u32>,
+    assistant_profile: &'a BenchmarkAssistantProfile,
     overall: &'a AnswerMetrics,
     by_category: &'a BTreeMap<u8, AnswerMetrics>,
     samples: Vec<Value>,
@@ -590,6 +639,10 @@ fn write_answer_report(input: AnswerReportInput<'_>) {
             "context_window_tokens": input.context_window_tokens,
             "max_output_tokens": 8192,
             "prompt_revision": ANSWER_PROMPT_REVISION,
+            "assistant_profile": assistant_profile_report(
+                input.assistant_profile,
+                input.include_text,
+            ),
             "scorer": "locomo_official_token_f1_compatible",
             "category_5_protocol": "free_form_abstention",
             "saved_memory_enabled": false,
@@ -635,6 +688,25 @@ fn write_answer_report(input: AnswerReportInput<'_>) {
         )
     });
     println!("locomo_answer report={}", output_path.display());
+}
+
+fn assistant_profile_report(profile: &BenchmarkAssistantProfile, include_text: bool) -> Value {
+    let mut value = json!({
+        "name": profile.config.name.as_str(),
+        "source": profile.source,
+        "instructions_sha256": sha256_hex(profile.config.instructions.as_bytes()),
+        "revision": sha256_hex(
+            format!("{}\0{}", profile.config.name, profile.config.instructions).as_bytes(),
+        ),
+    });
+    if include_text {
+        value["instructions"] = json!(profile.config.instructions.as_str());
+    }
+    value
+}
+
+fn sha256_hex(value: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(value))
 }
 
 fn usage_report(usage: &UsageTotals) -> Value {
@@ -684,6 +756,50 @@ fn locomo_official_compatible_scorer_handles_categories() {
         1.0
     );
     assert!(official_exact_match(2, "7 May 2023", "May 7, 2023"));
+}
+
+#[test]
+fn benchmark_assistant_profile_uses_product_default_or_explicit_override() {
+    let defaults = benchmark_assistant_profile_from_values(None, None, None);
+    assert_eq!(defaults.source, "product_default");
+    assert_eq!(
+        defaults.config.instructions,
+        crate::assistant_profile::DEFAULT_ASSISTANT_INSTRUCTIONS
+    );
+
+    let custom = benchmark_assistant_profile_from_values(
+        Some("Mori"),
+        Some("Return only the requested answer."),
+        None,
+    );
+    assert_eq!(custom.source, "benchmark_override");
+    assert_eq!(custom.config.name, "Mori");
+    assert_eq!(
+        custom.config.instructions,
+        "Return only the requested answer."
+    );
+}
+
+#[test]
+fn benchmark_assistant_profile_report_hides_text_by_default() {
+    let profile =
+        benchmark_assistant_profile_from_values(Some("Mori"), Some("Private style"), None);
+    let public = assistant_profile_report(&profile, false);
+    assert!(public.get("instructions").is_none());
+    assert_eq!(public["instructions_sha256"].as_str().unwrap().len(), 64);
+
+    let local = assistant_profile_report(&profile, true);
+    assert_eq!(local["instructions"], "Private style");
+}
+
+#[test]
+fn benchmark_assistant_profile_preserves_product_settings_source() {
+    let profile = benchmark_assistant_profile_from_values(
+        Some("My Folumi"),
+        Some("Be practical."),
+        Some("product_settings"),
+    );
+    assert_eq!(profile.source, "product_settings");
 }
 
 #[test]

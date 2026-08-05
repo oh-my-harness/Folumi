@@ -12,8 +12,10 @@ from unittest.mock import patch
 from tools.locomo_benchmark_ui.server import (
     BenchmarkApplication,
     ConfigurationError,
+    ProductAssistantProfile,
     build_command,
     build_environment,
+    load_product_assistant_profile,
     make_handler,
     validate_run_config,
 )
@@ -76,6 +78,8 @@ class BenchmarkServerTest(unittest.TestCase):
             "run_id": "answer-smoke",
             "provider": "openai",
             "model": "test-model",
+            "assistant_name": "Mori",
+            "assistant_instructions": "Return only the requested answer.",
         }
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(ConfigurationError, "OPENAI_API_KEY"):
@@ -85,7 +89,66 @@ class BenchmarkServerTest(unittest.TestCase):
             environment = build_environment(self.repo_root, run)
 
         self.assertEqual(environment["OPENAI_API_KEY"], "temporary-secret")
+        self.assertEqual(environment["FOLUMI_LOCOMO_ASSISTANT_NAME"], "Mori")
+        self.assertEqual(
+            environment["FOLUMI_LOCOMO_ASSISTANT_INSTRUCTIONS"],
+            "Return only the requested answer.",
+        )
+        self.assertEqual(
+            environment["FOLUMI_LOCOMO_ASSISTANT_PROFILE_SOURCE"],
+            "benchmark_override",
+        )
         self.assertNotIn("temporary-secret", " ".join(build_command(run)))
+
+    def test_product_profile_is_loaded_without_exposing_other_settings(self) -> None:
+        settings_path = self.repo_root / "desktop-settings.json"
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "assistantName": "峰哥",
+                    "assistantInstructions": "像一个可靠的长期搭档。",
+                    "apiKey": "must-not-leak",
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        profile = load_product_assistant_profile(self.repo_root, settings_path)
+        self.assertEqual(
+            profile,
+            ProductAssistantProfile("峰哥", "像一个可靠的长期搭档。"),
+        )
+        application = BenchmarkApplication(self.repo_root, 0, settings_path)
+        serialized_state = json.dumps(application.state(), ensure_ascii=False)
+        self.assertIn("峰哥", serialized_state)
+        self.assertNotIn("像一个可靠的长期搭档。", serialized_state)
+        self.assertNotIn("must-not-leak", serialized_state)
+
+    def test_answer_can_use_current_product_profile(self) -> None:
+        profile = ProductAssistantProfile("峰哥", "像一个可靠的长期搭档。")
+        payload = {
+            "kind": "answer",
+            "dataset": str(self.dataset),
+            "run_id": "product-profile",
+            "provider": "openai",
+            "model": "test-model",
+            "api_key": "temporary-secret",
+            "assistant_profile_mode": "product",
+        }
+
+        run = validate_run_config(self.repo_root, payload, profile)
+        environment = build_environment(self.repo_root, run)
+
+        self.assertEqual(environment["FOLUMI_LOCOMO_ASSISTANT_NAME"], "峰哥")
+        self.assertEqual(
+            environment["FOLUMI_LOCOMO_ASSISTANT_INSTRUCTIONS"],
+            "像一个可靠的长期搭档。",
+        )
+        self.assertEqual(
+            environment["FOLUMI_LOCOMO_ASSISTANT_PROFILE_SOURCE"],
+            "product_settings",
+        )
 
     def test_existing_output_is_never_overwritten(self) -> None:
         output = self.repo_root / "benchmarks/locomo/results/repeated.json"

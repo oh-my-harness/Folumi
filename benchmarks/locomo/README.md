@@ -10,16 +10,17 @@
 .\scripts\locomo-benchmark.ps1
 ```
 
-脚本会在本机打开一个 Benchmark 控制台。页面可以选择检索或端到端回答评测，配置 LoCoMo 数据集路径、Debug/Release、Sample 数、每组题目数、Run ID、模型和 API 服务，并实时显示 Cargo 日志、聚合指标、分类指标、历史结果和对比图。建议先用 `1` 个 Sample、`5` 道题做 smoke test，再逐步扩大范围；回答评测会产生真实的模型调用和费用。
+脚本会在本机打开一个 Benchmark 控制台。页面可以选择检索或端到端回答评测，配置 LoCoMo 数据集路径、Debug/Release、Sample 数、每组题目数、Run ID、模型、API 服务和本次运行使用的 Assistant Profile，并实时显示 Cargo 日志、聚合指标、分类指标、历史结果和对比图。回答评测可以直接复用桌面端当前 Assistant Profile，也可以选择只对本次实验生效的 Benchmark 专用配置。建议先用 `1` 个 Sample、`5` 道题做 smoke test，再逐步扩大范围；回答评测会产生真实的模型调用和费用。
 
 也可以预先指定数据集、端口，或只启动服务而不自动打开浏览器：
 
 ```powershell
 .\scripts\locomo-benchmark.ps1 -Dataset 'C:\path\to\locomo\data\locomo10.json' -Port 8765
+.\scripts\locomo-benchmark.ps1 -SettingsPath 'C:\path\to\settings.json'
 .\scripts\locomo-benchmark.ps1 -NoBrowser
 ```
 
-控制台只监听 `127.0.0.1`。页面中输入的 API Key 不写入浏览器存储、结果文件或日志，只存在于控制台进程内存及当前评测子进程环境；也可以在启动脚本前设置服务商对应的环境变量，让页面的 Key 输入框保持为空。关闭运行脚本的终端即可关闭控制台。
+控制台会自动尝试读取桌面端 `settings.json`，但只提取 `assistantName` 和 `assistantInstructions`；不会使用、返回或保存其中的 API Key 等其他设置。身份说明原文也不会返回给页面，页面只显示是否已配置及字符数。`-SettingsPath` 可用于显式指定另一个设置文件。控制台只监听 `127.0.0.1`。页面中输入的 API Key 不写入浏览器存储、结果文件或日志，只存在于控制台进程内存及当前评测子进程环境；也可以在启动脚本前设置服务商对应的环境变量，让页面的 Key 输入框保持为空。关闭运行脚本的终端即可关闭控制台。
 
 ## 记录一次检索评测
 
@@ -65,6 +66,9 @@ $env:FOLUMI_BENCHMARK_RUNTIME_REVISION='66f983d0a4c024c34e70bff3587cd4c44fb3b26f
 $env:FOLUMI_BENCHMARK_LOCOMO_REVISION='3eb6f2c585f5e1699204e3c3bdf7adc5c28cb376'
 $env:LLM_PROVIDER='anthropic' # 也可以使用 openai / deepseek
 $env:LLM_MODEL='固定的模型 ID'
+# 可选；留空时使用代码中公开的 Folumi 默认 Assistant Profile。
+$env:FOLUMI_LOCOMO_ASSISTANT_NAME='Folumi Assistant'
+$env:FOLUMI_LOCOMO_ASSISTANT_INSTRUCTIONS='Answer directly and keep responses concise.'
 # 另行设置对应服务商的 API key 环境变量，禁止打印或提交密钥。
 $env:CARGO_BUILD_JOBS='1'
 cargo test -p tutor-web --lib locomo_agent_answer_accuracy_benchmark -- --ignored --nocapture
@@ -72,7 +76,9 @@ cargo test -p tutor-web --lib locomo_agent_answer_accuracy_benchmark -- --ignore
 
 正式全量运行时，请清除 `FOLUMI_LOCOMO_MAX_SAMPLES` 和 `FOLUMI_LOCOMO_MAX_QUESTIONS`。每道题使用独立的临时答题 Session，确保先前的模型回答不会进入 History Recall 并污染后续问题。
 
-默认结果不包含题目、标准答案和模型回答正文，避免提交聚合指标时重新分发数据集。只有在本地分析失败样本时才应设置 `FOLUMI_LOCOMO_INCLUDE_TEXT=true`，并且不得提交由此生成的结果文件。
+默认结果不包含题目、标准答案、模型回答正文或 Assistant Profile 说明原文，避免提交聚合指标时重新分发数据集或泄露用户配置。结果始终记录角色名称、来源和说明内容的 SHA-256；只有在本地分析失败样本时才应设置 `FOLUMI_LOCOMO_INCLUDE_TEXT=true`，此时结果也会保存角色说明原文，并且不得提交由此生成的结果文件。
+
+Assistant Profile 是角色身份和稳定沟通风格的唯一来源。Benchmark 的短答案要求是临时 Task Overlay，不会写回角色配置。比较两次结果时，应同时检查 `configuration.assistant_profile.instructions_sha256`、模型、`prompt_revision` 和数据版本；任一项不同都应视为不同实验条件。
 
 Category 1–4 按照 LoCoMo 的分类规则计算 token F1。Category 5 使用自由回答形式的拒答文本（`No information available`），而不是论文运行脚本中的二选一展示，因此该类别的拒答准确率是 Folumi 产品指标，不能与论文分数直接横向比较。
 

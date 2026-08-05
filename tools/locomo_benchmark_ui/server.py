@@ -50,6 +50,12 @@ class ConfigurationError(ValueError):
 
 
 @dataclass(frozen=True)
+class ProductAssistantProfile:
+    name: str
+    instructions: str
+
+
+@dataclass(frozen=True)
 class ValidatedRun:
     kind: str
     dataset: Path
@@ -63,6 +69,9 @@ class ValidatedRun:
     api_key: str | None
     base_url: str | None
     chat_path: str | None
+    assistant_name: str | None
+    assistant_instructions: str | None
+    assistant_profile_source: str | None
     include_text: bool
 
 
@@ -82,7 +91,43 @@ def positive_optional_int(value: Any, name: str) -> int | None:
     return parsed
 
 
-def validate_run_config(repo_root: Path, payload: dict[str, Any]) -> ValidatedRun:
+def load_product_assistant_profile(
+    repo_root: Path, settings_path: Path | None = None
+) -> ProductAssistantProfile | None:
+    candidates: list[Path] = []
+    explicit_path = settings_path or (
+        Path(os.environ["FOLUMI_BENCHMARK_SETTINGS_PATH"])
+        if os.environ.get("FOLUMI_BENCHMARK_SETTINGS_PATH")
+        else None
+    )
+    if explicit_path:
+        candidates.append(explicit_path.expanduser())
+    app_data = os.environ.get("APPDATA")
+    if app_data:
+        candidates.append(Path(app_data) / "com.gkxtwork.llmtutor" / "settings.json")
+    candidates.append(repo_root / ".llm-tutor" / "settings.json")
+
+    for candidate in candidates:
+        try:
+            settings = json.loads(candidate.resolve().read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(settings, dict):
+            continue
+        name = settings.get("assistantName", "")
+        instructions = settings.get("assistantInstructions", "")
+        return ProductAssistantProfile(
+            name=name.strip() if isinstance(name, str) else "",
+            instructions=instructions.strip() if isinstance(instructions, str) else "",
+        )
+    return None
+
+
+def validate_run_config(
+    repo_root: Path,
+    payload: dict[str, Any],
+    product_assistant_profile: ProductAssistantProfile | None = None,
+) -> ValidatedRun:
     kind = str(payload.get("kind", "")).strip().lower()
     if kind not in BENCHMARKS:
         raise ConfigurationError("评测类型必须是 retrieval 或 answer")
@@ -114,6 +159,7 @@ def validate_run_config(repo_root: Path, payload: dict[str, Any]) -> ValidatedRu
         raise ConfigurationError(f"结果文件已存在，请更换 Run ID：{output_path.name}")
 
     provider = model = api_key = base_url = chat_path = None
+    assistant_name = assistant_instructions = assistant_profile_source = None
     include_text = bool(payload.get("include_text", False))
     if kind == "answer":
         provider = str(payload.get("provider", "")).strip().lower()
@@ -125,6 +171,26 @@ def validate_run_config(repo_root: Path, payload: dict[str, Any]) -> ValidatedRu
         api_key = str(payload.get("api_key", "")).strip() or None
         base_url = str(payload.get("base_url", "")).strip() or None
         chat_path = str(payload.get("chat_path", "")).strip() or None
+        default_profile_mode = "product" if product_assistant_profile else "custom"
+        profile_mode = str(payload.get("assistant_profile_mode", default_profile_mode)).strip().lower()
+        if profile_mode not in {"product", "custom"}:
+            raise ConfigurationError("Assistant Profile 必须选择产品当前配置或 Benchmark 专用配置")
+        if profile_mode == "product":
+            if product_assistant_profile is None:
+                raise ConfigurationError("未找到产品当前配置，请选择 Benchmark 专用配置")
+            assistant_name = product_assistant_profile.name or None
+            assistant_instructions = product_assistant_profile.instructions or None
+            assistant_profile_source = "product_settings"
+        else:
+            assistant_name = str(payload.get("assistant_name", "")).strip() or None
+            assistant_instructions = str(payload.get("assistant_instructions", "")).strip() or None
+            assistant_profile_source = (
+                "benchmark_override" if assistant_name or assistant_instructions else "product_default"
+            )
+        if assistant_name and len(assistant_name) > 120:
+            raise ConfigurationError("助手名称不能超过 120 个字符")
+        if assistant_instructions and len(assistant_instructions) > 12_000:
+            raise ConfigurationError("助手身份与行为说明不能超过 12000 个字符")
         key_env = provider_key_env(provider)
         if api_key is None and not os.environ.get(key_env):
             raise ConfigurationError(f"请填写 API Key，或在启动控制台前设置 {key_env}")
@@ -142,6 +208,9 @@ def validate_run_config(repo_root: Path, payload: dict[str, Any]) -> ValidatedRu
         api_key=api_key,
         base_url=base_url,
         chat_path=chat_path,
+        assistant_name=assistant_name,
+        assistant_instructions=assistant_instructions,
+        assistant_profile_source=assistant_profile_source,
         include_text=include_text,
     )
 
@@ -224,6 +293,18 @@ def build_environment(repo_root: Path, run: ValidatedRun) -> dict[str, str]:
             env["FOLUMI_LOCOMO_INCLUDE_TEXT"] = "true"
         else:
             env.pop("FOLUMI_LOCOMO_INCLUDE_TEXT", None)
+        for name in (
+            "FOLUMI_LOCOMO_ASSISTANT_NAME",
+            "FOLUMI_LOCOMO_ASSISTANT_INSTRUCTIONS",
+            "FOLUMI_LOCOMO_ASSISTANT_PROFILE_SOURCE",
+        ):
+            env.pop(name, None)
+        if run.assistant_name:
+            env["FOLUMI_LOCOMO_ASSISTANT_NAME"] = run.assistant_name
+        if run.assistant_instructions:
+            env["FOLUMI_LOCOMO_ASSISTANT_INSTRUCTIONS"] = run.assistant_instructions
+        if run.assistant_profile_source:
+            env["FOLUMI_LOCOMO_ASSISTANT_PROFILE_SOURCE"] = run.assistant_profile_source
     return env
 
 
@@ -383,12 +464,15 @@ class RunManager:
 
 
 class BenchmarkApplication:
-    def __init__(self, repo_root: Path, port: int):
+    def __init__(self, repo_root: Path, port: int, settings_path: Path | None = None):
         self.repo_root = repo_root.resolve()
         self.static_root = Path(__file__).resolve().parent / "static"
         self.port = port
         self.token = secrets.token_urlsafe(32)
         self.manager = RunManager(self.repo_root)
+        self.product_assistant_profile = load_product_assistant_profile(
+            self.repo_root, settings_path
+        )
 
     def state(self) -> dict[str, Any]:
         return {
@@ -399,6 +483,19 @@ class BenchmarkApplication:
                 provider: bool(os.environ.get(provider_key_env(provider)))
                 for provider in ("anthropic", "openai", "deepseek")
             },
+            "product_assistant_profile": (
+                {
+                    "name": self.product_assistant_profile.name,
+                    "has_custom_instructions": bool(
+                        self.product_assistant_profile.instructions
+                    ),
+                    "instructions_length": len(
+                        self.product_assistant_profile.instructions
+                    ),
+                }
+                if self.product_assistant_profile
+                else None
+            ),
         }
 
     def results(self) -> dict[str, Any]:
@@ -487,7 +584,11 @@ def make_handler(application: BenchmarkApplication):
             try:
                 payload = self._read_json()
                 if self.path == "/api/run":
-                    run = validate_run_config(application.repo_root, payload)
+                    run = validate_run_config(
+                        application.repo_root,
+                        payload,
+                        application.product_assistant_profile,
+                    )
                     application.manager.start(run)
                     self._json({"ok": True, "run_id": run.run_id}, HTTPStatus.ACCEPTED)
                 elif self.path == "/api/stop":
@@ -569,6 +670,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Folumi LoCoMo benchmark 本地控制台")
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--settings-path", type=Path)
     parser.add_argument("--no-browser", action="store_true")
     return parser.parse_args()
 
@@ -580,7 +682,7 @@ def main() -> int:
         raise SystemExit(f"不是 Folumi 仓库：{repo_root}")
     if args.port < 0 or args.port > 65535:
         raise SystemExit("端口必须在 0 到 65535 之间")
-    application = BenchmarkApplication(repo_root, args.port)
+    application = BenchmarkApplication(repo_root, args.port, args.settings_path)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(application))
     application.port = server.server_port
     url = f"http://127.0.0.1:{server.server_port}/"

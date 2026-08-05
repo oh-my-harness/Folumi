@@ -56,8 +56,8 @@ pub struct AssistantSessionConfig {
 impl Default for AssistantSessionConfig {
     fn default() -> Self {
         Self {
-            name: "Folumi Assistant".into(),
-            instructions: String::new(),
+            name: crate::assistant_profile::DEFAULT_ASSISTANT_NAME.into(),
+            instructions: crate::assistant_profile::DEFAULT_ASSISTANT_INSTRUCTIONS.into(),
         }
     }
 }

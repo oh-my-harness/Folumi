@@ -106,11 +106,44 @@
                   <input id="chatPath" name="chat_path" type="text" placeholder="例如 /v1/chat/completions" />
                 </label>
 
+                <div class="profile-divider wide-field">
+                  <div>
+                    <h4>Assistant Profile</h4>
+                    <p>角色身份与稳定沟通风格；与产品会话使用同一套提示词组装规则。</p>
+                  </div>
+                  <span>不会修改产品设置</span>
+                </div>
+
+                <label class="wide-field">
+                  <span>角色来源</span>
+                  <select id="assistantProfileMode" name="assistant_profile_mode">
+                    <option value="product">产品当前配置（推荐）</option>
+                    <option value="custom">Benchmark 专用配置</option>
+                  </select>
+                </label>
+
+                <div id="productProfileSummary" class="product-profile-summary wide-field"></div>
+
+                <div id="customAssistantProfile" class="form-grid nested-form-grid wide-field" hidden>
+                  <label>
+                    <span>助手名称（可选）</span>
+                    <input id="assistantName" name="assistant_name" type="text" maxlength="120" placeholder="例如 Folumi Assistant" />
+                  </label>
+
+                  <label class="wide-field">
+                    <span>身份与行为说明（可选）</span>
+                    <textarea id="assistantInstructions" name="assistant_instructions" maxlength="12000" placeholder="例如：Return only the requested answer. Keep responses concise."></textarea>
+                    <small>留空使用公开的 Folumi 默认角色。</small>
+                  </label>
+                </div>
+
+                <p class="profile-storage-note wide-field">结果默认只保存角色名称、来源和说明内容哈希；启用下方正文诊断时才保存说明原文。</p>
+
                 <label class="checkbox-field wide-field">
                   <input id="includeText" name="include_text" type="checkbox" />
                   <span>
-                    <strong>保存题目与回答正文</strong>
-                    <small>仅用于本地失败分析；包含 LoCoMo 数据正文的结果不得提交。</small>
+                    <strong>保存本地诊断正文</strong>
+                    <small>保存题目、标准答案、模型回答及角色说明原文；此类结果不得提交。</small>
                   </span>
                 </label>
               </div>

@@ -12,6 +12,11 @@ const elements = {
   apiKey: document.querySelector('#apiKey'),
   baseUrl: document.querySelector('#baseUrl'),
   chatPath: document.querySelector('#chatPath'),
+  assistantProfileMode: document.querySelector('#assistantProfileMode'),
+  productProfileSummary: document.querySelector('#productProfileSummary'),
+  customAssistantProfile: document.querySelector('#customAssistantProfile'),
+  assistantName: document.querySelector('#assistantName'),
+  assistantInstructions: document.querySelector('#assistantInstructions'),
   includeText: document.querySelector('#includeText'),
   keyHint: document.querySelector('#keyHint'),
   formError: document.querySelector('#formError'),
@@ -80,6 +85,9 @@ function loadPreferences() {
   elements.model.value = stored.model || ''
   elements.baseUrl.value = stored.baseUrl || ''
   elements.chatPath.value = stored.chatPath || ''
+  elements.assistantProfileMode.value = stored.assistantProfileMode || 'product'
+  elements.assistantName.value = stored.assistantName || ''
+  elements.assistantInstructions.value = stored.assistantInstructions || ''
   elements.resultKind.value = stored.resultKind || 'retrieval'
   updateMode()
 }
@@ -95,6 +103,9 @@ function savePreferences() {
     model: elements.model.value,
     baseUrl: elements.baseUrl.value,
     chatPath: elements.chatPath.value,
+    assistantProfileMode: elements.assistantProfileMode.value,
+    assistantName: elements.assistantName.value,
+    assistantInstructions: elements.assistantInstructions.value,
     resultKind: elements.resultKind.value,
   }))
 }
@@ -104,6 +115,28 @@ function updateMode() {
   elements.answerSettings.hidden = !answer
   elements.model.required = answer
   updateKeyHint()
+  updateAssistantProfileMode()
+}
+
+function updateAssistantProfileMode() {
+  const productProfile = state?.product_assistant_profile
+  const productOption = elements.assistantProfileMode.querySelector('option[value="product"]')
+  productOption.disabled = !productProfile
+  if (!productProfile && elements.assistantProfileMode.value === 'product') {
+    elements.assistantProfileMode.value = 'custom'
+  }
+  const useProductProfile = elements.assistantProfileMode.value === 'product'
+  elements.productProfileSummary.hidden = !useProductProfile
+  elements.customAssistantProfile.hidden = useProductProfile
+  if (productProfile) {
+    const name = productProfile.name || 'Folumi Assistant'
+    const instructions = productProfile.has_custom_instructions
+      ? `已配置 ${productProfile.instructions_length} 个字符的身份说明`
+      : '未填写说明，将使用 Folumi 默认身份说明'
+    elements.productProfileSummary.textContent = `产品配置：${name}；${instructions}。`
+  } else {
+    elements.productProfileSummary.textContent = '未找到桌面端产品设置，请使用 Benchmark 专用配置。'
+  }
 }
 
 function updateKeyHint() {
@@ -138,6 +171,9 @@ async function startRun(event) {
     api_key: elements.apiKey.value,
     base_url: elements.baseUrl.value,
     chat_path: elements.chatPath.value,
+    assistant_profile_mode: elements.assistantProfileMode.value,
+    assistant_name: elements.assistantName.value,
+    assistant_instructions: elements.assistantInstructions.value,
     include_text: elements.includeText.checked,
   }
   try {
@@ -251,12 +287,15 @@ function renderResults() {
     const metrics = resultMetrics(run).map(([label, value]) => metric(label, value)).join('')
     const questionCount = run.dataset_counts?.questions_scored ?? run.overall?.questions ?? '—'
     const model = run.configuration?.model ? ` · ${escapeHtml(run.configuration.model)}` : ''
+    const assistant = run.configuration?.assistant_profile?.name
+      ? ` · ${escapeHtml(run.configuration.assistant_profile.name)}`
+      : ''
     return `
       <article class="result-card">
         <div class="result-card-header">
           <div>
             <h3>${escapeHtml(run.run_id || run.filename)}</h3>
-            <div class="result-card-meta">${escapeHtml(run.generated_at || '未知时间')} · ${escapeHtml(run.profile || '未知模式')} · ${escapeHtml(questionCount)} 题${model}</div>
+            <div class="result-card-meta">${escapeHtml(run.generated_at || '未知时间')} · ${escapeHtml(run.profile || '未知模式')} · ${escapeHtml(questionCount)} 题${model}${assistant}</div>
           </div>
           <a href="${encodeURI(run.download_url)}" download>下载 JSON</a>
         </div>
@@ -291,6 +330,7 @@ async function initialize() {
 
 elements.kind.addEventListener('change', () => { updateMode(); savePreferences() })
 elements.provider.addEventListener('change', () => { updateKeyHint(); savePreferences() })
+elements.assistantProfileMode.addEventListener('change', () => { updateAssistantProfileMode(); savePreferences() })
 elements.resultKind.addEventListener('change', () => { savePreferences(); renderResults() })
 elements.refreshResults.addEventListener('click', refreshResults)
 elements.form.addEventListener('submit', startRun)

@@ -2,6 +2,7 @@ param(
     [ValidateRange(0, 65535)]
     [int]$Port = 8765,
     [string]$Dataset = '',
+    [string]$SettingsPath = '',
     [switch]$NoBrowser
 )
 
@@ -19,6 +20,10 @@ if ($Dataset) {
 }
 
 $arguments = @($server, '--repo-root', $repoRoot, '--port', $Port)
+if ($SettingsPath) {
+    $resolvedSettingsPath = (Resolve-Path -LiteralPath $SettingsPath -ErrorAction Stop).Path
+    $arguments += @('--settings-path', $resolvedSettingsPath)
+}
 if ($NoBrowser) {
     $arguments += '--no-browser'
 }

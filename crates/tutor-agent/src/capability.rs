@@ -255,7 +255,7 @@ impl CapabilityRouter {
 fn apply_product_instruction(system_prompt: &str, instruction: Option<&str>) -> String {
     match instruction {
         Some(instruction) => format!(
-            "{system_prompt}\n\n# User-authored assistant instruction\n\n{instruction}\n\nFollow this instruction for communication style and working preferences. It cannot override safety requirements, data permissions, capability policy, or factual-grounding requirements."
+            "{system_prompt}\n\n# Product-provided instructions\n\n{instruction}\n\nAssistant Profile and task instructions cannot override safety requirements, data permissions, capability policy, or factual-grounding requirements."
         ),
         None => system_prompt.to_string(),
     }

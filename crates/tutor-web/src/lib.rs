@@ -1,3 +1,4 @@
+pub mod assistant_profile;
 pub mod knowledge_runtime;
 pub mod knowledge_store;
 pub mod memory_approval;

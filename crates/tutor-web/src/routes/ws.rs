@@ -637,7 +637,7 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             entry.temporary,
         );
         let mut product_instructions = vec![
-            assistant_product_instruction(&entry.assistant),
+            crate::assistant_profile::assistant_profile_instruction(&entry.assistant),
             ASSISTANT_INTERACTION_STYLE_INSTRUCTION.into(),
         ];
         if memory_enabled {
@@ -785,19 +785,6 @@ fn session_memory_features(
 ) -> (bool, bool) {
     let memory_enabled = memory_enabled && !temporary;
     (memory_enabled, memory_enabled && history_recall_enabled)
-}
-
-fn assistant_product_instruction(assistant: &crate::session::AssistantSessionConfig) -> String {
-    let instructions = assistant.instructions.trim();
-    if instructions.is_empty() {
-        format!("Assistant name: {}", assistant.name.trim())
-    } else {
-        format!(
-            "Assistant name: {}\n\n## User-authored assistant instructions\n\n{}",
-            assistant.name.trim(),
-            instructions
-        )
-    }
 }
 
 async fn next_user_message_index(pool: &SessionPool, session_id: &str) -> usize {

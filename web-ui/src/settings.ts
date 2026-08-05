@@ -75,7 +75,7 @@ export const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
 
 export const defaultLlmSettings: LlmSettings = {
   assistantName: 'Folumi Assistant',
-  assistantInstructions: '',
+  assistantInstructions: 'You are Folumi, a local-first personal knowledge assistant. Answer directly and naturally. Be concise by default, and expand when the user asks or the task requires more detail.',
   language: 'zh-CN',
   theme: 'cool-light',
   provider: 'openai',
@@ -388,9 +388,9 @@ function normalizeLlmSettings(parsed: Partial<LlmSettings>): LlmSettings {
     assistantName: typeof parsed.assistantName === 'string' && parsed.assistantName.trim()
       ? parsed.assistantName.trim()
       : defaultLlmSettings.assistantName,
-    assistantInstructions: typeof parsed.assistantInstructions === 'string'
+    assistantInstructions: typeof parsed.assistantInstructions === 'string' && parsed.assistantInstructions.trim()
       ? parsed.assistantInstructions
-      : '',
+      : defaultLlmSettings.assistantInstructions,
     language: normalizeUiLanguage((parsed as { language?: unknown }).language),
     theme: normalizeTheme((parsed as { theme?: unknown }).theme),
     llmConfigs,

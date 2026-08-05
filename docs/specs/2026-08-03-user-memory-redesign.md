@@ -4,7 +4,7 @@
 >
 > 决策日期：2026-08-03
 >
-> 最近修订：2026-08-04——允许助手主动识别用户直接陈述的持久信息；默认逐条审批，用户可单独授权助手新增记忆时免审批；遗忘仍需审批
+> 最近修订：2026-08-05——明确 Core Policy、Assistant Profile 与 Task Overlay 的提示词所有权；Assistant Profile 成为唯一角色身份来源，Benchmark 复用同一组装入口并记录角色版本
 >
 > 替代范围：早期设计与实施计划中描述的 L1/L2/L3 记忆模型及记忆整理工作流
 
@@ -79,6 +79,22 @@ Folumi 已将“记忆”作为独立、由用户控制的一级工作区。旧�
 - 保存的记忆只用于个性化与任务连续性，不能替代知识库引用或外部事实证据；
 - Assistant Profile 不得混入用户事实；可复用的助手策略和行为规则属于 Assistant Profile，而不是用户记忆；
 - 产品不重建 Session、上下文构建、compaction、工具编排或持久化协议，继续优先使用 runtime 能力。
+
+### 4.1 助手身份与提示词所有权
+
+Folumi 的最终 system prompt 由三个职责不同的层次组成：
+
+| 层次 | 所有者 | 可以包含 | 不得包含 |
+| --- | --- | --- | --- |
+| Core Policy | 产品代码与 runtime 能力边界 | 安全、权限、工具协议、证据与引用规则 | “导师”“研究员”等角色人格，或用户可调的语气与详略偏好 |
+| Assistant Profile | Product settings | 助手名称、身份、语气、默认详略程度与稳定行为偏好 | 用户事实、凭据、权限提升或绕过 Core Policy 的指令 |
+| Task Overlay | 发起具体任务的产品能力 | 本次任务的输出格式、评分协议和临时约束 | 永久改写 Assistant Profile，或覆盖 Core Policy |
+
+`llm-harness-runtime` 接收产品组装后的提示词并负责执行，不拥有 Folumi 的角色人格。产品代码中的通用 Chat prompt 必须保持身份中立；旧的 `You are a knowledgeable tutor` 属于收缩前 Tutor 产品形态的遗留身份，应移除。默认的 Folumi 身份应作为可见、可编辑的 Assistant Profile 初始值提供。
+
+普通会话在创建时将当时的 Assistant Profile 快照到 Session 产品元数据，确保既有会话不会因之后修改全局配置而静默改变身份。所有 Chat 入口应复用同一个 Assistant Profile 组装函数，禁止在 Benchmark、临时会话或其他能力中复制另一套角色提示词。
+
+Benchmark 可以在 Assistant Profile 之上叠加“只输出答案实体”等评分约束，但该约束属于 Task Overlay，不应写回日常角色配置。每份端到端结果至少记录角色名称、角色说明内容哈希、角色来源和 Benchmark prompt revision；只有角色哈希、模型、评测 prompt 和数据版本一致的结果才适合直接比较。为避免把用户私有角色说明写入可提交结果，默认只保存哈希；仅在显式启用本地正文诊断时保存原文。
 
 ## 5. 保存的记忆模型
 
