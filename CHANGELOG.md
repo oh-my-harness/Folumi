@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Removed the dedicated Research task action, capability, report UI, and
+  workflow. Ordinary Chat now handles research-oriented requests with the
+  existing web, Knowledge Base, Notebook, and citation tools.
 - Retired the obsolete L1/L2/L3 Memory store, activity-event capture,
   consolidation workflows, maintenance APIs, runtime source/plugin mounting,
   and related review helpers. Long-term Memory is temporarily unavailable

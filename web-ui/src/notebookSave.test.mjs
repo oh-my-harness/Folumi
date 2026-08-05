@@ -21,10 +21,9 @@ const {
   resolveGeneratedNotebookEntryType,
 } = module.exports
 
-test('keeps ordinary chat excerpts distinct from detailed research reports', () => {
-  assert.equal(resolveGeneratedNotebookEntryType('chat'), 'chat_excerpt')
-  assert.equal(resolveGeneratedNotebookEntryType('research'), 'research_report')
-  assert.equal(resolveGeneratedNotebookEntryType('research', 'chat_excerpt'), 'chat_excerpt')
+test('saves generated conversation content as chat excerpts', () => {
+  assert.equal(resolveGeneratedNotebookEntryType(), 'chat_excerpt')
+  assert.equal(resolveGeneratedNotebookEntryType('chat_excerpt'), 'chat_excerpt')
 })
 
 test('builds a stable nested Notebook folder tree', () => {

@@ -47,9 +47,7 @@ fn parse_args() -> anyhow::Result<(Capability, String)> {
                 capability = value.parse()?;
             }
             "--help" | "-h" => {
-                println!(
-                    "Usage: tutor-agent [--capability chat|code_exec|research|organize] <question>"
-                );
+                println!("Usage: tutor-agent [--capability chat|code_exec|organize] <question>");
                 std::process::exit(0);
             }
             _ => question_parts.push(arg),

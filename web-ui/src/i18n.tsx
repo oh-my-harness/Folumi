@@ -63,8 +63,6 @@ export type TranslationKey =
   | 'settings.language.description.en'
   | 'settings.language.english'
   | 'settings.language.chinese'
-  | 'cap.research'
-  | 'cap.research.description'
 
 const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
   'zh-CN': {
@@ -128,8 +126,6 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.language.description.en': '当前使用英文界面。',
     'settings.language.english': 'English',
     'settings.language.chinese': '中文',
-    'cap.research': '研究',
-    'cap.research.description': '搜索、阅读并生成带引用的研究报告',
   },
   'en-US': {
     'app.subtitle': 'Personal knowledge assistant',
@@ -192,8 +188,6 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.language.description.en': 'English interface is active.',
     'settings.language.english': 'English',
     'settings.language.chinese': '中文',
-    'cap.research': 'Research',
-    'cap.research.description': 'Search, read, and produce cited research reports',
   },
 }
 

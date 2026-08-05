@@ -162,7 +162,7 @@ export function SaveNotebookDialog({
               className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-800 outline-none placeholder:text-gray-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
               value={fileName}
               disabled={busy}
-              placeholder="Research Report.md"
+              placeholder="Conversation Note.md"
               onChange={(event) => onFileNameChange(event.target.value)}
             />
           </label>

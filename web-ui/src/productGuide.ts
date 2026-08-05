@@ -3,12 +3,11 @@ import type { UiLanguage } from './i18n'
 export type ProductGuideTopic =
   | 'composer'
   | 'materials'
-  | 'modes'
   | 'knowledge'
   | 'notebook'
   | 'memory'
 
-export type ComposerGuideControl = 'mode' | 'attachment' | 'source' | 'mention' | 'model' | 'send'
+export type ComposerGuideControl = 'attachment' | 'source' | 'mention' | 'model' | 'send'
 
 export interface ProductGuideState {
   topic: ProductGuideTopic
@@ -26,14 +25,12 @@ export type ProductGuideDestination =
 export const productGuideTopics: ProductGuideTopic[] = [
   'composer',
   'materials',
-  'modes',
   'knowledge',
   'notebook',
   'memory',
 ]
 
 export const composerGuideControls: ComposerGuideControl[] = [
-  'mode',
   'attachment',
   'source',
   'mention',
@@ -43,7 +40,7 @@ export const composerGuideControls: ComposerGuideControl[] = [
 
 export const defaultProductGuideState: ProductGuideState = {
   topic: 'composer',
-  composerControl: 'mode',
+  composerControl: 'attachment',
 }
 
 const PRODUCT_GUIDE_STORAGE_KEY = 'folumi.productGuideState'

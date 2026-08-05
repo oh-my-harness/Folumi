@@ -39,7 +39,7 @@ Use this checklist after running:
 - [ ] Create a knowledge base and upload a PDF file.
 - [ ] Ask a Knowledge-grounded question and confirm citation links appear only
       after `knowledge_search` followed by `knowledge_read`.
-- [ ] Run a Research task from Assistant and save the resulting report as a Note.
+- [ ] Ask Chat to research a sourced topic, verify citations, and save the answer to Notebook.
 - [ ] Reference one exact Note in Assistant and confirm the agent reads it on demand.
 - [ ] Create, edit, move, delete, and restore a Note; confirm all paths remain inside the configured Vault.
 - [ ] Turn Memory off and confirm a new conversation neither recalls nor proposes long-term Memory.

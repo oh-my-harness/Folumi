@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const sidebar = readFileSync(new URL('./components/Sidebar.tsx', import.meta.url), 'utf8')
 const composer = readFileSync(new URL('./components/ChatBox.tsx', import.meta.url), 'utf8')
+const productGuide = readFileSync(new URL('./components/ProductGuide.tsx', import.meta.url), 'utf8')
 const onboarding = readFileSync(new URL('./components/OnboardingDialog.tsx', import.meta.url), 'utf8')
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const knowledge = readFileSync(new URL('./components/KnowledgeBasePage.tsx', import.meta.url), 'utf8')
@@ -16,7 +17,8 @@ const knowledgeRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/
 const websocketRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/ws.rs', import.meta.url), 'utf8')
 const memoryStore = readFileSync(new URL('../../crates/tutor-web/src/memory_store.rs', import.meta.url), 'utf8')
 const memoryRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/memory.rs', import.meta.url), 'utf8')
-const runtimeWorkflows = readFileSync(new URL('../../crates/tutor-agent/src/runtime_workflow.rs', import.meta.url), 'utf8')
+const agentCapability = readFileSync(new URL('../../crates/tutor-agent/src/capability.rs', import.meta.url), 'utf8')
+const agentLibrary = readFileSync(new URL('../../crates/tutor-agent/src/lib.rs', import.meta.url), 'utf8')
 
 test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, and Settings', () => {
   assert.match(sidebar, /export type AppView = 'assistant' \| 'knowledge' \| 'notebook' \| 'memory' \| 'settings'/)
@@ -58,7 +60,7 @@ test('legacy data migration stays outside the active product boundary', () => {
 })
 
 test('retired layered memory is replaced by explicit revisioned Saved Memory', () => {
-  const activeBackend = [backendMain, notebookRoutes, knowledgeRoutes, websocketRoutes, runtimeWorkflows].join('\n')
+  const activeBackend = [backendMain, notebookRoutes, knowledgeRoutes, websocketRoutes].join('\n')
   assert.doesNotMatch(activeBackend, /MemoryEventCategory|record_event|memory_workflow|L1\/|L2\/|L3\//)
   assert.match(memory, /Saved Memory|保存的记忆/)
   assert.match(memory, /\/api\/memory\/items/)
@@ -115,10 +117,14 @@ test('ordinary run completion clears transient progress without adding an intern
   assert.doesNotMatch(doneHandler, /pushStatus|context messages|history_len/)
 })
 
-test('research is a chat task action instead of a capability menu', () => {
+test('retired Research mode is absent while normal Chat keeps source tools', () => {
   assert.doesNotMatch(composer, /openMenu === 'mode'/)
   assert.doesNotMatch(composer, /visibleModeOptions/)
-  assert.match(composer, /aria-pressed=\{capability === 'research'\}/)
+  assert.doesNotMatch(composer, /cap\.research|capability === 'research'|ResearchReportMessage/)
+  assert.doesNotMatch(productGuide, /Research|研究模式|调研 workflow/)
+  assert.doesNotMatch(agentCapability, /Capability::Research|Research,/)
+  assert.doesNotMatch(agentLibrary, /pub mod research|pub mod runtime_workflow/)
+  assert.match(websocketRoutes, /with_web_search/)
 })
 
 test('onboarding teaches model, knowledge, and asking without legacy hierarchy', () => {

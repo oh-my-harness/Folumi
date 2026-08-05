@@ -1,6 +1,6 @@
 # Folumi Product Requirements Specification
 
-> Status: active target baseline | Last updated: 2026-08-03
+> Status: active target baseline | Last updated: 2026-08-05
 
 This specification is authoritative for the current product. Historical Tutor,
 Quiz, Space, Student Profile, and standalone Research requirements remain in
@@ -8,6 +8,8 @@ archived plans only and are not Folumi requirements.
 
 The accepted workspace boundaries and change-control rule are recorded in
 [`2026-08-03-primary-workspaces-decision.md`](./2026-08-03-primary-workspaces-decision.md).
+The removal of the dedicated Research product path is recorded in
+[`2026-08-05-remove-research-mode-decision.md`](./2026-08-05-remove-research-mode-decision.md).
 
 ## 1. Product Definition
 
@@ -18,9 +20,9 @@ The accepted workspace boundaries and change-control rule are recorded in
   user-managed collection of Tutors.
 - **REQ-004** Sources, Notes, Memory, and Sessions shall remain distinct data
   domains with explicit ownership and mutation rules.
-- **REQ-005** Quiz, Space, Student Profile, multi-Tutor management, and
-  standalone Research modes shall not exist in active UI, APIs, capability
-  routing, persistence, or recovery paths.
+- **REQ-005** Quiz, Space, Student Profile, multi-Tutor management, and any
+  dedicated Research mode, action, workflow, or report-recovery path shall not
+  exist in active UI, APIs, capability routing, persistence, or recovery paths.
 
 ## 2. Assistant and Sessions
 
@@ -35,9 +37,10 @@ The accepted workspace boundaries and change-control rule are recorded in
 - **REQ-104** Referenced Notes shall be persisted by stable identity and read
   on demand with `read_notebook_item`; their full text shall not be blindly
   injected into every prompt.
-- **REQ-105** Research shall be an explicit task action inside Assistant and
-  may run a controlled workflow that returns a cited report to the originating
-  session.
+- **REQ-105** Ordinary Chat shall handle research-oriented requests through
+  the same conversation flow, using web, Knowledge Base, Notebook, and citation
+  tools when appropriate; it shall not require a separate Research capability
+  or report workflow.
 - **REQ-106** Code execution, web search, web reading, knowledge tools, and Note
   tools shall be enabled by server-side policy, not merely by prompt wording.
 - **REQ-107** Ordinary conversation completion shall clear transient working

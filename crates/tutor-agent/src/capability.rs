@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -22,8 +21,6 @@ pub enum Capability {
     Chat,
     /// Execute user code with explanation.
     CodeExec,
-    /// Research external/internal sources and synthesize a cited report.
-    Research,
     /// Organize Notebook content through bounded direct tools and proposals.
     Organize,
 }
@@ -35,7 +32,6 @@ impl FromStr for Capability {
         match s {
             "chat" => Ok(Self::Chat),
             "code_exec" => Ok(Self::CodeExec),
-            "research" => Ok(Self::Research),
             "organize" => Ok(Self::Organize),
             other => Err(TutorError::UnsupportedCapability(other.into())),
         }
@@ -53,7 +49,6 @@ pub struct CapabilityRouter {
     pub memory_service: Option<Arc<MemoryService>>,
     pub web_search: Option<WebSearchConfig>,
     pub product_tools: Vec<Arc<dyn Tool>>,
-    pub workflow_root: Option<PathBuf>,
     pub product_instruction: Option<String>,
     client: Option<Arc<dyn Provider>>,
 }
@@ -69,7 +64,6 @@ impl CapabilityRouter {
             memory_service: None,
             web_search: None,
             product_tools: vec![],
-            workflow_root: None,
             product_instruction: None,
             client: None,
         }
@@ -104,11 +98,6 @@ impl CapabilityRouter {
 
     pub fn with_product_tool(mut self, tool: Arc<dyn Tool>) -> Self {
         self.product_tools.push(tool);
-        self
-    }
-
-    pub fn with_workflow_root(mut self, root: impl Into<PathBuf>) -> Self {
-        self.workflow_root = Some(root.into());
         self
     }
 
@@ -157,10 +146,6 @@ impl CapabilityRouter {
         match capability {
             Capability::Chat => {
                 crate::chat::run_conversation_with_request(self, "chat", request, None, None).await
-            }
-            Capability::Research => {
-                crate::chat::run_conversation_with_request(self, "research", request, None, None)
-                    .await
             }
             Capability::Organize => {
                 crate::chat::run_conversation_with_request(self, "organize", request, None, None)
@@ -219,16 +204,6 @@ impl CapabilityRouter {
                 )
                 .await
             }
-            Capability::Research => {
-                crate::chat::run_conversation_with_request(
-                    self,
-                    "research",
-                    request,
-                    Some(session),
-                    abort_token,
-                )
-                .await
-            }
             Capability::Organize => {
                 crate::chat::run_conversation_with_request(
                     self,
@@ -273,10 +248,7 @@ mod tests {
         ));
         assert!(Capability::from_str("deep_solve").is_err());
         assert!(Capability::from_str("quiz").is_err());
-        assert!(matches!(
-            Capability::from_str("research").unwrap(),
-            Capability::Research
-        ));
+        assert!(Capability::from_str("research").is_err());
         assert!(matches!(
             Capability::from_str("organize").unwrap(),
             Capability::Organize

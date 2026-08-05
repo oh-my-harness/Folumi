@@ -123,7 +123,6 @@ Folumi desktop
           -> runtime sessions
           -> tutor-agent
               -> assistant chat / code execution
-              -> research task workflows
               -> runtime Knowledge search / read / evidence validation
               -> llm-harness-runtime / llm-harness-agent
           -> tutor-tools
@@ -138,7 +137,7 @@ Folumi desktop
 ### 工作区结构
 
 ```text
-crates/tutor-agent   Agent 对话、提示词及 Research workflow。
+crates/tutor-agent   Agent 对话、提示词、代码执行与 Notebook 整理能力。
 crates/tutor-tools   Web 搜索、抓取和代码执行工具。
 crates/tutor-rag     LanceDB 入库、runtime Knowledge source 和 embedding 集成。
 crates/tutor-web     Axum API、WebSocket、session 映射和产品数据存储。

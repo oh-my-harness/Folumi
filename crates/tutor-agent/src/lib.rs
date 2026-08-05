@@ -6,10 +6,7 @@ pub mod event_sink;
 pub mod governance;
 pub mod knowledge;
 pub mod llm_provider;
-pub mod research;
-pub mod runtime_engine;
 pub mod runtime_harness;
-pub mod runtime_workflow;
 pub mod terminal_approver;
 
 pub use capability::{Capability, CapabilityRouter};

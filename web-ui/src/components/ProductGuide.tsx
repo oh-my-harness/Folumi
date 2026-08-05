@@ -4,10 +4,7 @@ import {
   Bot,
   Brain,
   Database,
-  FileText,
-  MessageSquare,
   Paperclip,
-  SearchCheck,
   Settings2,
 } from 'lucide-react'
 import { useI18n } from '../i18n'
@@ -97,15 +94,6 @@ export function ProductGuide({ onNavigate, onStartGuideAssistant, onRestartOnboa
                 { icon: <Database size={18} />, title: copy.materials.sourceTitle, text: copy.materials.sourceText, action: copy.showInComposer, onClick: () => selectComposerControl('source') },
                 { icon: <AtSign size={18} />, title: copy.materials.mentionTitle, text: copy.materials.mentionText, action: copy.showInComposer, onClick: () => selectComposerControl('mention') },
               ]} />
-            </GuideSection>
-          )}
-
-          {guideState.topic === 'modes' && (
-            <GuideSection title={copy.modes.title} description={copy.modes.description}>
-              <GuideRows items={copy.modes.items.map((item) => ({ ...item, onClick: () => selectComposerControl('mode') }))} />
-              <div className="mt-5 flex justify-end">
-                <GuideAction onClick={() => onNavigate('chat')}>{copy.modes.openChat}</GuideAction>
-              </div>
             </GuideSection>
           )}
 
@@ -215,7 +203,6 @@ const chineseCopy = {
   topics: {
     composer: '输入框控件',
     materials: '添加资料',
-    modes: '会话模式',
     knowledge: '知识库',
     notebook: '笔记本',
     memory: '记忆',
@@ -236,16 +223,6 @@ const chineseCopy = {
     sourceText: '适合让 Agent 在整个会话中按需检索一组资料。当前只能关联一个知识库或 Notebook。',
     mentionTitle: '@ 目标：精确引用已有内容',
     mentionText: '适合明确指定某条笔记，避免从整个资料源中猜测目标。',
-  },
-  modes: {
-    title: '选择会话模式',
-    description: '模式入口位于输入框左下角第一个按钮。模式决定交互方式，但不会替你发送第一条消息。',
-    openChat: '前往聊天选择模式',
-    items: [
-      { icon: <MessageSquare size={18} />, title: 'Chat', text: '普通流式多轮对话，可按需使用工具，不强制启动 workflow。', action: '查看入口' },
-      { icon: <SearchCheck size={18} />, title: 'Research', text: '先确认研究范围，再显式启动详细调研 workflow 并生成带引用报告。', action: '查看入口' },
-      { icon: <FileText size={18} />, title: 'Organize', text: '读取 Notebook 后提出可审核的整理建议，不会绕过确认直接写入。', action: '查看入口' },
-    ],
   },
   knowledge: {
     title: '配置并使用知识库',
@@ -279,7 +256,6 @@ const englishCopy: typeof chineseCopy = {
   topics: {
     composer: 'Composer controls',
     materials: 'Add material',
-    modes: 'Conversation modes',
     knowledge: 'Knowledge Base',
     notebook: 'Notebook',
     memory: 'Memory',
@@ -300,16 +276,6 @@ const englishCopy: typeof chineseCopy = {
     sourceText: 'Use it when the Agent should search a collection throughout the conversation. One Knowledge Base or Notebook can be associated at a time.',
     mentionTitle: '@ target: reference exact saved content',
     mentionText: 'Use it to name one note instead of asking the Agent to infer a target from a full source.',
-  },
-  modes: {
-    title: 'Choose a conversation mode',
-    description: 'The mode entry is the first button at the lower left of the composer. It changes interaction behavior but never sends the first message for you.',
-    openChat: 'Open Chat and choose a mode',
-    items: [
-      { icon: <MessageSquare size={18} />, title: 'Chat', text: 'Normal streaming conversation with optional tool use and no forced workflow.', action: 'Show control' },
-      { icon: <SearchCheck size={18} />, title: 'Research', text: 'Clarifies scope before explicitly starting detailed research and producing a cited report.', action: 'Show control' },
-      { icon: <FileText size={18} />, title: 'Organize', text: 'Reads Notebook and proposes reviewable organization changes without bypassing approval.', action: 'Show control' },
-    ],
   },
   knowledge: {
     title: 'Configure and use Knowledge Base',

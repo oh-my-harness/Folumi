@@ -10,7 +10,7 @@ export interface SaveToNotebookResult {
   path: string
 }
 
-export type GeneratedNotebookEntryType = 'research_report' | 'chat_excerpt'
+export type GeneratedNotebookEntryType = 'chat_excerpt'
 
 export interface NotebookFolderNode {
   name: string
@@ -21,10 +21,9 @@ export interface NotebookFolderNode {
 export const LAST_NOTEBOOK_SAVE_FOLDER_KEY = 'llm-tutor:last-notebook-save-folder'
 
 export function resolveGeneratedNotebookEntryType(
-  capability: string,
   requested?: GeneratedNotebookEntryType,
 ): GeneratedNotebookEntryType {
-  return requested ?? (capability === 'research' ? 'research_report' : 'chat_excerpt')
+  return requested ?? 'chat_excerpt'
 }
 
 export function titleFromMarkdown(markdown: string) {
@@ -32,9 +31,9 @@ export function titleFromMarkdown(markdown: string) {
     .split('\n')
     .map((line) => line.trim())
     .find((line) => line.startsWith('# '))
-  if (heading) return heading.replace(/^#\s+/, '').trim().slice(0, 80) || 'Research Report'
+  if (heading) return heading.replace(/^#\s+/, '').trim().slice(0, 80) || 'Conversation Note'
   const first = markdown.trim().split('\n').find((line) => line.trim())
-  return first?.trim().slice(0, 80) || 'Research Report'
+  return first?.trim().slice(0, 80) || 'Conversation Note'
 }
 
 export function normalizeNotebookFolderPath(path: string) {
@@ -47,7 +46,7 @@ export function normalizeNotebookFolderPath(path: string) {
 }
 
 export function notebookFileNameFromTitle(title: string) {
-  return `${sanitizeNotebookPathPart(title) || 'Research Report'}.md`
+  return `${sanitizeNotebookPathPart(title) || 'Conversation Note'}.md`
 }
 
 export function normalizeNotebookFileName(value: string) {

@@ -423,12 +423,14 @@ impl SessionPool {
         let storage = self.repo.open(id).await.ok()?;
         let meta = storage.metadata().await.ok()?;
         let product = self.product_metadata.lock().unwrap().get(id).cloned();
+        let stored_capability = product
+            .as_ref()
+            .map(|value| value.capability.as_str())
+            .unwrap_or("chat");
+        let capability = normalize_retired_capability(stored_capability).to_string();
         let entry = SessionEntry {
             id: meta.id.clone(),
-            capability: product
-                .as_ref()
-                .map(|value| value.capability.clone())
-                .unwrap_or_else(|| "chat".into()),
+            capability: capability.clone(),
             kb: product.as_ref().and_then(|value| value.kb.clone()),
             notebook_enabled: product
                 .as_ref()
@@ -448,6 +450,11 @@ impl SessionPool {
             .lock()
             .unwrap()
             .insert(meta.id.clone(), entry.clone());
+        if capability != stored_capability {
+            self.update_product_metadata(id, |metadata| {
+                metadata.capability = capability;
+            });
+        }
         Some(entry)
     }
 
@@ -879,6 +886,9 @@ impl SessionPool {
             .collect())
     }
 
+    // Retained for historical Research report records and boundary tests even
+    // though the active product no longer creates new report artifacts.
+    #[allow(dead_code)]
     pub async fn append_message_artifacts(
         &self,
         id: &str,
@@ -1156,6 +1166,13 @@ impl SessionPool {
             });
         update(entry);
         let _ = persist_product_metadata(&self.product_metadata_path, &metadata);
+    }
+}
+
+fn normalize_retired_capability(capability: &str) -> &str {
+    match capability {
+        "research" | "deep_solve" => "chat",
+        current => current,
     }
 }
 
@@ -1781,7 +1798,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("llm-tutor-test-{}", uuid::Uuid::new_v4()));
         let pool = SessionPool::new_with_root(&root);
         let id = pool
-            .create("research", None, false, None, None, None)
+            .create("chat", None, false, None, None, None)
             .await
             .unwrap();
 
@@ -1812,12 +1829,12 @@ mod tests {
         let root = std::env::temp_dir().join(format!("llm-tutor-test-{}", uuid::Uuid::new_v4()));
         let pool = SessionPool::new_with_root(&root);
         let id = pool
-            .create("research", None, false, None, None, None)
+            .create("chat", None, false, None, None, None)
             .await
             .unwrap();
 
-        let (run_id, cancel) = pool.try_start_active_run(&id, "research").unwrap();
-        assert!(pool.try_start_active_run(&id, "research").is_none());
+        let (run_id, cancel) = pool.try_start_active_run(&id, "chat").unwrap();
+        assert!(pool.try_start_active_run(&id, "chat").is_none());
 
         let active = pool.active_run(&id).unwrap();
         assert_eq!(active.run_id, run_id);
@@ -1826,11 +1843,11 @@ mod tests {
         let cancelling = pool.cancel_active_run(&id).unwrap();
         assert_eq!(cancelling.status, "cancelling");
         assert!(cancel.is_cancelled());
-        assert!(pool.try_start_active_run(&id, "research").is_none());
+        assert!(pool.try_start_active_run(&id, "chat").is_none());
 
         pool.finish_active_run(&id, &run_id);
         assert!(pool.active_run(&id).is_none());
-        assert!(pool.try_start_active_run(&id, "research").is_some());
+        assert!(pool.try_start_active_run(&id, "chat").is_some());
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1839,10 +1856,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("llm-tutor-test-{}", uuid::Uuid::new_v4()));
         let pool = SessionPool::new_with_root(&root);
         let id = pool
-            .create("research", None, false, None, None, None)
+            .create("chat", None, false, None, None, None)
             .await
             .unwrap();
-        let (run_id, _) = pool.try_start_active_run(&id, "research").unwrap();
+        let (run_id, _) = pool.try_start_active_run(&id, "chat").unwrap();
         let running = pool
             .update_active_run_stage(&id, &run_id, "read_sources")
             .unwrap();
@@ -2118,6 +2135,30 @@ mod tests {
         assert_eq!(
             entry.embedding.as_ref().map(|config| config.model.as_str()),
             Some("text-embedding-3-small")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn retired_research_sessions_reopen_as_chat() {
+        let root = std::env::temp_dir().join(format!("folumi-test-{}", uuid::Uuid::new_v4()));
+        let pool = SessionPool::new_with_root(&root);
+        let id = pool
+            .create("chat", None, false, None, None, None)
+            .await
+            .unwrap();
+        assert!(pool.set_capability(&id, "research"));
+
+        drop(pool);
+        let reopened = SessionPool::new_with_root(&root);
+        let entry = reopened.ensure_entry(&id).await.unwrap();
+        assert_eq!(entry.capability, "chat");
+
+        drop(reopened);
+        let reopened_again = SessionPool::new_with_root(&root);
+        assert_eq!(
+            reopened_again.ensure_entry(&id).await.unwrap().capability,
+            "chat"
         );
         let _ = std::fs::remove_dir_all(root);
     }

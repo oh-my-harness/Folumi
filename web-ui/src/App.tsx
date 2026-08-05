@@ -29,8 +29,6 @@ import {
   settingsRequireSessionReset,
   settingsForSession,
 } from './settings'
-import { attachRestoredResearchReports, researchReportFromTracePayload } from './researchRestore'
-import type { ResearchReportTraceData } from './researchRestore'
 import { guideAssistantStarterPrompt, type ProductGuideDestination } from './productGuide'
 import {
   appendCompletedSessionMessage,
@@ -52,7 +50,7 @@ import {
 import type { NotebookVaultInfo, SaveToNotebookResult } from './notebookSave'
 import { knowledgeCitationsFromTrace } from './knowledgeCitation'
 
-type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'research' | 'organize'
+type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'organize'
 
 interface Message {
   role: 'user' | 'assistant' | 'status'
@@ -61,26 +59,9 @@ interface Message {
   transient?: boolean
   citations?: Citation[]
   deepSolve?: DeepSolveTraceEntry[]
-  researchPlan?: ResearchPlan
-  researchTitle?: string
-  researchUnavailable?: boolean
   notebookEditProposal?: NotebookEditProposal
   attachments?: ChatAttachment[]
   mentions?: NotebookMention[]
-}
-
-interface ResearchPlan {
-  title: string
-  topic: string
-  scope: string
-  outputFormat: string
-  depth: string
-  timeRange: string
-  sourcePreferences: string[]
-  useNotebook: boolean
-  useKnowledgeBase: boolean
-  steps: string[]
-  questions: string[]
 }
 
 interface Citation {
@@ -207,8 +188,6 @@ export default function App() {
   const pendingCitationsRef = useRef<Citation[]>([])
   const pendingDeepSolveRef = useRef<DeepSolveTraceEntry[]>([])
   const pendingNotebookEditProposalRef = useRef<NotebookEditProposal | undefined>(undefined)
-  const pendingResearchPlanRef = useRef<ResearchPlan | undefined>(undefined)
-  const pendingResearchReportRef = useRef<ResearchReportTraceData | undefined>(undefined)
   const [running, setRunning] = useState(false)
   const [memoryApproval, setMemoryApproval] = useState<MemoryApprovalRequest | null>(null)
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
@@ -295,11 +274,7 @@ export default function App() {
         })),
         restoredTrace,
       )
-      const restoredReports = attachRestoredResearchReports(withCitations, restoredTrace)
-      const restored = attachRestoredResearchPlans(
-        attachRestoredDeepSolve(restoredReports, restoredTrace),
-        restoredTrace,
-      )
+      const restored = attachRestoredDeepSolve(withCitations, restoredTrace)
       setMessages((live) => reconcileSessionMessages(restored, live))
       setTraceEntries(restoredTrace)
       setLatestUsage(data.latest_usage ?? null)
@@ -378,20 +353,15 @@ export default function App() {
           const citations = pendingCitationsRef.current
           const deepSolve = pendingDeepSolveRef.current
           const notebookEditProposal = pendingNotebookEditProposalRef.current
-          const researchPlan = pendingResearchPlanRef.current
-          const researchReport = pendingResearchReportRef.current
-          const messageText = researchReport?.markdown || finalText
-          if (messageText.trim() || citations.length > 0 || deepSolve.length > 0 || notebookEditProposal || researchPlan) {
+          if (finalText.trim() || citations.length > 0 || deepSolve.length > 0 || notebookEditProposal) {
             setMessages((prev) => appendCompletedSessionMessage(
               dropTrailingTransientStatus(prev),
               {
                 role: 'assistant',
-                text: messageText,
+                text: finalText,
                 citations,
                 deepSolve: deepSolve.length > 0 ? deepSolve : undefined,
                 notebookEditProposal,
-                researchPlan,
-                researchTitle: researchReport?.title,
               },
             ))
           } else {
@@ -400,8 +370,6 @@ export default function App() {
           pendingCitationsRef.current = []
           pendingDeepSolveRef.current = []
           pendingNotebookEditProposalRef.current = undefined
-          pendingResearchPlanRef.current = undefined
-          pendingResearchReportRef.current = undefined
           streamingRef.current = ''
           progressStreamingRef.current = ''
           setStreamingText('')
@@ -436,14 +404,6 @@ export default function App() {
         const notebookEditProposal = notebookEditProposalFromTrace(event.payload as Record<string, unknown>)
         if (notebookEditProposal) {
           pendingNotebookEditProposalRef.current = notebookEditProposal
-        }
-        const researchPlan = researchPlanFromTrace(event.payload as Record<string, unknown>)
-        if (researchPlan) {
-          pendingResearchPlanRef.current = researchPlan
-        }
-        const researchReport = researchReportFromTrace(event.payload as Record<string, unknown>)
-        if (researchReport) {
-          pendingResearchReportRef.current = researchReport
         }
         pushStatus(statusFromTrace(event.payload as Record<string, unknown>))
         setTraceEntries((prev) => [
@@ -766,8 +726,6 @@ export default function App() {
           pendingCitationsRef.current = []
           pendingDeepSolveRef.current = []
           pendingNotebookEditProposalRef.current = undefined
-          pendingResearchPlanRef.current = undefined
-          pendingResearchReportRef.current = undefined
           setRunning(true)
           pushStatus({ kind: 'thinking', label: 'Thinking', detail: capabilityLabel(capability) })
           send({ type: 'message', content: nextText, mentions: [] })
@@ -809,8 +767,6 @@ export default function App() {
       pendingCitationsRef.current = []
       pendingDeepSolveRef.current = []
       pendingNotebookEditProposalRef.current = undefined
-      pendingResearchPlanRef.current = undefined
-      pendingResearchReportRef.current = undefined
       setRunning(true)
       pushStatus({ kind: 'thinking', label: 'Thinking', detail: capabilityLabel(capability) })
       pendingSessionSendRef.current = { sessionId: nextSessionId, content: nextText, mentions: [] }
@@ -825,7 +781,7 @@ export default function App() {
   const handleSaveToNotebook = useCallback(async (markdown: string, options: SaveToNotebookOptions = {}): Promise<SaveToNotebookResult> => {
     try {
       const title = options.title?.trim() || titleFromMarkdown(markdown)
-      const entryType = resolveGeneratedNotebookEntryType(capability, options.entryType)
+      const entryType = resolveGeneratedNotebookEntryType(options.entryType)
       let folderPath = options.newFolderPath?.trim() || options.folderPath?.trim() || ''
       if (folderPath) {
         folderPath = normalizeNotebookFolderPath(folderPath)
@@ -858,8 +814,7 @@ export default function App() {
           path,
           markdown,
           metadata: {
-            generatedBy: entryType === 'research_report' ? 'research' : 'chat',
-            ...(entryType === 'research_report' ? { reportVersion: 1 } : {}),
+            generatedBy: 'chat',
             generatedAt: new Date().toISOString(),
             sourceSessionId: sessionId,
           },
@@ -883,7 +838,7 @@ export default function App() {
       pushStatus({ kind: 'error', label: 'Save failed', detail: message })
       throw err
     }
-  }, [capability, pushStatus, refreshNotebookFolders, sessionId])
+  }, [pushStatus, refreshNotebookFolders, sessionId])
 
   const handleApplyNotebookEdit = useCallback(async (proposal: NotebookEditProposal) => {
     try {
@@ -943,56 +898,6 @@ export default function App() {
     void handleSend(prompt)
   }, [handleSend])
 
-  const handleRegenerateResearch = useCallback((markdown: string) => {
-    const title = titleFromMarkdown(markdown)
-    const prompt = [
-      'Start the detailed research workflow to regenerate this report as a new version.',
-      `Previous report title: ${title}`,
-      'Refresh the search, read current or better sources, re-check citations, and return a new final Markdown report.',
-      'Keep the same general scope unless newer evidence suggests a better framing.',
-      '',
-      'Previous report:',
-      markdown,
-    ].join('\n')
-    void handleSend(prompt)
-  }, [handleSend])
-
-  const handleIngestResearchSources = useCallback(async (sources: SourceReference[], markdown: string) => {
-    if (!selectedKnowledgeBaseId) {
-      pushStatus({ kind: 'error', label: 'No Knowledge Base', detail: 'Select a Knowledge Base before adding report sources.' })
-      return
-    }
-    const usableSources = sources.filter((source) => source.target?.type === 'web' || source.metadata?.url || source.raw)
-    if (usableSources.length === 0) {
-      pushStatus({ kind: 'error', label: 'No sources', detail: 'This report has no importable sources.' })
-      return
-    }
-    pushStatus({ kind: 'tool', label: 'Adding sources', detail: `${usableSources.length} source(s)` })
-    try {
-      for (const source of usableSources) {
-        const sourceUrl = source.target?.type === 'web' ? source.target.url : source.metadata?.url
-        const text = researchSourceIngestText(source, markdown)
-        const res = await fetch(`/api/knowledge-bases/${encodeURIComponent(selectedKnowledgeBaseId)}/documents`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            source: sourceUrl || source.title || source.raw || 'research-source',
-            text,
-          }),
-        })
-        const data = await safeJson(res)
-        if (!res.ok) throw new Error(errorMessage(data, res.status))
-        const job = data.job && typeof data.job === 'object' ? data.job as Record<string, unknown> : null
-        await pollIngestionJob(job?.id)
-      }
-      await refreshKnowledgeBases()
-      pushStatus({ kind: 'done', label: 'Sources added', detail: `${usableSources.length} source(s) indexed` })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      pushStatus({ kind: 'error', label: 'Source import failed', detail: message })
-    }
-  }, [pushStatus, refreshKnowledgeBases, selectedKnowledgeBaseId])
-
   const handleSettingsChange = (nextSettings: typeof llmSettings) => {
     setLlmSettings(nextSettings)
     setSelectedLlmConfigId(nextSettings.activeLlmConfigId)
@@ -1015,8 +920,6 @@ export default function App() {
     pendingCitationsRef.current = []
     pendingDeepSolveRef.current = []
     pendingNotebookEditProposalRef.current = undefined
-    pendingResearchPlanRef.current = undefined
-    pendingResearchReportRef.current = undefined
     setLatestUsage(null)
     setRunning(false)
     setView('assistant')
@@ -1072,33 +975,6 @@ export default function App() {
     }
     setView(destination === 'notebook' ? 'notebook' : 'knowledge')
   }, [startNewChat])
-
-  const handleCapabilityChange = useCallback(async (nextCapability: Capability) => {
-    if (running) return
-    setCapability(nextCapability)
-    if (nextCapability === 'organize') {
-      setSelectedNotebookEnabled(true)
-      setSelectedKnowledgeBaseId('')
-    }
-    if (!sessionId) return
-
-    try {
-      const body = nextCapability === 'organize'
-        ? { capability: nextCapability, notebook_enabled: true, kb: '' }
-        : { capability: nextCapability }
-      const res = await fetch(`/api/sessions/${sessionId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
-        throw new Error(`failed to update session mode: HTTP ${res.status}`)
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
-    }
-  }, [running, sessionId])
 
   const handleKnowledgeBaseChange = useCallback(async (nextKb: string) => {
     if (running) return
@@ -1176,8 +1052,6 @@ export default function App() {
       pendingCitationsRef.current = []
       pendingDeepSolveRef.current = []
       pendingNotebookEditProposalRef.current = undefined
-      pendingResearchPlanRef.current = undefined
-      pendingResearchReportRef.current = undefined
       setLatestUsage(null)
       setRunning(false)
       await hydrateSession(id)
@@ -1242,8 +1116,6 @@ export default function App() {
       pendingCitationsRef.current = []
       pendingDeepSolveRef.current = []
       pendingNotebookEditProposalRef.current = undefined
-      pendingResearchPlanRef.current = undefined
-      pendingResearchReportRef.current = undefined
       setLatestUsage(null)
     }
 
@@ -1366,7 +1238,6 @@ export default function App() {
                   messages={messages}
                   streamingText={streamingText}
                   contextStats={contextStats}
-                  capability={capability}
                   llmConfigs={llmSettings.llmConfigs}
                   activeLlmConfigId={selectedLlmConfigId}
                   knowledgeBases={knowledgeBases}
@@ -1377,7 +1248,6 @@ export default function App() {
                   onStop={handleStopGeneration}
                   onEditUserMessage={handleEditUserMessage}
                   onAskDeepSolveStep={handleAskDeepSolveStep}
-                  onCapabilityChange={handleCapabilityChange}
                   onKnowledgeBaseChange={handleKnowledgeBaseChange}
                   onNotebookEnabledChange={handleNotebookEnabledChange}
                   onLlmConfigChange={handleLlmConfigChange}
@@ -1389,8 +1259,6 @@ export default function App() {
                     setNoteFocusTarget({ type: 'notebook', entryId })
                     setView('notebook')
                   }}
-                  onRegenerateResearch={handleRegenerateResearch}
-                  onIngestResearchSources={handleIngestResearchSources}
                   onApplyNotebookEdit={handleApplyNotebookEdit}
                   onSourceNavigate={handleSourceNavigate}
                   disabled={false}
@@ -1599,38 +1467,6 @@ function statusFromTrace(payload: Record<string, unknown>): AgentStatus {
     }
   }
 
-  if (kind === 'research_stage_start') {
-    return {
-      kind: 'thinking',
-      label: typeof payload.title === 'string' ? payload.title : 'Planning research',
-      detail: capability,
-    }
-  }
-
-  if (kind === 'research_search') {
-    return {
-      kind: 'tool',
-      label: 'Searching web',
-      detail: capability,
-    }
-  }
-
-  if (kind === 'research_read') {
-    return {
-      kind: 'tool',
-      label: 'Reading source',
-      detail: capability,
-    }
-  }
-
-  if (kind === 'research_report_done') {
-    return {
-      kind: 'done',
-      label: 'Research report ready',
-      detail: capability,
-    }
-  }
-
   if (kind === 'replan') {
     return {
       kind: 'thinking',
@@ -1657,11 +1493,9 @@ function citationsFromTrace(payload: Record<string, unknown>): Citation[] {
   const isRagToolResult = payload.kind === 'tool_result' && payload.tool === 'rag_search'
   const isWebToolResult =
     payload.kind === 'tool_result' && (payload.tool === 'web_search' || payload.tool === 'web_fetch')
-  const isResearchToolResult = payload.kind === 'tool_result' && payload.tool === 'create_research_report'
   const isRagCitationEvent = payload.kind === 'rag_citations'
-  const isResearchReportDone = payload.kind === 'research_report_done'
-  if (!isRagToolResult && !isWebToolResult && !isResearchToolResult && !isRagCitationEvent && !isResearchReportDone) return []
-  const details = isResearchReportDone ? payload : payload.details
+  if (!isRagToolResult && !isWebToolResult && !isRagCitationEvent) return []
+  const details = payload.details
   if (!details || typeof details !== 'object') return []
   const sources = (details as { sources?: unknown }).sources
   if (!Array.isArray(sources)) return []
@@ -1734,42 +1568,6 @@ function notebookEditProposalFromTrace(payload: Record<string, unknown>): Notebo
     suggestedTags: notebookSuggestedTags(item.suggested_tags),
     mergeSourceEntryIds: notebookMergeSourceEntryIds(item.merge_source_entry_ids),
   }
-}
-
-function researchPlanFromTrace(payload: Record<string, unknown>): ResearchPlan | undefined {
-  if (payload.kind !== 'tool_result' || payload.tool !== 'propose_research_plan' || payload.ok === false) return undefined
-  const details = payload.details
-  if (!details || typeof details !== 'object') return undefined
-  const item = details as Record<string, unknown>
-  const title = typeof item.title === 'string' && item.title.trim() ? item.title : 'Research plan'
-  const topic = typeof item.topic === 'string' && item.topic.trim() ? item.topic : 'selected topic'
-  const scope = typeof item.scope === 'string' && item.scope.trim() ? item.scope : 'to be confirmed'
-  const outputFormat = typeof item.output_format === 'string' && item.output_format.trim() ? item.output_format : 'Markdown report'
-  const depth = typeof item.depth === 'string' && item.depth.trim() ? item.depth : 'standard'
-  const timeRange = typeof item.time_range === 'string' && item.time_range.trim() ? item.time_range : 'not specified'
-  return {
-    title,
-    topic,
-    scope,
-    outputFormat,
-    depth,
-    timeRange,
-    sourcePreferences: stringListFromUnknown(item.source_preferences),
-    useNotebook: item.use_notebook === true,
-    useKnowledgeBase: item.use_knowledge_base === true,
-    steps: stringListFromUnknown(item.steps),
-    questions: stringListFromUnknown(item.questions),
-  }
-}
-
-function researchReportFromTrace(payload: Record<string, unknown>): ResearchReportTraceData | undefined {
-  return researchReportFromTracePayload(payload)
-}
-
-function stringListFromUnknown(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    : []
 }
 
 function notebookProposalKind(value: unknown): NotebookEditProposal['proposalKind'] {
@@ -1922,26 +1720,9 @@ function attachRestoredDeepSolve(messages: Message[], traceEntries: TraceEntry[]
   })
 }
 
-function attachRestoredResearchPlans(messages: Message[], traceEntries: TraceEntry[]): Message[] {
-  const plans = traceEntries
-    .map((entry) => researchPlanFromTrace(entry.payload))
-    .filter((plan): plan is ResearchPlan => Boolean(plan))
-  if (plans.length === 0) return messages
-
-  let planIndex = 0
-  return messages.map((message) => {
-    if (message.role !== 'assistant') return message
-    if (message.researchPlan) return message
-    const plan = plans[planIndex]
-    planIndex += 1
-    return plan ? { ...message, researchPlan: plan } : message
-  })
-}
-
 function capabilityLabel(value: string): string {
   if (value === 'deep_solve') return 'Deep Solve'
   if (value === 'code_exec') return 'Code Exec'
-  if (value === 'research') return 'Research'
   if (value === 'organize') return 'Organize'
   return 'Chat'
 }
@@ -2092,40 +1873,6 @@ function attachmentSourceText(attachments: ChatAttachment[]) {
 }
 
 
-function researchSourceIngestText(source: SourceReference, markdown: string) {
-  const url = source.target?.type === 'web' ? source.target.url : source.metadata?.url
-  return [
-    `# ${source.title || source.raw || 'Research source'}`,
-    '',
-    url ? `URL: ${url}` : '',
-    source.score !== undefined && source.score !== null ? `Quality score: ${source.score.toFixed(2)}` : '',
-    '',
-    source.description || source.raw,
-    '',
-    '## Source report context',
-    titleFromMarkdown(markdown),
-  ].filter((line) => line !== '').join('\n')
-}
-
-async function pollIngestionJob(jobId: unknown) {
-  if (typeof jobId !== 'string' || !jobId) {
-    throw new Error('ingestion did not return a job id')
-  }
-  for (;;) {
-    const res = await fetch(`/api/ingest-jobs/${encodeURIComponent(jobId)}`)
-    const data = await safeJson(res)
-    if (!res.ok) throw new Error(errorMessage(data, res.status))
-    const job = data.job as { status?: string; error?: string | null; message?: string | null }
-    if (job.status === 'done') return
-    if (job.status === 'error') throw new Error(job.error || job.message || 'ingestion failed')
-    await delay(500)
-  }
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
-}
-
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -2166,7 +1913,7 @@ function numberOrUndefined(value: unknown) {
 }
 
 function isCapability(value: string): value is Capability {
-  return value === 'chat' || value === 'deep_solve' || value === 'code_exec' || value === 'research' || value === 'organize'
+  return value === 'chat' || value === 'deep_solve' || value === 'code_exec' || value === 'organize'
 }
 
 function sourceTargetDetail(target: SourceTarget, reference: SourceReference) {

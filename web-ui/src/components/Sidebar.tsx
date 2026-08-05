@@ -328,7 +328,6 @@ function capabilityLabel(value: string) {
   if (value === 'deep_solve') return 'Deep Solve'
   if (value === 'code_exec') return 'Code Exec'
   if (value === 'quiz') return 'Quiz'
-  if (value === 'research') return 'Research'
   if (value === 'organize') return 'Organize'
   return 'Chat'
 }

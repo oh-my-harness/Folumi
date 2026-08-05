@@ -1,8 +1,5 @@
 use std::path::PathBuf;
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, Mutex};
 
 use crate::memory_approval::{ApprovalResponseOutcome, WebMemoryApprovalCoordinator};
 use crate::memory_runtime::{SavedMemoryPermissionApprover, USER_MEMORY_SOURCE_ID};
@@ -12,7 +9,6 @@ use crate::notebook_tool::{
     CreateNotebookItemTool, ListNotebookTreeTool, MoveNotebookItemTool, ProposeNotebookEditTool,
     ReadNotebookItemTool, SearchNotebookTool, UpdateNotebookItemTool,
 };
-use crate::research_tool::{CreateResearchReportTool, ProposeResearchPlanTool};
 use crate::routes::notebook_mentions::{NotebookMention, resolve_notebook_mention};
 use crate::session::{
     ActiveRunSummary, LlmSessionConfig, SearchSessionConfig, SessionEntry, SessionPool,
@@ -82,7 +78,6 @@ struct PersistedEventSink {
     pool: Arc<SessionPool>,
     session_id: String,
     stream: crate::stream::TutorStream,
-    research_report_started: Arc<AtomicBool>,
     run_id: String,
     pending_events: Arc<Mutex<Vec<PendingSessionEvent>>>,
 }
@@ -91,14 +86,10 @@ struct PendingSessionEvent {
     kind: String,
     data: serde_json::Value,
     run_state: Option<ActiveRunSummary>,
-    artifact: Option<serde_json::Value>,
 }
 
 impl EventSink for PersistedEventSink {
     fn trace(&self, kind: String, mut data: serde_json::Value) -> BoxFuture<'static, ()> {
-        if trace_invokes_research_report(&kind, &data) {
-            self.research_report_started.store(true, Ordering::SeqCst);
-        }
         let pool = self.pool.clone();
         let session_id = self.session_id.clone();
         let stream = self.stream.clone();
@@ -110,14 +101,10 @@ impl EventSink for PersistedEventSink {
             }
             let run_state = run_stage_from_trace(&kind, &data)
                 .and_then(|stage| pool.update_active_run_stage(&session_id, &run_id, &stage));
-            let artifact = (kind == "tool_result")
-                .then(|| message_artifact_from_tool_result(&data, &run_id))
-                .flatten();
             pending_events.lock().unwrap().push(PendingSessionEvent {
                 kind: kind.clone(),
                 data: data.clone(),
                 run_state,
-                artifact,
             });
             stream.trace(&kind, data).await;
         })
@@ -141,7 +128,7 @@ impl EventSink for PersistedEventSink {
 async fn flush_pending_session_events(
     pool: &SessionPool,
     session_id: &str,
-    assistant_message_index: usize,
+    _assistant_message_index: usize,
     pending_events: &Mutex<Vec<PendingSessionEvent>>,
 ) -> Result<(), llm_harness_types::SessionError> {
     let events = std::mem::take(&mut *pending_events.lock().unwrap());
@@ -149,19 +136,10 @@ async fn flush_pending_session_events(
         if let Some(run) = event.run_state {
             pool.append_run_state(session_id, &run).await?;
         }
-        if let Some(artifact) = event.artifact {
-            pool.append_message_artifacts(session_id, assistant_message_index, vec![artifact])
-                .await?;
-        }
         pool.append_trace(session_id, &event.kind, event.data)
             .await?;
     }
     Ok(())
-}
-
-fn trace_invokes_research_report(kind: &str, data: &serde_json::Value) -> bool {
-    matches!(kind, "tool_call" | "tool_result")
-        && data.get("tool").and_then(serde_json::Value::as_str) == Some("create_research_report")
 }
 
 fn run_stage_from_trace(kind: &str, data: &serde_json::Value) -> Option<String> {
@@ -169,9 +147,6 @@ fn run_stage_from_trace(kind: &str, data: &serde_json::Value) -> Option<String> 
         return Some(stage.to_string());
     }
     match kind {
-        "research_search" => Some("search".into()),
-        "research_read" => Some("read_sources".into()),
-        "research_report_done" => Some("report_complete".into()),
         "deep_solve_stage_start" => data
             .get("stage_id")
             .or_else(|| data.get("step_id"))
@@ -179,37 +154,6 @@ fn run_stage_from_trace(kind: &str, data: &serde_json::Value) -> Option<String> 
             .map(ToOwned::to_owned),
         _ => None,
     }
-}
-
-fn message_artifact_from_tool_result(
-    data: &serde_json::Value,
-    run_id: &str,
-) -> Option<serde_json::Value> {
-    research_artifact_from_tool_result(data, run_id)
-}
-
-fn research_artifact_from_tool_result(
-    data: &serde_json::Value,
-    run_id: &str,
-) -> Option<serde_json::Value> {
-    if data.get("tool")?.as_str()? != "create_research_report" {
-        return None;
-    }
-    if data.get("ok").and_then(|value| value.as_bool()) == Some(false) {
-        return None;
-    }
-    let details = data.get("details")?.as_object()?;
-    let title = details.get("title")?.as_str()?.trim();
-    let markdown = details.get("markdown")?.as_str()?.trim();
-    if title.is_empty() || markdown.is_empty() {
-        return None;
-    }
-    Some(serde_json::json!({
-        "type": "research_report",
-        "artifact_store": "runtime_trace",
-        "artifact_id": run_id,
-        "title": title,
-    }))
 }
 
 #[derive(Deserialize)]
@@ -553,7 +497,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         )
         .await;
 
-    let research_report_started = Arc::new(AtomicBool::new(false));
     let pending_events = Arc::new(Mutex::new(Vec::new()));
     let assistant_message_index = pool.assistant_message_count(&entry.id).await.unwrap_or(0) + 1;
     let work = async {
@@ -593,13 +536,11 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             pool: pool.clone(),
             session_id: entry.id.clone(),
             stream: entry.stream.clone(),
-            research_report_started: research_report_started.clone(),
             run_id: run_id.clone(),
             pending_events: pending_events.clone(),
         });
         let mut router = CapabilityRouter::new(env, llm, governance)
             .with_event_sink(sink)
-            .with_workflow_root(rag_root.join("workflow-sessions"))
             .with_product_tool(Arc::new(ReadNotebookItemTool::new(notebook.clone())));
         if entry.notebook_enabled {
             router = router
@@ -663,12 +604,6 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             history_recall_enabled.then(|| pool.history_recall_knowledge_source()),
             &runtime_security,
         )?;
-        if entry.capability == "research" {
-            let workflow_router = router.clone();
-            router = router
-                .with_product_tool(Arc::new(ProposeResearchPlanTool))
-                .with_product_tool(Arc::new(CreateResearchReportTool::new(workflow_router)));
-        }
         let resolved_content =
             resolve_message_content_with_space_mentions(&notebook, &content, &mentions);
         if !mentions.is_empty() {
@@ -1078,39 +1013,6 @@ mod tests {
         assert!(resolved.content.contains("User message:\nsummarize this"));
     }
 
-    #[test]
-    fn creates_durable_research_artifact_from_structured_tool_result() {
-        let artifact = message_artifact_from_tool_result(
-            &serde_json::json!({
-                "tool": "create_research_report",
-                "ok": true,
-                "details": {
-                    "title": "Transformer Architecture",
-                    "markdown": "# Report\n\n## Summary\nDetails."
-                }
-            }),
-            "run-123",
-        )
-        .unwrap();
-
-        assert_eq!(artifact["type"], "research_report");
-        assert_eq!(artifact["artifact_store"], "runtime_trace");
-        assert_eq!(artifact["artifact_id"], "run-123");
-        assert_eq!(artifact["title"], "Transformer Architecture");
-    }
-
-    #[test]
-    fn research_report_boundary_is_detected_from_tool_trace() {
-        let call = serde_json::json!({ "tool": "create_research_report" });
-        assert!(trace_invokes_research_report("tool_call", &call));
-        assert!(trace_invokes_research_report("tool_result", &call));
-        assert!(!trace_invokes_research_report("content", &call));
-        assert!(!trace_invokes_research_report(
-            "tool_call",
-            &serde_json::json!({ "tool": "propose_research_plan" })
-        ));
-    }
-
     #[tokio::test]
     async fn buffered_trace_flush_keeps_final_answer_on_active_path() {
         let root = std::env::temp_dir().join(format!(
@@ -1132,7 +1034,6 @@ mod tests {
             kind: "final_answer".into(),
             data: serde_json::json!({ "text": "answer" }),
             run_state: None,
-            artifact: None,
         }]);
         session
             .append_message(tutor_agent::chat::assistant_message("answer"))

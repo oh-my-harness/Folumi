@@ -52,37 +52,6 @@ pub async fn run_chat_with_session_cancel(
     .await
 }
 
-pub async fn run_research_with_messages(
-    router: &CapabilityRouter,
-    messages: Vec<AgentMessage>,
-) -> Result<String> {
-    run_conversation_with_request(router, "research", RunRequest::new(messages), None, None).await
-}
-
-pub async fn run_research_with_session(
-    router: &CapabilityRouter,
-    session: Session,
-    question: &str,
-) -> Result<String> {
-    run_research_with_session_cancel(router, session, question, None).await
-}
-
-pub async fn run_research_with_session_cancel(
-    router: &CapabilityRouter,
-    session: Session,
-    question: &str,
-    abort_token: Option<CancellationToken>,
-) -> Result<String> {
-    run_conversation_with_request(
-        router,
-        "research",
-        RunRequest::from_text(question),
-        Some(session),
-        abort_token,
-    )
-    .await
-}
-
 pub async fn run_organize_with_messages(
     router: &CapabilityRouter,
     messages: Vec<AgentMessage>,
@@ -123,7 +92,6 @@ pub(crate) async fn run_conversation_with_request(
 ) -> Result<String> {
     let system_prompt = match capability {
         "chat" => chat_system_prompt(),
-        "research" => research_system_prompt(),
         "organize" => organize_system_prompt(),
         other => {
             return Err(TutorError::Internal(format!(
@@ -138,19 +106,6 @@ pub(crate) async fn run_conversation_with_request(
         serde_json::json!({ "capability": capability, "phase": "respond" }),
     )
     .await;
-    if capability == "research" {
-        emit_trace(
-            &router.event_sink,
-            "research_stage_start",
-            serde_json::json!({
-                "capability": "research",
-                "stage": "plan",
-                "title": "Plan research"
-            }),
-        )
-        .await;
-    }
-
     let mut tools: Vec<Arc<dyn llm_harness_types::Tool>> = vec![
         Arc::new(match router.web_search.clone() {
             Some(config) => WebSearchTool::with_config(config),
@@ -285,31 +240,6 @@ pub(crate) async fn run_conversation_with_request(
                     }),
                 )
                 .await;
-                if capability == "research" && tool_name == "web_search" {
-                    emit_trace(
-                        &router.event_sink,
-                        "research_search",
-                        serde_json::json!({
-                            "capability": "research",
-                            "stage": "search",
-                            "title": "Search web",
-                            "payload": { "args": args },
-                        }),
-                    )
-                    .await;
-                } else if capability == "research" && tool_name == "web_fetch" {
-                    emit_trace(
-                        &router.event_sink,
-                        "research_read",
-                        serde_json::json!({
-                            "capability": "research",
-                            "stage": "read",
-                            "title": "Read source",
-                            "payload": { "args": args },
-                        }),
-                    )
-                    .await;
-                }
             }
             AgentHarnessEvent::Agent(AgentEvent::ToolExecutionEnd {
                 tool_use_id,
@@ -356,20 +286,6 @@ pub(crate) async fn run_conversation_with_request(
     )
     .await;
     emit_runtime_usage(&harness, router, capability).await;
-    if capability == "research" && looks_like_research_report(&last_text) {
-        emit_trace(
-            &router.event_sink,
-            "research_report_done",
-            serde_json::json!({
-                "capability": "research",
-                "stage": "synthesize",
-                "title": "Research report ready",
-                "summary": last_text.chars().take(240).collect::<String>(),
-            }),
-        )
-        .await;
-    }
-
     if let Some(error) = last_error {
         return Err(TutorError::Internal(error));
     }
@@ -393,7 +309,7 @@ fn final_answer_mode_for_capability(capability: &str) -> FinalAnswerMode {
 }
 
 fn conversation_uses_runtime_knowledge(capability: &str) -> bool {
-    matches!(capability, "chat" | "research")
+    capability == "chat"
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,13 +320,6 @@ enum TextDeltaRoute {
 fn text_delta_route_for_capability(capability: &str) -> TextDeltaRoute {
     let _ = capability;
     TextDeltaRoute::FinalAnswer
-}
-
-fn looks_like_research_report(text: &str) -> bool {
-    let normalized = text.to_ascii_lowercase();
-    normalized.contains("## summary")
-        && normalized.contains("## sources")
-        && (normalized.contains("## key findings") || normalized.contains("## analysis"))
 }
 
 pub(crate) async fn emit_runtime_usage(
@@ -533,28 +442,6 @@ fn chat_system_prompt() -> String {
         .into()
 }
 
-fn research_system_prompt() -> String {
-    "You are a research tutor. Your job is to help the user clarify research needs and, when appropriate, turn a confirmed topic into a sourced, reusable research report. \
-     Research findings belong in reports, not memory. \
-     Research has two modes: Research Chat and Detailed Research Workflow. \
-     When knowledge_search and knowledge_read are available in Research Chat, use them only when selected course material is relevant: set source_id to exactly `course_knowledge`, search first, read exact returned references, and cite only handles returned by knowledge_read. Never invent a Knowledge citation or ask the user to provide opaque identifiers or authorization scope. \
-     In Research Chat, discuss the topic, ask focused clarification questions, and help define goal, scope, source preferences, output format, depth, time range, and whether Notebook or Knowledge Base context should be used. \
-     Do not call web_search, web_fetch, or produce a full report when the user's request is ambiguous or they are only discussing scope. \
-     When the research need is mostly clear but not confirmed, call propose_research_plan with the proposed topic, scope, output format, depth, time range, sources, and workflow steps, then ask the user to confirm or revise it. \
-     Call create_research_report only when the user explicitly asks to begin, confirms a proposed plan, or gives an unambiguous instruction to produce the report now. \
-     Do not start the Detailed Research Workflow through free-form chat text; create_research_report is the workflow boundary. \
-     For the Detailed Research Workflow: (1) identify the confirmed research question and scope, \
-     (2) call web_search for external facts, (3) call web_fetch on the most relevant sources before relying on them, \
-     (4) read exact referenced Notebook entries, (5) optionally call search_notebook when Notebook is associated, (6) carry any confirmed Knowledge Base source preference into create_research_report, \
-     (7) synthesize a Markdown report. Do not answer detailed research requests from memory when external verification is needed. \
-     If the user explicitly asks to create, update, rename, or move Notebook content, use the bounded Notebook mutation tools; read an existing item first and pass its exact revision. Use propose_notebook_edit only for self-initiated suggestions. Never delete Notebook content. \
-     If search or fetch fails, clearly state what failed and what remains unverified. \
-     When create_research_report completes, briefly tell the user the report is ready; the product UI renders the full report from tool metadata. The report must be Markdown with these sections: Title, Summary, Key Findings, Analysis, Limitations, Follow-up Questions, Sources. \
-     Cite factual claims using numbered source references that match the Sources section. \
-     Keep workflow progress brief; the final report is the main deliverable."
-        .into()
-}
-
 fn organize_system_prompt() -> String {
     "You are a Notebook organization assistant. Your job is to help the user search, \
      inspect, clean up, link, tag, deduplicate, and revise saved Notebook content. Notebook is a \
@@ -570,8 +457,7 @@ fn organize_system_prompt() -> String {
 mod tests {
     use super::{
         TextDeltaRoute, chat_system_prompt, conversation_uses_runtime_knowledge,
-        final_answer_mode_for_capability, looks_like_research_report, organize_system_prompt,
-        research_system_prompt, text_delta_route_for_capability,
+        final_answer_mode_for_capability, organize_system_prompt, text_delta_route_for_capability,
     };
     use llm_harness_loop::{FinalAnswerMissingBehavior, FinalAnswerMode};
 
@@ -599,40 +485,14 @@ mod tests {
     }
 
     #[test]
-    fn research_prompt_requires_search_fetch_and_report() {
-        let prompt = research_system_prompt();
-        assert!(!prompt.contains("rag_search"));
-        assert!(prompt.contains("knowledge_search"));
-        assert!(prompt.contains("knowledge_read"));
-        assert!(prompt.contains("source_id to exactly `course_knowledge`"));
-        assert!(prompt.contains("search first"));
-        assert!(prompt.contains("cite only handles"));
-        assert!(prompt.contains("Research findings belong in reports"));
-        assert!(prompt.contains("Research Chat and Detailed Research Workflow"));
-        assert!(prompt.contains("Do not call web_search"));
-        assert!(prompt.contains("propose_research_plan"));
-        assert!(prompt.contains("create_research_report"));
-        assert!(prompt.contains("workflow boundary"));
-        assert!(prompt.contains("explicitly asks to begin"));
-        assert!(prompt.contains("call web_search"));
-        assert!(prompt.contains("call web_fetch"));
-        assert!(prompt.contains("read exact referenced Notebook entries"));
-        assert!(prompt.contains("propose_notebook_edit"));
-        assert!(prompt.contains("Markdown report"));
-        assert!(prompt.contains("Sources"));
-        assert!(!prompt.contains("final_answer"));
-    }
-
-    #[test]
     fn only_migrated_conversations_install_runtime_knowledge() {
         assert!(conversation_uses_runtime_knowledge("chat"));
-        assert!(conversation_uses_runtime_knowledge("research"));
         assert!(!conversation_uses_runtime_knowledge("quiz"));
         assert!(!conversation_uses_runtime_knowledge("organize"));
     }
 
     #[test]
-    fn research_allows_chat_fallback_before_workflow() {
+    fn chat_allows_text_fallback() {
         match final_answer_mode_for_capability("chat") {
             FinalAnswerMode::Tool(config) => {
                 assert_eq!(
@@ -642,37 +502,14 @@ mod tests {
             }
             other => panic!("expected final answer tool fallback, got {other:?}"),
         }
-        match final_answer_mode_for_capability("research") {
-            FinalAnswerMode::Tool(config) => {
-                assert_eq!(
-                    config.missing_behavior,
-                    FinalAnswerMissingBehavior::FallbackToText
-                );
-            }
-            other => panic!("expected final answer tool fallback, got {other:?}"),
-        }
     }
 
     #[test]
-    fn research_chat_routes_text_delta_to_final_answer_channel() {
-        assert_eq!(
-            text_delta_route_for_capability("research"),
-            TextDeltaRoute::FinalAnswer
-        );
+    fn chat_routes_text_delta_to_final_answer_channel() {
         assert_eq!(
             text_delta_route_for_capability("chat"),
             TextDeltaRoute::FinalAnswer
         );
-    }
-
-    #[test]
-    fn research_report_detection_requires_report_sections() {
-        assert!(!looks_like_research_report(
-            "Sure. What scope and output format should I use?"
-        ));
-        assert!(looks_like_research_report(
-            "# Topic\n\n## Summary\n\nBrief.\n\n## Key Findings\n\n- One.\n\n## Sources\n\n[1] Source"
-        ));
     }
 
     #[test]

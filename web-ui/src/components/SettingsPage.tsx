@@ -913,7 +913,7 @@ export function SettingsPage({
                     <div className="space-y-5 rounded-lg border border-gray-200 p-4">
                       <ConfigHeader
                         title="Web search provider"
-                        description="Use free HTML providers for fallback, or configure paid search APIs for more reliable agent research."
+                        description="Use free HTML providers for fallback, or configure paid search APIs for more reliable web answers."
                         onDelete={() => deleteSearchConfig(activeSearchConfig.id)}
                       />
                       <div className="grid gap-4 md:grid-cols-2">

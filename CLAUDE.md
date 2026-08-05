@@ -5,7 +5,7 @@
 ```
 crates/
 ├── tutor-tools/   # RAG 检索、Web 搜索、代码执行工具
-├── tutor-agent/   # Chat、Research、Quiz、Memory 等 Agent 能力与 CLI 入口
+├── tutor-agent/   # Chat、CodeExec、Organize 等 Agent 能力与 CLI 入口
 └── tutor-web/     # Web API（Axum，流式响应）
 ```
 
@@ -13,10 +13,9 @@ crates/
 
 | 文件 | 职责 |
 |------|------|
-| `capability.rs` | CapabilityRouter：Chat / Research / Quiz / CodeExec 等能力路由 |
+| `capability.rs` | CapabilityRouter：Chat / CodeExec / Organize 能力路由 |
 | `llm_provider.rs` | LlmConfig：多 provider 配置（Anthropic / DeepSeek / OpenAI） |
 | `governance.rs` | GovernanceConfig：budget + audit + approval 组装 |
-| `runtime_workflow.rs` | Research、Quiz、Memory 等固定工作流定义 |
 | `chat.rs` | 普通对话与工具调用 |
 
 ## 测试规范

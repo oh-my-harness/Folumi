@@ -24,7 +24,7 @@ test('restores valid independent help navigation state', () => {
 test('repairs invalid help state without onboarding semantics', () => {
   assert.deepEqual(normalizeProductGuideState({ topic: 'start', composerControl: 'upload' }), {
     topic: 'composer',
-    composerControl: 'mode',
+    composerControl: 'attachment',
   })
 })
 

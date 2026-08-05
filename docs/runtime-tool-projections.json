@@ -25,16 +25,6 @@
     "reason": "Persist quiz artifact identity and bounded creation metadata."
   },
   {
-    "tool": "propose_research_plan",
-    "projection": "projected",
-    "reason": "Persist the bounded user-review proposal."
-  },
-  {
-    "tool": "create_research_report",
-    "projection": "projected",
-    "reason": "Persist report artifact identity and bounded creation metadata."
-  },
-  {
     "tool": "read_space_item",
     "projection": "ephemeral",
     "reason": "Notebook and Quiz bodies are private context; only the read receipt is durable."

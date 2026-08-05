@@ -13,7 +13,6 @@ import {
   Database,
   Edit3,
   FileText,
-  SearchCheck,
   Paperclip,
   Quote,
   RefreshCw,
@@ -45,17 +44,15 @@ import {
   saveChatScrollPosition,
   type ChatScrollPosition,
 } from '../chatScrollPosition'
-import { ResearchReportMessage, looksLikeResearchReport } from './ResearchReportMessage'
 import { SaveNotebookDialog, SaveNotebookOutcomeDialog } from './SaveNotebookDialog'
 
-type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'research' | 'organize'
 type OpenMenu = 'knowledge' | 'notes' | 'model' | null
 
 export interface SaveToNotebookOptions {
   folderPath?: string
   newFolderPath?: string
   filePath?: string
-  entryType?: 'research_report' | 'chat_excerpt'
+  entryType?: 'chat_excerpt'
   title?: string
 }
 
@@ -65,26 +62,9 @@ interface Message {
   kind?: 'idle' | 'thinking' | 'tool' | 'done' | 'error'
   citations?: Citation[]
   deepSolve?: DeepSolveTraceEntry[]
-  researchPlan?: ResearchPlan
-  researchTitle?: string
-  researchUnavailable?: boolean
   notebookEditProposal?: NotebookEditProposal
   attachments?: ChatAttachment[]
   mentions?: NotebookMention[]
-}
-
-interface ResearchPlan {
-  title: string
-  topic: string
-  scope: string
-  outputFormat: string
-  depth: string
-  timeRange: string
-  sourcePreferences: string[]
-  useNotebook: boolean
-  useKnowledgeBase: boolean
-  steps: string[]
-  questions: string[]
 }
 
 export interface ChatAttachment {
@@ -140,7 +120,6 @@ interface Props {
   messages: Message[]
   streamingText: string
   contextStats: ContextStats
-  capability: Capability
   llmConfigs: LlmModelConfig[]
   activeLlmConfigId: string | null
   knowledgeBases: Array<{ id: string; name: string }>
@@ -151,7 +130,6 @@ interface Props {
   onStop?: () => void
   onEditUserMessage?: (messageIndex: number, nextText: string) => void
   onAskDeepSolveStep?: (step: { id: string; title: string; summary?: string }) => void
-  onCapabilityChange: (capability: Capability) => void
   onKnowledgeBaseChange: (id: string) => void
   onNotebookEnabledChange: (enabled: boolean) => void
   onLlmConfigChange: (id: string) => void
@@ -160,8 +138,6 @@ interface Props {
   notebookVault?: NotebookVaultInfo | null
   onSaveToNotebook?: (markdown: string, options?: SaveToNotebookOptions) => Promise<SaveToNotebookResult>
   onOpenNotebookEntry?: (entryId: string) => void
-  onRegenerateResearch?: (markdown: string) => void
-  onIngestResearchSources?: (sources: SourceReference[], markdown: string) => Promise<void>
   onApplyNotebookEdit?: (proposal: NotebookEditProposal) => Promise<void>
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
   disabled: boolean
@@ -179,7 +155,6 @@ export function ChatBox({
   messages,
   streamingText,
   contextStats,
-  capability,
   llmConfigs,
   activeLlmConfigId,
   knowledgeBases,
@@ -190,7 +165,6 @@ export function ChatBox({
   onStop,
   onEditUserMessage,
   onAskDeepSolveStep,
-  onCapabilityChange,
   onKnowledgeBaseChange,
   onNotebookEnabledChange,
   onLlmConfigChange,
@@ -199,14 +173,12 @@ export function ChatBox({
   notebookVault,
   onSaveToNotebook,
   onOpenNotebookEntry,
-  onRegenerateResearch,
-  onIngestResearchSources,
   onApplyNotebookEdit,
   onSourceNavigate,
   disabled,
   running = false,
 }: Props) {
-  const { t, language } = useI18n()
+  const { t } = useI18n()
   const [input, setInput] = useState('')
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null)
   const [editingMessageText, setEditingMessageText] = useState('')
@@ -218,7 +190,7 @@ export function ChatBox({
   const [saveNotebookFileName, setSaveNotebookFileName] = useState('')
   const [saveNotebookBusy, setSaveNotebookBusy] = useState(false)
   const [saveNotebookNative, setSaveNotebookNative] = useState(false)
-  const [saveNotebookEntryType, setSaveNotebookEntryType] = useState<'research_report' | 'chat_excerpt'>('chat_excerpt')
+  const [saveNotebookEntryType, setSaveNotebookEntryType] = useState<'chat_excerpt'>('chat_excerpt')
   const [saveNotebookResult, setSaveNotebookResult] = useState<SaveToNotebookResult | null>(null)
   const [saveNotebookError, setSaveNotebookError] = useState('')
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null)
@@ -322,7 +294,7 @@ export function ChatBox({
 
   const openSaveNotebookDialog = async (
     markdown: string,
-    entryType: 'research_report' | 'chat_excerpt' = 'chat_excerpt',
+    entryType: 'chat_excerpt' = 'chat_excerpt',
     structuredTitle?: string,
   ) => {
     const title = structuredTitle?.trim() || titleFromMarkdown(markdown)
@@ -347,7 +319,7 @@ export function ChatBox({
     markdown: string,
     fileName: string,
     folderPath: string,
-    entryType: 'research_report' | 'chat_excerpt',
+    entryType: 'chat_excerpt',
     title: string,
   ) => {
     if (!onSaveToNotebook || !notebookVault) return
@@ -520,25 +492,17 @@ export function ChatBox({
           <div className="w-full max-w-4xl">
             <div className="mb-7 text-center">
               <h2 className="text-3xl font-semibold text-gray-950">{t('chat.empty.title')}</h2>
-              <p className="mt-2 text-sm text-gray-500">
-                {capability === 'research'
-                  ? language === 'en-US'
-                    ? 'Describe what you want to investigate. The agent will clarify scope before starting the research workflow.'
-                    : '描述你想调研的主题，Agent 会先确认范围，再启动详细研究 workflow。'
-                  : t('chat.empty.description')}
-              </p>
+              <p className="mt-2 text-sm text-gray-500">{t('chat.empty.description')}</p>
             </div>
             <Composer
               inputRef={composerInputRef}
               input={input}
               setInput={setInput}
-              capability={capability}
               llmConfigs={llmConfigs}
               activeLlmConfigId={activeLlmConfigId}
               knowledgeBases={knowledgeBases}
               selectedKnowledgeBaseId={selectedKnowledgeBaseId}
               selectedNotebookEnabled={selectedNotebookEnabled}
-              onCapabilityChange={onCapabilityChange}
               onKnowledgeBaseChange={onKnowledgeBaseChange}
               onNotebookEnabledChange={onNotebookEnabledChange}
               onLlmConfigChange={onLlmConfigChange}
@@ -562,7 +526,7 @@ export function ChatBox({
           <div ref={scrollRef} onScroll={handleScroll} className="chat-scroll-pane min-h-0 flex-1 overflow-y-auto p-4">
             <div className="mx-auto w-full max-w-6xl space-y-3">
             {messages.map((msg, i) => {
-              const structuredAssistant = isStructuredAssistantMessage(msg, capability)
+              const structuredAssistant = isStructuredAssistantMessage(msg)
               const previousUserIndex = msg.role === 'assistant' ? previousUserMessageIndex(messages, i) : -1
               return (
               <div key={i} className={messageClassName(msg, structuredAssistant)}>
@@ -574,32 +538,13 @@ export function ChatBox({
                     <span>{msg.text}</span>
                   </div>
                 ) : msg.role === 'assistant' ? (
-                  msg.researchPlan ? (
-                    <ResearchPlanCard
-                      plan={msg.researchPlan}
-                      text={msg.text}
-                      onStart={() => {
-                        onSend(startResearchPrompt(msg.researchPlan!), [], [])
-                      }}
-                    />
-                  ) : msg.deepSolve && msg.deepSolve.length > 0 ? (
+                  msg.deepSolve && msg.deepSolve.length > 0 ? (
                     <DeepSolveMessage
                       text={msg.text}
                       events={msg.deepSolve}
                       citations={msg.citations}
                       citationList={(citations) => <CitationList citations={citations} onSourceNavigate={onSourceNavigate} />}
                       onAskStep={onAskDeepSolveStep}
-                    />
-                  ) : capability === 'research' && (looksLikeResearchReport(msg.text) || msg.researchUnavailable) ? (
-                    <ResearchReportMessage
-                      text={msg.text}
-                      reportTitle={msg.researchTitle}
-                      unavailable={msg.researchUnavailable}
-                      sources={(msg.citations ?? []).map(citationToResearchSourceReference)}
-                      onSaveToNotebook={(markdown, title) => void openSaveNotebookDialog(markdown, 'research_report', title)}
-                      onRegenerate={onRegenerateResearch}
-                      onIngestSources={onIngestResearchSources}
-                      onSourceNavigate={onSourceNavigate}
                     />
                   ) : (
                     <>
@@ -625,7 +570,7 @@ export function ChatBox({
                         onCopy={() => void copyMessage(i, msg.text)}
                         onQuote={() => quoteMessage('assistant', msg.text)}
                         onSaveToNotebook={
-                          capability === 'research' && msg.text.trim() && onSaveToNotebook
+                          msg.text.trim() && onSaveToNotebook
                             ? () => void openSaveNotebookDialog(msg.text)
                             : undefined
                         }
@@ -707,13 +652,11 @@ export function ChatBox({
               inputRef={composerInputRef}
               input={input}
               setInput={setInput}
-              capability={capability}
               llmConfigs={llmConfigs}
               activeLlmConfigId={activeLlmConfigId}
               knowledgeBases={knowledgeBases}
               selectedKnowledgeBaseId={selectedKnowledgeBaseId}
               selectedNotebookEnabled={selectedNotebookEnabled}
-              onCapabilityChange={onCapabilityChange}
               onKnowledgeBaseChange={onKnowledgeBaseChange}
               onNotebookEnabledChange={onNotebookEnabledChange}
               onLlmConfigChange={onLlmConfigChange}
@@ -904,20 +847,6 @@ function citationToSourceReference(citation: Citation, index: number): SourceRef
   }
 }
 
-function citationToResearchSourceReference(citation: Citation, index: number): SourceReference {
-  const reference = citationToSourceReference(citation, index)
-  return {
-    ...reference,
-    description: truncateSourceDescription(reference.description),
-  }
-}
-
-function truncateSourceDescription(value?: string) {
-  if (!value) return value
-  const normalized = value.replace(/\s+/g, ' ').trim()
-  return normalized.length > 420 ? `${normalized.slice(0, 420)}...` : normalized
-}
-
 function citationRawTarget(citation: Citation) {
   if (citation.kb && citation.documentId) {
     return ['kb', citation.kb, citation.documentId, citation.chunkId].filter(Boolean).join(':')
@@ -925,125 +854,15 @@ function citationRawTarget(citation: Citation) {
   return citation.rawSource || citation.source
 }
 
-function ResearchPlanCard({
-  plan,
-  text,
-  onStart,
-}: {
-  plan: ResearchPlan
-  text: string
-  onStart: () => void
-}) {
-  return (
-    <div className="space-y-3 rounded-lg border border-blue-100 bg-white p-4">
-      {text.trim() && <MarkdownMessage text={text} />}
-      <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
-            <SearchCheck size={17} />
-            Research plan
-          </div>
-          <button
-            className="inline-flex h-8 items-center gap-2 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
-            type="button"
-            onClick={onStart}
-          >
-            <SearchCheck size={15} />
-            Start detailed research
-          </button>
-        </div>
-        <div className="mt-3 grid gap-2 text-sm text-gray-700 sm:grid-cols-2">
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Title</span>
-            <p className="font-medium text-gray-950">{plan.title}</p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Topic</span>
-            <p>{plan.topic}</p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Scope</span>
-            <p>{plan.scope}</p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Output</span>
-            <p>
-              {plan.outputFormat} · {plan.depth}
-            </p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Time range</span>
-            <p>{plan.timeRange}</p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase text-gray-400">Context</span>
-            <p>
-              {[
-                plan.useNotebook ? 'Notebook' : null,
-                plan.useKnowledgeBase ? 'Knowledge Base' : null,
-              ].filter(Boolean).join(' + ') || 'Conversation and web sources'}
-            </p>
-          </div>
-        </div>
-        {plan.sourcePreferences.length > 0 && (
-          <div className="mt-3">
-            <span className="text-xs font-medium uppercase text-gray-400">Sources</span>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {plan.sourcePreferences.map((source) => (
-                <span key={source} className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">
-                  {source}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-        {plan.steps.length > 0 && (
-          <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-gray-600">
-            {plan.steps.map((step, index) => (
-              <li key={`${index}:${step}`}>{step}</li>
-            ))}
-          </ol>
-        )}
-        {plan.questions.length > 0 && (
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-600">
-            {plan.questions.map((question, index) => (
-              <li key={`${index}:${question}`}>{question}</li>
-            ))}
-          </ul>
-        )}
-        <p className="mt-3 text-xs text-gray-500">Confirm, revise, or start the detailed research workflow.</p>
-      </div>
-    </div>
-  )
-}
-
-function startResearchPrompt(plan: ResearchPlan) {
-  return [
-    'Start the detailed research workflow for this confirmed plan.',
-    `Title: ${plan.title}`,
-    `Topic: ${plan.topic}`,
-    `Scope: ${plan.scope}`,
-    `Output format: ${plan.outputFormat}`,
-    `Depth: ${plan.depth}`,
-    `Time range: ${plan.timeRange}`,
-    plan.sourcePreferences.length > 0 ? `Source preferences: ${plan.sourcePreferences.join(', ')}` : '',
-    plan.useNotebook ? 'Use Notebook context if relevant.' : '',
-    plan.useKnowledgeBase ? 'Use the selected Knowledge Base if relevant.' : '',
-    'Search, read sources, synthesize the report, verify citations, and return the final Markdown report.',
-  ].filter(Boolean).join('\n')
-}
-
 function Composer({
   inputRef,
   input,
   setInput,
-  capability,
   llmConfigs,
   activeLlmConfigId,
   knowledgeBases,
   selectedKnowledgeBaseId,
   selectedNotebookEnabled,
-  onCapabilityChange,
   onKnowledgeBaseChange,
   onNotebookEnabledChange,
   onLlmConfigChange,
@@ -1062,13 +881,11 @@ function Composer({
   inputRef?: RefObject<HTMLTextAreaElement | null>
   input: string
   setInput: (value: string) => void
-  capability: Capability
   llmConfigs: LlmModelConfig[]
   activeLlmConfigId: string | null
   knowledgeBases: Array<{ id: string; name: string }>
   selectedKnowledgeBaseId: string
   selectedNotebookEnabled: boolean
-  onCapabilityChange: (capability: Capability) => void
   onKnowledgeBaseChange: (id: string) => void
   onNotebookEnabledChange: (enabled: boolean) => void
   onLlmConfigChange: (id: string) => void
@@ -1223,21 +1040,6 @@ function Composer({
         </div>
       )}
       <div className="relative flex flex-wrap items-center gap-2 border-t border-blue-50 px-4 py-2">
-        <button
-          className={`inline-flex h-9 items-center gap-2 rounded-full px-3 text-sm transition ${
-            capability === 'research'
-              ? 'bg-blue-100 text-blue-800'
-              : 'text-gray-600 hover:bg-blue-50'
-          } disabled:text-gray-400`}
-          type="button"
-          title={t('cap.research.description')}
-          disabled={disabled || running}
-          aria-pressed={capability === 'research'}
-          onClick={() => onCapabilityChange(capability === 'research' ? 'chat' : 'research')}
-        >
-          <SearchCheck size={18} />
-          {t('cap.research')}
-        </button>
 
         <button
           className="inline-flex h-9 items-center gap-2 rounded-full px-3 text-sm text-gray-600 hover:bg-blue-50 disabled:text-gray-400"
@@ -1751,13 +1553,8 @@ function MessageActionToolbar({
   )
 }
 
-function isStructuredAssistantMessage(msg: Message, capability: Capability) {
-  if (msg.role !== 'assistant') return false
-  return Boolean(
-    msg.researchPlan
-    || (msg.deepSolve && msg.deepSolve.length > 0)
-    || (capability === 'research' && (looksLikeResearchReport(msg.text) || msg.researchUnavailable)),
-  )
+function isStructuredAssistantMessage(msg: Message) {
+  return msg.role === 'assistant' && Boolean(msg.deepSolve && msg.deepSolve.length > 0)
 }
 
 function copyTextWithDocumentFallback(text: string) {
@@ -1789,4 +1586,3 @@ function messageClassName(msg: Message, structuredAssistant = false) {
   }
   return `max-w-3xl rounded-lg p-3 ${tones[msg.kind ?? 'idle']}`
 }
-

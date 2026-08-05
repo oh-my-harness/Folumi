@@ -1,4 +1,4 @@
-import { ArrowUp, AtSign, Brain, Database, MessageSquare, Paperclip } from 'lucide-react'
+import { ArrowUp, AtSign, Brain, Database, Paperclip } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useI18n } from '../i18n'
 import { composerGuideControls, type ComposerGuideControl } from '../productGuide'
@@ -10,7 +10,6 @@ interface Props {
 }
 
 const controlIcons = {
-  mode: <MessageSquare size={18} />,
   attachment: <Paperclip size={18} />,
   source: <Database size={18} />,
   mention: <AtSign size={18} />,
@@ -76,12 +75,6 @@ export function ComposerGuidePreview({ control, onControlChange, compact = false
 const chineseCopy = {
   placeholder: '在这里输入问题；按 Enter 发送，Shift + Enter 换行',
   controls: {
-    mode: {
-      toolbar: '聊天',
-      label: '会话模式',
-      description: '输入框左下角第一个按钮。选择 Chat、Research 或 Organize，决定本次会话采用普通对话还是显式 workflow。',
-      steps: ['发送第一条消息前选择合适模式。', 'Research 会先确认需求再启动调研 workflow；Chat 保持普通流式对话。'],
-    },
     attachment: {
       toolbar: '附件',
       label: '上传临时资料',
@@ -118,12 +111,6 @@ const chineseCopy = {
 const englishCopy: typeof chineseCopy = {
   placeholder: 'Type a question here; Enter sends and Shift + Enter adds a line',
   controls: {
-    mode: {
-      toolbar: 'Chat',
-      label: 'Conversation mode',
-      description: 'The first button at the lower left. Choose Chat, Research, or Organize to use normal conversation or an explicit workflow.',
-      steps: ['Choose the appropriate mode before the first message.', 'Research clarifies requirements before starting its workflow; Chat keeps normal streaming conversation.'],
-    },
     attachment: {
       toolbar: 'Attachments',
       label: 'Upload temporary material',
