@@ -49,6 +49,13 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.match(notebook, /backlinks/)
   assert.match(notebook, /局部关系图/)
   assert.match(notebook, /Vault 正在监听/)
+  assert.doesNotMatch(notebook, /window\.prompt/)
+  assert.match(notebook, /aria-label=\{english \? 'New folder name' : '新目录名称'\}/)
+  assert.match(notebook, /data-notebook-tree-row="true"/)
+  assert.match(notebook, /Copy Vault Path|复制 Vault 路径/)
+  assert.match(notebook, /onContextMenu=\{openRootContextMenu\}/)
+  assert.match(notebook, /className=\{compactButtonClassName\}[\s\S]*?onClick=\{\(\) => void createEntry\(\)\}/)
+  assert.match(notebook, /className=\{compactButtonClassName\}[\s\S]*?onClick=\{\(\) => startCreateFolder\(\)\}/)
 })
 
 test('assistant profile is managed from Memory instead of Settings', () => {

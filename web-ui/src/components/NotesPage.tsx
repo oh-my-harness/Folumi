@@ -101,6 +101,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
   const [recentlyDeleted, setRecentlyDeleted] = useState<NotebookEntry | null>(null)
   const [watch, setWatch] = useState<NotebookWatchInfo | null>(null)
   const [query, setQuery] = useState('')
+  const [folderDraft, setFolderDraft] = useState<{ parentPath: string; name: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('')
 
@@ -287,10 +288,21 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
     }
   }, [english, expandFolderPath, startEdit])
 
-  const createFolder = useCallback(async (parentPath?: string) => {
-    const name = window.prompt(english ? 'Folder name' : '文件夹名称')
-    if (!name?.trim()) return
-    const path = parentPath ? `${parentPath.replace(/\/+$/, '')}/${name.trim()}` : name.trim()
+  const startCreateFolder = useCallback((parentPath?: string) => {
+    const normalizedParent = parentPath?.replace(/\/+$/, '') ?? ''
+    setQuery('')
+    expandFolderPath(normalizedParent)
+    setFolderDraft({ parentPath: normalizedParent, name: '' })
+  }, [expandFolderPath])
+
+  const createFolder = useCallback(async (parentPath: string, name: string) => {
+    const trimmedName = name.trim()
+    if (!trimmedName || loading) {
+      setFolderDraft(null)
+      return
+    }
+    const path = parentPath ? `${parentPath}/${trimmedName}` : trimmedName
+    setFolderDraft(null)
     setLoading(true)
     try {
       const response = await fetch('/api/notebook/folders', {
@@ -307,11 +319,12 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       setQuery('')
       setStatus(english ? `Created folder: ${createdPath}` : `已创建文件夹：${createdPath}`)
     } catch (error) {
+      setFolderDraft({ parentPath, name: trimmedName })
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
-  }, [english, expandFolderPath])
+  }, [english, expandFolderPath, loading])
 
   const saveEntry = useCallback(async (entry: NotebookEntry) => {
     if (!editMarkdown.trim()) return
@@ -409,6 +422,21 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
     }
   }, [english, expandFolderPath, recentlyDeleted])
 
+  const openRootContextMenu = useCallback((event: MouseEvent) => {
+    const target = event.target
+    if (target instanceof Element && target.closest('[data-notebook-tree-row="true"]')) return
+    const opened = openDesktopContextMenu(event.clientX, event.clientY, [
+      { label: english ? 'New Note' : '新建笔记', run: () => { void createEntry() } },
+      { label: english ? 'New Folder' : '新建目录', run: () => startCreateFolder() },
+      { label: english ? 'Refresh Vault' : '刷新 Vault', run: () => { void loadNotebook(true) } },
+      ...(watch?.root ? [{
+        label: english ? 'Copy Vault Path' : '复制 Vault 路径',
+        run: () => { void writeClipboardText(watch.root ?? '') },
+      }] : []),
+    ])
+    if (opened) event.preventDefault()
+  }, [createEntry, english, loadNotebook, startCreateFolder, watch?.root])
+
   return (
     <main className="flex h-full min-h-0 flex-col bg-white">
       <header className="flex items-center gap-4 border-b border-gray-200 px-6 py-3">
@@ -446,10 +474,10 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <button className={primaryCompactButtonClassName} type="button" disabled={loading} onClick={() => void createEntry()}>
+              <button className={compactButtonClassName} type="button" disabled={loading} onClick={() => void createEntry()}>
                 <Plus size={14} />{english ? 'New note' : '新建笔记'}
               </button>
-              <button className={compactButtonClassName} type="button" disabled={loading} onClick={() => void createFolder()}>
+              <button className={compactButtonClassName} type="button" disabled={loading} onClick={() => startCreateFolder()}>
                 <Folder size={14} />{english ? 'New folder' : '新建目录'}
               </button>
             </div>
@@ -474,8 +502,12 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
             </div>
           )}
 
-          <div className="min-h-0 flex-1 px-2 py-2">
-            {notebookTree.length === 0 ? (
+          <div
+            className="min-h-0 flex-1 px-2 py-2"
+            data-surface-context-menu="true"
+            onContextMenu={openRootContextMenu}
+          >
+            {notebookTree.length === 0 && !folderDraft ? (
               <div className="px-3 py-10 text-center text-sm text-gray-400">
                 {query
                   ? (english ? 'No matching notes' : '没有匹配的笔记')
@@ -486,11 +518,15 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
                 nodes={notebookTree}
                 activeEntryId={activeId}
                 expandedFolders={visibleExpandedFolders}
+                folderDraft={folderDraft}
                 language={language}
                 onToggleFolder={toggleFolder}
                 onSelectEntry={(id) => { setActiveId(id); setEditingId(null) }}
                 onCreateEntry={(folderPath) => void createEntry(folderPath)}
-                onCreateFolder={(folderPath) => void createFolder(folderPath)}
+                onCreateFolder={startCreateFolder}
+                onFolderDraftNameChange={(name) => setFolderDraft((current) => current ? { ...current, name } : null)}
+                onCommitFolder={(parentPath, name) => void createFolder(parentPath, name)}
+                onCancelFolder={() => setFolderDraft(null)}
                 onDeleteEntry={(entry) => void deleteEntry(entry)}
               />
             )}
@@ -825,27 +861,50 @@ type NotebookTreeNode =
   | { type: 'entry'; name: string; path: string; entry: NotebookEntry }
 
 type FlatNotebookTreeRow = { node: NotebookTreeNode; depth: number }
+type NotebookTreeDisplayRow =
+  | { type: 'node'; node: NotebookTreeNode; depth: number }
+  | { type: 'folder_draft'; depth: number }
 
 const NOTEBOOK_TREE_ROW_HEIGHT = 32
 const NOTEBOOK_TREE_OVERSCAN_ROWS = 12
 const NOTEBOOK_EXPANDED_FOLDERS_KEY = 'folumi:notebook-expanded-folders:v3'
 
-function NotebookFileTree({ nodes, activeEntryId, expandedFolders, language, onToggleFolder, onSelectEntry, onCreateEntry, onCreateFolder, onDeleteEntry }: {
+function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, language, onToggleFolder, onSelectEntry, onCreateEntry, onCreateFolder, onFolderDraftNameChange, onCommitFolder, onCancelFolder, onDeleteEntry }: {
   nodes: NotebookTreeNode[]
   activeEntryId: string | null
   expandedFolders: Set<string>
+  folderDraft: { parentPath: string; name: string } | null
   language: 'zh-CN' | 'en-US'
   onToggleFolder: (folderPath: string) => void
   onSelectEntry: (id: string) => void
   onCreateEntry: (folderPath?: string) => void
   onCreateFolder: (parentPath?: string) => void
+  onFolderDraftNameChange: (name: string) => void
+  onCommitFolder: (parentPath: string, name: string) => void
+  onCancelFolder: () => void
   onDeleteEntry: (entry: NotebookEntry) => void
 }) {
   const english = language === 'en-US'
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(360)
-  const visibleRows = useMemo(() => flattenVisibleNotebookTree(nodes, expandedFolders), [nodes, expandedFolders])
+  const visibleRows = useMemo<NotebookTreeDisplayRow[]>(() => {
+    const rows: NotebookTreeDisplayRow[] = flattenVisibleNotebookTree(nodes, expandedFolders)
+      .map((row) => ({ type: 'node', ...row }))
+    if (!folderDraft) return rows
+    if (!folderDraft.parentPath) {
+      rows.unshift({ type: 'folder_draft', depth: 0 })
+      return rows
+    }
+    const parentIndex = rows.findIndex((row) => row.type === 'node'
+      && row.node.type === 'folder'
+      && row.node.path === folderDraft.parentPath)
+    const parentDepth = parentIndex >= 0
+      ? (rows[parentIndex]?.depth ?? 0)
+      : notebookPathSegments(folderDraft.parentPath).length - 1
+    rows.splice(parentIndex >= 0 ? parentIndex + 1 : 0, 0, { type: 'folder_draft', depth: parentDepth + 1 })
+    return rows
+  }, [expandedFolders, folderDraft, nodes])
   const totalHeight = visibleRows.length * NOTEBOOK_TREE_ROW_HEIGHT
   const startIndex = Math.max(0, Math.floor(scrollTop / NOTEBOOK_TREE_ROW_HEIGHT) - NOTEBOOK_TREE_OVERSCAN_ROWS)
   const endIndex = Math.min(visibleRows.length, Math.ceil((scrollTop + viewportHeight) / NOTEBOOK_TREE_ROW_HEIGHT) + NOTEBOOK_TREE_OVERSCAN_ROWS)
@@ -880,28 +939,73 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, language, onT
     if (opened) event.preventDefault()
   }, [english, onDeleteEntry, onSelectEntry])
 
+  const submitFolderDraft = useCallback(() => {
+    if (!folderDraft) return
+    if (folderDraft.name.trim()) onCommitFolder(folderDraft.parentPath, folderDraft.name)
+    else onCancelFolder()
+  }, [folderDraft, onCancelFolder, onCommitFolder])
+
   return (
     <div ref={containerRef} className="h-full overflow-y-auto" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
       <div className="relative" style={{ height: `${totalHeight}px` }}>
         <div className="absolute left-0 right-0 top-0" style={{ transform: `translateY(${startIndex * NOTEBOOK_TREE_ROW_HEIGHT}px)` }}>
-          {renderedRows.map(({ node, depth }) => node.type === 'folder' ? (
-            <div key={`folder:${node.path}`} data-surface-context-menu="true" className="group flex h-8 w-full items-center gap-1 rounded-md pr-1 text-sm text-gray-700 hover:bg-white" style={{ paddingLeft: `${6 + depth * 14}px` }} onContextMenu={(event) => openFolderContextMenu(event, node)}>
-              <button className="flex min-w-0 flex-1 items-center gap-1.5 text-left" type="button" onClick={() => onToggleFolder(node.path)}>
-                <ChevronDown size={14} className={`shrink-0 text-gray-400 transition-transform ${expandedFolders.has(node.path) ? '' : '-rotate-90'}`} />
-                {expandedFolders.has(node.path) ? <FolderOpen size={16} className="shrink-0 text-blue-500" /> : <Folder size={16} className="shrink-0 text-gray-500" />}
-                <span className="min-w-0 flex-1 truncate font-medium">{node.name}</span>
-              </button>
-              <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New note here' : '在此新建笔记'} onClick={() => onCreateEntry(node.path)}><FileText size={13} /></button>
-              <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New folder here' : '在此新建目录'} onClick={() => onCreateFolder(node.path)}><Folder size={13} /></button>
-            </div>
-          ) : (
-            <div key={node.entry.id} data-surface-context-menu="true" className={`group flex h-8 w-full items-center rounded-md pr-1 text-sm ${activeEntryId === node.entry.id ? 'bg-white shadow-sm ring-1 ring-blue-100' : 'hover:bg-white'}`} style={{ paddingLeft: `${26 + depth * 14}px` }} onContextMenu={(event) => openEntryContextMenu(event, node.entry)}>
-              <button className="flex min-w-0 flex-1 items-center gap-2 text-left" type="button" title={node.entry.path ?? node.entry.title} onClick={() => onSelectEntry(node.entry.id)}>
-                <FileText size={15} className="shrink-0 text-blue-600" /><span className="min-w-0 flex-1 truncate font-medium text-gray-900">{node.name.replace(/\.md$/i, '')}</span>
-              </button>
-              <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100" type="button" title={english ? 'Delete note' : '删除笔记'} onClick={() => onDeleteEntry(node.entry)}><Trash2 size={14} /></button>
-            </div>
-          ))}
+          {renderedRows.map((row) => {
+            if (row.type === 'folder_draft') {
+              return (
+                <div
+                  key={`folder-draft:${folderDraft?.parentPath ?? ''}`}
+                  data-notebook-tree-row="true"
+                  className="flex h-8 w-full items-center gap-1.5 rounded-md bg-white pr-2 text-sm ring-1 ring-blue-200"
+                  style={{ paddingLeft: `${26 + row.depth * 14}px` }}
+                >
+                  <Folder size={15} className="shrink-0 text-blue-500" />
+                  <input
+                    autoFocus
+                    className="h-6 min-w-0 flex-1 border-0 bg-transparent px-1 text-sm text-gray-900 outline-none"
+                    value={folderDraft?.name ?? ''}
+                    aria-label={english ? 'New folder name' : '新目录名称'}
+                    placeholder={english ? 'Folder name' : '目录名称'}
+                    onChange={(event) => onFolderDraftNameChange(event.target.value)}
+                    onBlur={submitFolderDraft}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        submitFolderDraft()
+                      } else if (event.key === 'Escape') {
+                        event.preventDefault()
+                        onCancelFolder()
+                      }
+                    }}
+                  />
+                </div>
+              )
+            }
+
+            const node = row.node
+            if (node.type === 'folder') {
+              return (
+                <div key={`folder:${node.path}`} data-notebook-tree-row="true" data-surface-context-menu="true" className="group flex h-8 w-full items-center gap-1 rounded-md pr-1 text-sm text-gray-700 hover:bg-white" style={{ paddingLeft: `${6 + row.depth * 14}px` }} onContextMenu={(event) => openFolderContextMenu(event, node)}>
+                  <button className="flex min-w-0 flex-1 items-center gap-1.5 text-left" type="button" onClick={() => onToggleFolder(node.path)}>
+                    <ChevronDown size={14} className={`shrink-0 text-gray-400 transition-transform ${expandedFolders.has(node.path) ? '' : '-rotate-90'}`} />
+                    {expandedFolders.has(node.path) ? <FolderOpen size={16} className="shrink-0 text-blue-500" /> : <Folder size={16} className="shrink-0 text-gray-500" />}
+                    <span className="min-w-0 flex-1 truncate font-medium">{node.name}</span>
+                  </button>
+                  <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New note here' : '在此新建笔记'} onClick={() => onCreateEntry(node.path)}><FileText size={13} /></button>
+                  <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New folder here' : '在此新建目录'} onClick={() => onCreateFolder(node.path)}><Folder size={13} /></button>
+                </div>
+              )
+            }
+
+            const entry = node.entry
+            return (
+              <div key={entry.id} data-notebook-tree-row="true" data-surface-context-menu="true" className={`group flex h-8 w-full items-center rounded-md pr-1 text-sm ${activeEntryId === entry.id ? 'bg-white shadow-sm ring-1 ring-blue-100' : 'hover:bg-white'}`} style={{ paddingLeft: `${26 + row.depth * 14}px` }} onContextMenu={(event) => openEntryContextMenu(event, entry)}>
+                <button className="flex min-w-0 flex-1 items-center gap-2 text-left" type="button" title={entry.path ?? entry.title} onClick={() => onSelectEntry(entry.id)}>
+                  <FileText size={15} className="shrink-0 text-blue-600" /><span className="min-w-0 flex-1 truncate font-medium text-gray-900">{node.name.replace(/\.md$/i, '')}</span>
+                </button>
+                <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100" type="button" title={english ? 'Delete note' : '删除笔记'} onClick={() => onDeleteEntry(entry)}><Trash2 size={14} /></button>
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
