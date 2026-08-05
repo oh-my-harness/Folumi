@@ -94,6 +94,8 @@ Folumi 的最终 system prompt 由三个职责不同的层次组成：
 
 普通会话在创建时将当时的 Assistant Profile 快照到 Session 产品元数据，确保既有会话不会因之后修改全局配置而静默改变身份。所有 Chat 入口应复用同一个 Assistant Profile 组装函数，禁止在 Benchmark、临时会话或其他能力中复制另一套角色提示词。
 
+Assistant Profile 的名称和身份说明分别参与组装。身份说明为空时，产品继续采用默认 Folumi 身份说明；配置界面必须展示这一回退结果，并在自定义名称与默认 Folumi 身份同时生效时明确提醒可能的身份冲突。界面还必须说明 Profile 修改只影响新会话，已有会话继续使用创建时保存的快照。
+
 Benchmark 可以在 Assistant Profile 之上叠加“只输出答案实体”等评分约束，但该约束属于 Task Overlay，不应写回日常角色配置。每份端到端结果至少记录角色名称、角色说明内容哈希、角色来源和 Benchmark prompt revision；只有角色哈希、模型、评测 prompt 和数据版本一致的结果才适合直接比较。为避免把用户私有角色说明写入可提交结果，默认只保存哈希；仅在显式启用本地正文诊断时保存原文。
 
 ## 5. 保存的记忆模型

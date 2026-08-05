@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { defaultLlmSettings } from '../settings'
 
 type MemoryKind = 'fact' | 'preference' | 'goal' | 'continuity'
 type MemoryStatus = 'active' | 'resolved' | 'superseded'
@@ -70,6 +71,10 @@ export function UserMemoryPage({
   onSessionNavigate,
 }: Props) {
   const english = language === 'en-US'
+  const usesDefaultAssistantInstructions = !assistantInstructions.trim()
+  const customNameWithDefaultIdentity = usesDefaultAssistantInstructions
+    && Boolean(assistantName.trim())
+    && assistantName.trim() !== defaultLlmSettings.assistantName
   const [activeTab, setActiveTab] = useState<'memory' | 'assistant'>('memory')
   const [items, setItems] = useState<MemoryItem[]>([])
   const [settings, setSettings] = useState<MemorySettings>(emptySettings)
@@ -396,7 +401,33 @@ export function UserMemoryPage({
       ) : (
         <section id="assistant-profile-panel" role="tabpanel" aria-labelledby="assistant-profile-tab" className="mt-6 max-w-3xl rounded-lg border border-gray-200 bg-white p-5">
           <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><Bot size={19} /></span><div><h2 className="font-semibold text-gray-950">{english ? 'Assistant profile' : '助手配置'}</h2><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'Define the identity and behavior shared by new conversations.' : '定义所有新会话共用的助手身份与行为偏好。'}</p></div></div>
-          <div className="mt-4 grid gap-4"><Field label={english ? 'Assistant name' : '助手名称'}><input className="input" value={assistantName} onChange={(event) => onAssistantProfileChange({ name: event.target.value, instructions: assistantInstructions })} /></Field><Field label={english ? 'Identity and behavior instructions' : '身份与行为说明'}><textarea className="min-h-28 resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" value={assistantInstructions} onChange={(event) => onAssistantProfileChange({ name: assistantName, instructions: event.target.value })} /></Field><p className="text-xs text-gray-400">{english ? 'Changes are saved automatically. Memory switches do not disable this profile.' : '更改会自动保存；Memory 开关不会禁用助手配置。'}</p></div>
+          <div className="mt-4 grid gap-4">
+            <Field label={english ? 'Assistant name' : '助手名称'}>
+              <input className="input" value={assistantName} onChange={(event) => onAssistantProfileChange({ name: event.target.value, instructions: assistantInstructions })} />
+              <span className="text-xs font-normal leading-5 text-gray-500">{english ? 'The name and the instructions below are applied together. If they conflict, the instructions may determine how the Assistant identifies itself.' : '助手名称会与下方说明一起生效；如果两者冲突，助手可能优先按照说明介绍自己的身份。'}</span>
+            </Field>
+            <Field label={english ? 'Identity and behavior instructions' : '身份与行为说明'}>
+              <textarea
+                className="min-h-28 resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                value={assistantInstructions}
+                placeholder={defaultLlmSettings.assistantInstructions}
+                onChange={(event) => onAssistantProfileChange({ name: assistantName, instructions: event.target.value })}
+              />
+              <span className="text-xs font-normal leading-5 text-gray-500">{english ? 'Leave this empty to use the default Folumi identity and behavior shown in the placeholder.' : '留空时，运行时会使用输入框占位内容所示的默认 Folumi 身份与行为说明。'}</span>
+            </Field>
+            {usesDefaultAssistantInstructions && (
+              <div className={`flex items-start gap-2 rounded-lg border px-3 py-3 text-sm ${customNameWithDefaultIdentity ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`} role="status">
+                <AlertCircle className="mt-0.5 shrink-0" size={17} />
+                <div className="min-w-0">
+                  <p className="font-medium">{customNameWithDefaultIdentity
+                    ? english ? `The name is “${assistantName.trim()}”, but the empty instructions will use the default Folumi identity.` : `当前名称是“${assistantName.trim()}”，但说明为空，实际运行时仍会使用默认 Folumi 身份。`
+                    : english ? 'Default Folumi instructions are currently in effect.' : '当前实际生效的是默认 Folumi 身份说明。'}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-xs font-normal leading-5 opacity-80">{defaultLlmSettings.assistantInstructions}</p>
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-gray-400">{english ? 'Changes are saved automatically and apply to new conversations only. Existing conversations keep the profile captured when they were created. Memory switches do not disable this profile.' : '更改会自动保存，但只应用于新会话；已有会话继续使用创建时保存的配置。Memory 开关不会禁用助手配置。'}</p>
+          </div>
         </section>
       )}
     </section>
