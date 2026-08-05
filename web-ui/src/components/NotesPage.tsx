@@ -326,6 +326,39 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
     }
   }, [english, expandFolderPath, loading])
 
+  const deleteFolder = useCallback(async (folderPath: string) => {
+    const confirmed = window.confirm(english
+      ? `Delete the empty folder “${folderPath}”? Non-empty folders will not be deleted.`
+      : `确定删除空目录“${folderPath}”吗？非空目录不会被删除。`)
+    if (!confirmed) return
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/notebook/folders?path=${encodeURIComponent(folderPath)}`, {
+        method: 'DELETE',
+      })
+      const data = await safeJson(response)
+      if (!response.ok) {
+        if (response.status === 409 && data.error === 'notebook folder is not empty') {
+          throw new Error(english
+            ? 'This folder is not empty. Move or delete its contents first.'
+            : '该目录不是空目录，请先移动或删除其中的内容。')
+        }
+        throw new Error(errorMessage(data, response.status))
+      }
+      setFolders(((data.folders ?? []) as string[]).filter(Boolean))
+      setExpandedFolders((current) => {
+        const next = new Set(current)
+        next.delete(folderPath)
+        return next
+      })
+      setStatus(english ? `Deleted folder: ${folderPath}` : `已删除目录：${folderPath}`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [english])
+
   const saveEntry = useCallback(async (entry: NotebookEntry) => {
     if (!editMarkdown.trim()) return
     setLoading(true)
@@ -527,6 +560,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
                 onFolderDraftNameChange={(name) => setFolderDraft((current) => current ? { ...current, name } : null)}
                 onCommitFolder={(parentPath, name) => void createFolder(parentPath, name)}
                 onCancelFolder={() => setFolderDraft(null)}
+                onDeleteFolder={(folderPath) => void deleteFolder(folderPath)}
                 onDeleteEntry={(entry) => void deleteEntry(entry)}
               />
             )}
@@ -869,7 +903,7 @@ const NOTEBOOK_TREE_ROW_HEIGHT = 32
 const NOTEBOOK_TREE_OVERSCAN_ROWS = 12
 const NOTEBOOK_EXPANDED_FOLDERS_KEY = 'folumi:notebook-expanded-folders:v3'
 
-function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, language, onToggleFolder, onSelectEntry, onCreateEntry, onCreateFolder, onFolderDraftNameChange, onCommitFolder, onCancelFolder, onDeleteEntry }: {
+function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, language, onToggleFolder, onSelectEntry, onCreateEntry, onCreateFolder, onFolderDraftNameChange, onCommitFolder, onCancelFolder, onDeleteFolder, onDeleteEntry }: {
   nodes: NotebookTreeNode[]
   activeEntryId: string | null
   expandedFolders: Set<string>
@@ -882,6 +916,7 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
   onFolderDraftNameChange: (name: string) => void
   onCommitFolder: (parentPath: string, name: string) => void
   onCancelFolder: () => void
+  onDeleteFolder: (folderPath: string) => void
   onDeleteEntry: (entry: NotebookEntry) => void
 }) {
   const english = language === 'en-US'
@@ -922,13 +957,13 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
 
   const openFolderContextMenu = useCallback((event: MouseEvent, node: Extract<NotebookTreeNode, { type: 'folder' }>) => {
     const opened = openDesktopContextMenu(event.clientX, event.clientY, [
-      { label: expandedFolders.has(node.path) ? (english ? 'Collapse Folder' : '折叠目录') : (english ? 'Expand Folder' : '展开目录'), run: () => onToggleFolder(node.path) },
       { label: english ? 'New Note Here' : '在此新建笔记', run: () => onCreateEntry(node.path) },
       { label: english ? 'New Folder Here' : '在此新建目录', run: () => onCreateFolder(node.path) },
       { label: english ? 'Copy Folder Path' : '复制目录路径', run: () => { void writeClipboardText(node.path) } },
+      { label: english ? 'Delete Folder' : '删除目录', run: () => onDeleteFolder(node.path) },
     ])
     if (opened) event.preventDefault()
-  }, [english, expandedFolders, onCreateEntry, onCreateFolder, onToggleFolder])
+  }, [english, onCreateEntry, onCreateFolder, onDeleteFolder])
 
   const openEntryContextMenu = useCallback((event: MouseEvent, entry: NotebookEntry) => {
     const opened = openDesktopContextMenu(event.clientX, event.clientY, [

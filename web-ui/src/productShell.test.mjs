@@ -56,6 +56,11 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.match(notebook, /onContextMenu=\{openRootContextMenu\}/)
   assert.match(notebook, /className=\{compactButtonClassName\}[\s\S]*?onClick=\{\(\) => void createEntry\(\)\}/)
   assert.match(notebook, /className=\{compactButtonClassName\}[\s\S]*?onClick=\{\(\) => startCreateFolder\(\)\}/)
+  assert.doesNotMatch(notebook, /Collapse Folder|折叠目录/)
+  assert.match(notebook, /Delete Folder|删除目录/)
+  assert.match(notebook, /method: 'DELETE'/)
+  assert.match(notebookRoutes, /delete_empty_folder/)
+  assert.match(notebookRoutes, /\.delete\(delete_folder\)/)
 })
 
 test('assistant profile is managed from Memory instead of Settings', () => {

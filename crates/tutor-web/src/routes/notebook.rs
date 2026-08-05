@@ -71,6 +71,11 @@ struct CreateNotebookFolderRequest {
     path: String,
 }
 
+#[derive(Deserialize)]
+struct DeleteNotebookFolderQuery {
+    path: String,
+}
+
 async fn list_entries(
     State(state): State<NotebookState>,
     Query(query): Query<ListNotebookQuery>,
@@ -209,6 +214,24 @@ async fn create_folder(
         )
             .into_response(),
         Err(err) => error_response(StatusCode::BAD_REQUEST, err.to_string()),
+    }
+}
+
+async fn delete_folder(
+    State(state): State<NotebookState>,
+    Query(query): Query<DeleteNotebookFolderQuery>,
+) -> impl IntoResponse {
+    match state.store.delete_empty_folder(&query.path) {
+        Ok(true) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "folder": { "path": query.path },
+                "folders": state.store.list_folders(),
+            })),
+        )
+            .into_response(),
+        Ok(false) => error_response(StatusCode::NOT_FOUND, "notebook folder not found".into()),
+        Err(err) => error_response(StatusCode::CONFLICT, err.to_string()),
     }
 }
 
@@ -487,7 +510,10 @@ pub fn notebook_router(store: Arc<NotebookStore>) -> Router {
             axum::routing::post(preview_import_entries),
         )
         .route("/api/notebook/import", axum::routing::post(import_entries))
-        .route("/api/notebook/folders", axum::routing::post(create_folder))
+        .route(
+            "/api/notebook/folders",
+            axum::routing::post(create_folder).delete(delete_folder),
+        )
         .route(
             "/api/notebook/import/folder",
             axum::routing::post(import_folder),
@@ -1112,6 +1138,19 @@ mod tests {
 
         let response = app
             .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/api/notebook/folders?path=concepts%2Flithography")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+
+        let response = app
+            .clone()
             .oneshot(json_request(
                 Method::PATCH,
                 &format!("/api/notebook/entries/{entry_id}"),
@@ -1129,6 +1168,22 @@ mod tests {
         assert_eq!(body["entry"]["title"], "Updated report");
         assert_eq!(body["entry"]["path"], "concepts/updated-report.md");
         assert_eq!(body["entry"]["markdown"], "# Updated report");
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/api/notebook/folders?path=concepts%2Flithography")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["folder"]["path"], "concepts/lithography");
+        assert_eq!(body["folders"], serde_json::json!(["concepts"]));
 
         let response = app
             .clone()

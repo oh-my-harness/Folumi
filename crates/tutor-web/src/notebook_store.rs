@@ -424,6 +424,32 @@ impl NotebookStore {
         Ok(folder)
     }
 
+    pub fn delete_empty_folder(&self, path: &str) -> Result<bool> {
+        let Some(folder) = normalize_folder_path(path) else {
+            return Err(anyhow!("notebook folder path is empty"));
+        };
+        let vault_root = self.vault_root.lock().unwrap().clone();
+        let folder_path = vault_root.join(&folder);
+        let metadata = match fs::symlink_metadata(&folder_path) {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(err) => return Err(err.into()),
+        };
+        if !metadata.is_dir() {
+            return Err(anyhow!("notebook folder path is not a directory"));
+        }
+        if fs::read_dir(&folder_path)?.next().transpose()?.is_some() {
+            return Err(anyhow!("notebook folder is not empty"));
+        }
+        fs::remove_dir(&folder_path)?;
+
+        let items = self.items.lock().unwrap();
+        let mut folders = self.folders.lock().unwrap();
+        folders.retain(|stored| !stored.eq_ignore_ascii_case(&folder));
+        self.save_index_locked(&items, &folders)?;
+        Ok(true)
+    }
+
     pub fn create(&self, input: NotebookEntryInput) -> Result<NotebookEntry> {
         validate_notebook_entry_input(&input)?;
         let mut items = self.items.lock().unwrap();
@@ -1598,6 +1624,42 @@ mod tests {
         assert_eq!(updated.title, "Updated");
         assert!(store.delete(&entry.id));
         assert!(store.list(Some("default")).is_empty());
+    }
+
+    #[test]
+    fn notebook_store_deletes_only_empty_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = NotebookStore::new_with_path(dir.path().join("notebook"));
+        store.create_folder("projects/archive").unwrap();
+        let entry = store
+            .create(NotebookEntryInput {
+                space_id: None,
+                entry_type: NotebookEntryType::Note,
+                path: Some("projects/archive/plan.md".into()),
+                title: "Plan".into(),
+                markdown: "# Plan".into(),
+                metadata: None,
+                source_session_id: None,
+                source_message_id: None,
+            })
+            .unwrap();
+
+        let err = store.delete_empty_folder("projects/archive").unwrap_err();
+        assert!(err.to_string().contains("not empty"));
+        assert!(
+            store
+                .list_folders()
+                .contains(&"projects/archive".to_string())
+        );
+
+        assert!(store.delete(&entry.id));
+        assert!(store.delete_empty_folder("projects/archive").unwrap());
+        assert!(
+            !store
+                .list_folders()
+                .contains(&"projects/archive".to_string())
+        );
+        assert!(!dir.path().join("notebook/vault/projects/archive").exists());
     }
 
     #[test]
