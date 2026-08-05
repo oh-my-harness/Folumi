@@ -483,13 +483,7 @@ export default function App() {
           setRunning(false)
           updateRecentSessionRun(setRecentSessions, sourceSessionId, null)
           setLatestUsage((prev) => isTokenUsagePayload(payload.usage) ? payload.usage : prev)
-          if (!streamingRef.current) {
-            pushStatus({
-              kind: 'done',
-              label: 'Done',
-              detail: typeof payload.history_len === 'number' ? `${payload.history_len} context messages` : undefined,
-            })
-          }
+          setMessages((prev) => dropTrailingTransientStatus(prev))
         } else if (kind === 'history_sync') {
           streamingRef.current = ''
           progressStreamingRef.current = ''

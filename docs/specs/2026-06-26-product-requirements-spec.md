@@ -40,6 +40,10 @@ The accepted workspace boundaries and change-control rule are recorded in
   session.
 - **REQ-106** Code execution, web search, web reading, knowledge tools, and Note
   tools shall be enabled by server-side policy, not merely by prompt wording.
+- **REQ-107** Ordinary conversation completion shall clear transient working
+  indicators without appending a generic `Done` status or exposing internal
+  context-message counts. Completion notices remain appropriate for meaningful
+  artifacts, user-requested stops, failures, and other actionable outcomes.
 
 ## 3. Sources
 

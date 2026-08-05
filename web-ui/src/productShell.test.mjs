@@ -108,6 +108,13 @@ test('assistant header avoids duplicate source scope and keeps Temporary Chat co
   assert.doesNotMatch(settings, /Session budget|budgetLimitUsd/)
 })
 
+test('ordinary run completion clears transient progress without adding an internal Done message', () => {
+  const doneHandler = app.match(/else if \(kind === 'done'\) \{([\s\S]*?)\} else if \(kind === 'history_sync'\)/)?.[1]
+  assert.ok(doneHandler)
+  assert.match(doneHandler, /dropTrailingTransientStatus/)
+  assert.doesNotMatch(doneHandler, /pushStatus|context messages|history_len/)
+})
+
 test('research is a chat task action instead of a capability menu', () => {
   assert.doesNotMatch(composer, /openMenu === 'mode'/)
   assert.doesNotMatch(composer, /visibleModeOptions/)
