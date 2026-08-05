@@ -77,10 +77,18 @@ test('History Recall is visible tool search without hidden pre-run injection', (
 })
 
 test('assistant memory writes are proactive but user-controlled', () => {
-  assert.match(memory, /允许助手无需审批添加记忆/)
+  assert.match(memory, /助手主动添加记忆/)
   assert.match(memory, /assistant_write_without_approval/)
   assert.match(websocketRoutes, /clearly durable and personally useful context/)
   assert.match(websocketRoutes, /Memory deletion still requires explicit user intent and separate approval/)
+})
+
+test('memory controls share one settings card and the search field has no overlapping icon', () => {
+  const settingsIndex = memory.indexOf("english ? 'Saved Memory settings'")
+  const historyIndex = memory.indexOf("english ? 'History Recall'")
+  const itemsIndex = memory.indexOf("english ? 'Memory items'")
+  assert.ok(settingsIndex >= 0 && settingsIndex < historyIndex && historyIndex < itemsIndex)
+  assert.doesNotMatch(memory, /<Search\b/)
 })
 
 test('temporary conversations are explicit and disable memory continuity', () => {

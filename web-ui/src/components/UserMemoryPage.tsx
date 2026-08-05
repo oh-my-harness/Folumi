@@ -13,7 +13,6 @@ import {
   PinOff,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   X,
 } from 'lucide-react'
@@ -273,29 +272,52 @@ export function UserMemoryPage({
           )}
 
           <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="font-semibold text-gray-950">{english ? 'Saved Memory' : '保存的记忆'}</h2>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">{english
-                  ? 'Only saved items are recalled. Turning Memory off keeps existing items but removes memory tools from new runs.'
-                  : '只有已经保存的条目才会被召回。关闭后保留已有条目，但新 run 不再挂载记忆工具。'}</p>
-              </div>
-              <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-gray-700">
-                <span>{settings.enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}</span>
-                <input className="peer sr-only" type="checkbox" checked={settings.enabled} disabled={busy || loading} onChange={(event) => void updateMemorySettings({ enabled: event.target.checked })} />
-                <span className="relative h-6 w-11 rounded-full bg-gray-300 transition peer-checked:bg-blue-600 peer-disabled:opacity-60 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
-              </label>
+            <div>
+              <h2 className="font-semibold text-gray-950">{english ? 'Saved Memory settings' : '记忆设置'}</h2>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500">{english
+                ? 'Control saved items, assistant-initiated writes, and on-demand conversation history recall in one place.'
+                : '集中管理保存的记忆、助手主动写入和按需历史检索。'}</p>
             </div>
-            <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-t border-gray-100 pt-4">
-              <div className="max-w-3xl">
-                <h3 className="text-sm font-medium text-gray-900">{english ? 'Allow assistant writes without approval' : '允许助手无需审批添加记忆'}</h3>
-                <p className="mt-1 text-xs leading-5 text-gray-500">{english ? 'The Assistant may save clearly durable details you directly share, such as your preferred name, stable preferences, or ongoing goals, without asking each time. Sensitive, inferred, and transient details remain excluded; forgetting still requires approval.' : '助手可以直接保存你明确透露的姓名、稳定偏好或长期目标等持久信息，不再逐条询问。敏感、推断和临时信息仍不得主动保存；遗忘操作仍需审批。'}</p>
-              </div>
-              <label className={`flex items-center gap-3 text-sm font-medium ${settings.enabled ? 'cursor-pointer text-gray-700' : 'cursor-not-allowed text-gray-400'}`}>
-                <span>{settings.assistant_write_without_approval ? (english ? 'Allowed' : '已授权') : (english ? 'Approval required' : '需要审批')}</span>
-                <input className="peer sr-only" type="checkbox" checked={settings.assistant_write_without_approval} disabled={busy || loading || !settings.enabled} onChange={(event) => void updateMemorySettings({ assistant_write_without_approval: event.target.checked })} />
-                <span className="relative h-6 w-11 rounded-full bg-gray-300 transition peer-checked:bg-blue-600 peer-disabled:opacity-60 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
-              </label>
+
+            <div className="mt-4 divide-y divide-gray-100 rounded-lg border border-gray-100 bg-gray-50/50 px-4">
+              <SettingRow
+                icon={<Brain size={17} />}
+                iconClass="bg-blue-100 text-blue-700"
+                title={english ? 'Saved Memory' : '保存的记忆'}
+                description={english
+                  ? 'Use active saved items across conversations. Turning this off keeps existing items but removes memory tools from new runs.'
+                  : '在不同会话中使用有效的记忆条目。关闭后仍保留已有条目，但新 run 不再挂载记忆工具。'}
+                state={settings.enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}
+                checked={settings.enabled}
+                disabled={busy || loading}
+                onChange={(checked) => void updateMemorySettings({ enabled: checked })}
+              />
+              <SettingRow
+                icon={<Bot size={17} />}
+                iconClass="bg-violet-100 text-violet-700"
+                title={english ? 'Assistant-initiated memory writes' : '助手主动添加记忆'}
+                description={english
+                  ? 'Allow the Assistant to save clearly durable details you directly share without asking each time. Sensitive, inferred, and transient details remain excluded; forgetting still requires approval.'
+                  : '允许助手直接保存你明确透露的姓名、稳定偏好或长期目标等持久信息。敏感、推断和临时信息仍不得主动保存；遗忘仍需审批。'}
+                state={settings.assistant_write_without_approval ? (english ? 'Allowed' : '已授权') : (english ? 'Approval required' : '需要审批')}
+                checked={settings.assistant_write_without_approval}
+                disabled={busy || loading || !settings.enabled}
+                onChange={(checked) => void updateMemorySettings({ assistant_write_without_approval: checked })}
+                warning={!settings.enabled ? (english ? 'Enable Saved Memory first.' : '请先开启保存的记忆。') : undefined}
+              />
+              <SettingRow
+                icon={<History size={17} />}
+                iconClass="bg-cyan-100 text-cyan-700"
+                title={english ? 'History Recall' : '历史检索'}
+                description={english
+                  ? 'Search eligible durable conversations only when earlier context is needed. There is no hidden pre-run recall, and recalled history is not automatically saved as memory.'
+                  : '仅在需要过往上下文时按需搜索符合权限的持久会话；不会在 run 前隐式自动召回，检索到的历史也不会自动保存为记忆。'}
+                state={settings.history_recall_enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}
+                checked={settings.history_recall_enabled}
+                disabled={busy || loading || !settings.enabled}
+                onChange={(checked) => void updateMemorySettings({ history_recall_enabled: checked })}
+                warning={!settings.enabled ? (english ? 'Enable Saved Memory first.' : '请先开启保存的记忆。') : undefined}
+              />
             </div>
           </section>
 
@@ -328,7 +350,7 @@ export function UserMemoryPage({
             )}
 
             <div className="mt-4 grid gap-2 md:grid-cols-[1fr_170px_170px]">
-              <label className="relative"><Search className="absolute left-3 top-2.5 text-gray-400" size={16} /><input className="input w-full pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={english ? 'Search memory' : '搜索记忆'} /></label>
+              <label><span className="sr-only">{english ? 'Search memory' : '搜索记忆'}</span><input className="input w-full" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={english ? 'Search memory' : '搜索记忆'} /></label>
               <select className="input" value={kindFilter} onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}><option value="all">{english ? 'All types' : '全部类型'}</option>{kindOptions(english)}</select>
               <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
                 <option value="effective">{english ? 'Effective' : '有效'}</option><option value="all">{english ? 'All states' : '全部状态'}</option><option value="resolved">{english ? 'Resolved' : '已完成'}</option><option value="superseded">{english ? 'Superseded' : '已替代'}</option><option value="expired">{english ? 'Expired' : '已过期'}</option>
@@ -370,16 +392,6 @@ export function UserMemoryPage({
             </div>
           </section>
 
-          <section className="rounded-xl border border-gray-200 bg-gray-50 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex max-w-3xl items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700"><History size={18} /></span><div><h2 className="font-semibold text-gray-900">{english ? 'History Recall' : '历史检索'}</h2><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'When enabled, the Assistant may visibly search eligible durable sessions only when you refer to earlier conversations. There is no hidden pre-run recall. Searching history does not automatically promote conversation text into Saved Memory.' : '开启后，仅当你提到以前的对话时，助手才可通过可见工具按需搜索符合权限的持久会话；不会在 run 前隐式自动召回，历史内容也不会仅因被检索就自动变成保存的记忆。'}</p>{!settings.enabled && <p className="mt-2 text-xs text-amber-700">{english ? 'Enable Memory first to use History Recall.' : '请先开启 Memory，再启用历史检索。'}</p>}</div></div>
-              <label className={`flex items-center gap-3 text-sm font-medium ${settings.enabled ? 'cursor-pointer text-gray-700' : 'cursor-not-allowed text-gray-400'}`}>
-                <span>{settings.history_recall_enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}</span>
-                <input className="peer sr-only" type="checkbox" checked={settings.history_recall_enabled} disabled={busy || loading || !settings.enabled} onChange={(event) => void updateMemorySettings({ history_recall_enabled: event.target.checked })} />
-                <span className="relative h-6 w-11 rounded-full bg-gray-300 transition peer-checked:bg-blue-600 peer-disabled:opacity-60 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
-              </label>
-            </div>
-          </section>
         </div>
       ) : (
         <section id="assistant-profile-panel" role="tabpanel" aria-labelledby="assistant-profile-tab" className="mt-6 max-w-3xl rounded-lg border border-gray-200 bg-white p-5">
@@ -393,6 +405,53 @@ export function UserMemoryPage({
 
 function Tab({ active, onClick, icon, label, id }: { active: boolean; onClick: () => void; icon: ReactNode; label: string; id: string }) {
   return <button type="button" role="tab" id={`${id}-tab`} aria-controls={`${id}-panel`} aria-selected={active} className={`inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium ${active ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`} onClick={onClick}>{icon}{label}</button>
+}
+
+function SettingRow({
+  icon,
+  iconClass,
+  title,
+  description,
+  state,
+  checked,
+  disabled,
+  onChange,
+  warning,
+}: {
+  icon: ReactNode
+  iconClass: string
+  title: string
+  description: string
+  state: string
+  checked: boolean
+  disabled: boolean
+  onChange: (checked: boolean) => void
+  warning?: string
+}) {
+  return (
+    <div className="grid gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconClass}`}>{icon}</span>
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium text-gray-900">{title}</h3>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-500">{description}</p>
+          {warning && <p className="mt-1.5 text-xs text-amber-700">{warning}</p>}
+        </div>
+      </div>
+      <label className={`flex min-w-[148px] items-center justify-end gap-3 text-sm font-medium ${disabled ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer text-gray-700'}`}>
+        <span>{state}</span>
+        <input
+          type="checkbox"
+          className="peer sr-only"
+          aria-label={title}
+          checked={checked}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span className="relative h-6 w-11 rounded-full bg-gray-300 transition peer-checked:bg-blue-600 peer-disabled:opacity-60 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
+      </label>
+    </div>
+  )
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
