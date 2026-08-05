@@ -15,6 +15,8 @@ use chrono::{DateTime, Utc};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 
+const NOTEBOOK_TRASH_DIR: &str = ".folumi-trash";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum NotebookEntryType {
@@ -98,6 +100,30 @@ pub struct NotebookEntryListItem {
     pub tags: Vec<String>,
     pub file_size: Option<u64>,
     pub file_modified_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotebookFolderDeleteInfo {
+    pub path: String,
+    pub note_count: usize,
+    pub file_count: usize,
+    pub folder_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NotebookFolderTrashResult {
+    pub token: String,
+    pub folder: NotebookFolderDeleteInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct NotebookFolderTrashManifest {
+    token: String,
+    original_path: String,
+    deleted_at: DateTime<Utc>,
+    entries: Vec<NotebookEntry>,
+    folders: Vec<String>,
+    info: NotebookFolderDeleteInfo,
 }
 
 #[derive(Debug, Clone)]
@@ -415,6 +441,9 @@ impl NotebookStore {
         let Some(folder) = normalize_folder_path(path) else {
             return Err(anyhow!("notebook folder path is empty"));
         };
+        if folder_uses_reserved_path(&folder) {
+            return Err(anyhow!("notebook folder path is reserved"));
+        }
         let vault_root = self.vault_root.lock().unwrap().clone();
         fs::create_dir_all(vault_root.join(&folder))?;
         let items = self.items.lock().unwrap();
@@ -448,6 +477,173 @@ impl NotebookStore {
         folders.retain(|stored| !stored.eq_ignore_ascii_case(&folder));
         self.save_index_locked(&items, &folders)?;
         Ok(true)
+    }
+
+    pub fn folder_delete_info(&self, path: &str) -> Result<Option<NotebookFolderDeleteInfo>> {
+        let Some(folder) = normalize_folder_path(path) else {
+            return Err(anyhow!("notebook folder path is empty"));
+        };
+        if folder_uses_reserved_path(&folder) {
+            return Err(anyhow!("notebook folder path is reserved"));
+        }
+        let vault_root = self.vault_root.lock().unwrap().clone();
+        let folder_path = vault_root.join(&folder);
+        let metadata = match fs::symlink_metadata(&folder_path) {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(err) => return Err(err.into()),
+        };
+        if !metadata.is_dir() {
+            return Err(anyhow!("notebook folder path is not a directory"));
+        }
+        let (file_count, folder_count) = count_folder_contents(&folder_path)?;
+        let note_count = self
+            .items
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|entry| {
+                entry
+                    .path
+                    .as_deref()
+                    .is_some_and(|entry_path| path_is_in_folder(entry_path, &folder))
+            })
+            .count();
+        Ok(Some(NotebookFolderDeleteInfo {
+            path: folder,
+            note_count,
+            file_count,
+            folder_count,
+        }))
+    }
+
+    pub fn trash_folder(&self, path: &str) -> Result<Option<NotebookFolderTrashResult>> {
+        let Some(info) = self.folder_delete_info(path)? else {
+            return Ok(None);
+        };
+        let folder = info.path.clone();
+        let vault_root = self.vault_root.lock().unwrap().clone();
+        let source_path = vault_root.join(&folder);
+        let token = uuid::Uuid::new_v4().to_string();
+        let trash_item_root = vault_root.join(NOTEBOOK_TRASH_DIR).join(&token);
+        let payload_path = trash_item_root.join("payload");
+        fs::create_dir_all(&trash_item_root)?;
+        fs::rename(&source_path, &payload_path)?;
+
+        let mut items = self.items.lock().unwrap();
+        let mut folders = self.folders.lock().unwrap();
+        let removed_entries = items
+            .iter()
+            .filter(|entry| {
+                entry
+                    .path
+                    .as_deref()
+                    .is_some_and(|entry_path| path_is_in_folder(entry_path, &folder))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let removed_folders = folders
+            .iter()
+            .filter(|stored| folder_is_same_or_descendant(stored, &folder))
+            .cloned()
+            .collect::<Vec<_>>();
+        let manifest = NotebookFolderTrashManifest {
+            token: token.clone(),
+            original_path: folder.clone(),
+            deleted_at: Utc::now(),
+            entries: removed_entries,
+            folders: removed_folders,
+            info: info.clone(),
+        };
+        let manifest_json = match serde_json::to_string_pretty(&manifest) {
+            Ok(json) => json,
+            Err(err) => {
+                if fs::rename(&payload_path, &source_path).is_ok() {
+                    let _ = fs::remove_dir(&trash_item_root);
+                }
+                return Err(err.into());
+            }
+        };
+        if let Err(err) = fs::write(trash_item_root.join("manifest.json"), manifest_json) {
+            if fs::rename(&payload_path, &source_path).is_ok() {
+                let _ = fs::remove_dir(&trash_item_root);
+            }
+            return Err(err.into());
+        }
+
+        let previous_items = items.clone();
+        let previous_folders = folders.clone();
+        items.retain(|entry| {
+            !entry
+                .path
+                .as_deref()
+                .is_some_and(|entry_path| path_is_in_folder(entry_path, &folder))
+        });
+        folders.retain(|stored| !folder_is_same_or_descendant(stored, &folder));
+        if let Err(err) = self.save_index_locked(&items, &folders) {
+            *items = previous_items;
+            *folders = previous_folders;
+            if fs::rename(&payload_path, &source_path).is_ok() {
+                let _ = fs::remove_file(trash_item_root.join("manifest.json"));
+                let _ = fs::remove_dir(&trash_item_root);
+            }
+            return Err(err);
+        }
+        Ok(Some(NotebookFolderTrashResult {
+            token,
+            folder: info,
+        }))
+    }
+
+    pub fn restore_trashed_folder(&self, token: &str) -> Result<Option<String>> {
+        let token = uuid::Uuid::parse_str(token)
+            .map_err(|_| anyhow!("notebook folder restore token is invalid"))?
+            .to_string();
+        let vault_root = self.vault_root.lock().unwrap().clone();
+        let trash_item_root = vault_root.join(NOTEBOOK_TRASH_DIR).join(&token);
+        let manifest_path = trash_item_root.join("manifest.json");
+        if !manifest_path.is_file() {
+            return Ok(None);
+        }
+        let manifest: NotebookFolderTrashManifest =
+            serde_json::from_str(&fs::read_to_string(&manifest_path)?)?;
+        if manifest.token != token || folder_uses_reserved_path(&manifest.original_path) {
+            return Err(anyhow!("notebook folder restore manifest is invalid"));
+        }
+        let destination = vault_root.join(&manifest.original_path);
+        if destination.exists() {
+            return Err(anyhow!(
+                "notebook folder restore destination already exists"
+            ));
+        }
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let payload_path = trash_item_root.join("payload");
+        fs::rename(&payload_path, &destination)?;
+
+        let mut items = self.items.lock().unwrap();
+        let mut folders = self.folders.lock().unwrap();
+        let previous_items = items.clone();
+        let previous_folders = folders.clone();
+        items.retain(|entry| {
+            !entry
+                .path
+                .as_deref()
+                .is_some_and(|entry_path| path_is_in_folder(entry_path, &manifest.original_path))
+        });
+        items.extend(manifest.entries);
+        folders.extend(manifest.folders);
+        add_folder_and_parents(&manifest.original_path, &mut folders);
+        if let Err(err) = self.save_index_locked(&items, &folders) {
+            *items = previous_items;
+            *folders = previous_folders;
+            let _ = fs::rename(&destination, &payload_path);
+            return Err(err);
+        }
+        fs::remove_file(manifest_path)?;
+        fs::remove_dir(trash_item_root)?;
+        Ok(Some(manifest.original_path))
     }
 
     pub fn create(&self, input: NotebookEntryInput) -> Result<NotebookEntry> {
@@ -1008,6 +1204,9 @@ fn collect_markdown_files(root: &Path, dir: &Path, files: &mut Vec<VaultFile>) -
         let path = item.path();
         let file_type = item.file_type()?;
         if file_type.is_dir() {
+            if item.file_name() == NOTEBOOK_TRASH_DIR {
+                continue;
+            }
             collect_markdown_files(root, &path, files)?;
             continue;
         }
@@ -1501,7 +1700,11 @@ fn normalize_note_path(path: &str) -> Option<String> {
             parts.push(part);
         }
     }
-    if parts.is_empty() {
+    if parts.is_empty()
+        || parts
+            .iter()
+            .any(|part| part.eq_ignore_ascii_case(NOTEBOOK_TRASH_DIR))
+    {
         return None;
     }
     let mut normalized = parts.join("/");
@@ -1524,6 +1727,52 @@ fn normalize_folder_path(path: &str) -> Option<String> {
         None
     } else {
         Some(parts.join("/"))
+    }
+}
+
+fn folder_uses_reserved_path(path: &str) -> bool {
+    path.split('/')
+        .any(|part| part.eq_ignore_ascii_case(NOTEBOOK_TRASH_DIR))
+}
+
+fn path_is_in_folder(path: &str, folder: &str) -> bool {
+    let path = path.replace('\\', "/").to_lowercase();
+    let folder = folder.replace('\\', "/").to_lowercase();
+    path.starts_with(&format!("{folder}/"))
+}
+
+fn folder_is_same_or_descendant(path: &str, folder: &str) -> bool {
+    let path = path.replace('\\', "/").to_lowercase();
+    let folder = folder.replace('\\', "/").to_lowercase();
+    path == folder || path.starts_with(&format!("{folder}/"))
+}
+
+fn count_folder_contents(folder: &Path) -> Result<(usize, usize)> {
+    let mut file_count = 0usize;
+    let mut folder_count = 0usize;
+    for item in fs::read_dir(folder)? {
+        let item = item?;
+        let file_type = item.file_type()?;
+        if file_type.is_dir() {
+            folder_count += 1;
+            let (nested_files, nested_folders) = count_folder_contents(&item.path())?;
+            file_count += nested_files;
+            folder_count += nested_folders;
+        } else {
+            file_count += 1;
+        }
+    }
+    Ok((file_count, folder_count))
+}
+
+fn add_folder_and_parents(folder: &str, folders: &mut HashSet<String>) {
+    let mut current = Vec::new();
+    for part in folder.split('/') {
+        if part.trim().is_empty() {
+            continue;
+        }
+        current.push(part);
+        folders.insert(current.join("/"));
     }
 }
 
@@ -1660,6 +1909,50 @@ mod tests {
                 .contains(&"projects/archive".to_string())
         );
         assert!(!dir.path().join("notebook/vault/projects/archive").exists());
+    }
+
+    #[test]
+    fn notebook_store_trashes_and_restores_non_empty_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = NotebookStore::new_with_path(dir.path().join("notebook"));
+        store.create_folder("projects/archive/assets").unwrap();
+        let entry = store
+            .create(NotebookEntryInput {
+                space_id: None,
+                entry_type: NotebookEntryType::Note,
+                path: Some("projects/archive/plan.md".into()),
+                title: "Plan".into(),
+                markdown: "# Plan".into(),
+                metadata: None,
+                source_session_id: None,
+                source_message_id: None,
+            })
+            .unwrap();
+        let asset_path = dir
+            .path()
+            .join("notebook/vault/projects/archive/assets/diagram.png");
+        std::fs::write(&asset_path, b"png").unwrap();
+
+        let info = store
+            .folder_delete_info("projects/archive")
+            .unwrap()
+            .unwrap();
+        assert_eq!(info.note_count, 1);
+        assert_eq!(info.file_count, 2);
+        assert_eq!(info.folder_count, 1);
+
+        let deleted = store.trash_folder("projects/archive").unwrap().unwrap();
+        assert_eq!(deleted.folder, info);
+        assert!(store.get(&entry.id).is_none());
+        assert!(!asset_path.exists());
+
+        let restored = store
+            .restore_trashed_folder(&deleted.token)
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored, "projects/archive");
+        assert_eq!(store.get(&entry.id).unwrap().id, entry.id);
+        assert!(asset_path.exists());
     }
 
     #[test]

@@ -80,6 +80,13 @@ interface NotebookRefreshResult {
   removed?: number
 }
 
+interface NotebookFolderDeleteInfo {
+  path: string
+  note_count: number
+  file_count: number
+  folder_count: number
+}
+
 interface Props {
   language: 'zh-CN' | 'en-US'
   focusTarget?: Extract<SourceTarget, { type: 'notebook' }> | null
@@ -102,6 +109,8 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
   const [watch, setWatch] = useState<NotebookWatchInfo | null>(null)
   const [query, setQuery] = useState('')
   const [folderDraft, setFolderDraft] = useState<{ parentPath: string; name: string } | null>(null)
+  const [pendingFolderDelete, setPendingFolderDelete] = useState<NotebookFolderDeleteInfo | null>(null)
+  const [recentlyDeletedFolder, setRecentlyDeletedFolder] = useState<{ token: string; path: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('')
 
@@ -327,10 +336,6 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
   }, [english, expandFolderPath, loading])
 
   const deleteFolder = useCallback(async (folderPath: string) => {
-    const confirmed = window.confirm(english
-      ? `Delete the empty folder “${folderPath}”? Non-empty folders will not be deleted.`
-      : `确定删除空目录“${folderPath}”吗？非空目录不会被删除。`)
-    if (!confirmed) return
     setLoading(true)
     try {
       const response = await fetch(`/api/notebook/folders?path=${encodeURIComponent(folderPath)}`, {
@@ -338,10 +343,9 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       })
       const data = await safeJson(response)
       if (!response.ok) {
-        if (response.status === 409 && data.error === 'notebook folder is not empty') {
-          throw new Error(english
-            ? 'This folder is not empty. Move or delete its contents first.'
-            : '该目录不是空目录，请先移动或删除其中的内容。')
+        if (response.status === 409 && data.code === 'folder_not_empty' && data.folder) {
+          setPendingFolderDelete(data.folder as unknown as NotebookFolderDeleteInfo)
+          return
         }
         throw new Error(errorMessage(data, response.status))
       }
@@ -358,6 +362,63 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       setLoading(false)
     }
   }, [english])
+
+  const confirmRecursiveFolderDelete = useCallback(async () => {
+    if (!pendingFolderDelete) return
+    const folderPath = pendingFolderDelete.path
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/notebook/folders?path=${encodeURIComponent(folderPath)}&recursive=true`, {
+        method: 'DELETE',
+      })
+      const data = await safeJson(response)
+      if (!response.ok) throw new Error(errorMessage(data, response.status))
+      const nextEntries = (data.entries ?? []) as NotebookEntry[]
+      setEntries(nextEntries)
+      setFolders(((data.folders ?? []) as string[]).filter(Boolean))
+      setActiveId((current) => current && nextEntries.some((entry) => entry.id === current) ? current : null)
+      setDetail(null)
+      setEditingId(null)
+      setExpandedFolders((current) => {
+        const next = new Set<string>()
+        for (const path of current) {
+          if (path !== folderPath && !path.startsWith(`${folderPath}/`)) next.add(path)
+        }
+        return next
+      })
+      const deleted = data.deleted as { token?: string; folder?: NotebookFolderDeleteInfo } | undefined
+      if (deleted?.token) setRecentlyDeletedFolder({ token: deleted.token, path: folderPath })
+      setPendingFolderDelete(null)
+      setStatus(english ? `Deleted folder: ${folderPath}` : `已删除目录：${folderPath}`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [english, pendingFolderDelete])
+
+  const restoreRecentlyDeletedFolder = useCallback(async () => {
+    if (!recentlyDeletedFolder) return
+    setLoading(true)
+    try {
+      const response = await fetch('/api/notebook/folders/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: recentlyDeletedFolder.token }),
+      })
+      const data = await safeJson(response)
+      if (!response.ok) throw new Error(errorMessage(data, response.status))
+      setEntries((data.entries ?? []) as NotebookEntry[])
+      setFolders(((data.folders ?? []) as string[]).filter(Boolean))
+      expandFolderPath(recentlyDeletedFolder.path)
+      setRecentlyDeletedFolder(null)
+      setStatus(english ? 'Folder restored' : '目录已恢复')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [english, expandFolderPath, recentlyDeletedFolder])
 
   const saveEntry = useCallback(async (entry: NotebookEntry) => {
     if (!editMarkdown.trim()) return
@@ -535,6 +596,18 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
             </div>
           )}
 
+          {recentlyDeletedFolder && (
+            <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span className="min-w-0 flex-1 truncate">
+                {english ? `Deleted folder “${recentlyDeletedFolder.path}”` : `已删除目录“${recentlyDeletedFolder.path}”`}
+              </span>
+              <button type="button" className="inline-flex items-center gap-1 font-medium" disabled={loading} onClick={() => void restoreRecentlyDeletedFolder()}>
+                <Undo2 size={13} />{english ? 'Undo' : '撤销'}
+              </button>
+              <button type="button" aria-label={english ? 'Dismiss' : '关闭'} onClick={() => setRecentlyDeletedFolder(null)}><X size={13} /></button>
+            </div>
+          )}
+
           <div
             className="min-h-0 flex-1 px-2 py-2"
             data-surface-context-menu="true"
@@ -593,7 +666,64 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
           onSourceNavigate={onSourceNavigate}
         />
       </div>
+      {pendingFolderDelete && (
+        <FolderDeleteDialog
+          folder={pendingFolderDelete}
+          language={language}
+          loading={loading}
+          onCancel={() => setPendingFolderDelete(null)}
+          onConfirm={() => void confirmRecursiveFolderDelete()}
+        />
+      )}
     </main>
+  )
+}
+
+function FolderDeleteDialog({ folder, language, loading, onCancel, onConfirm }: {
+  folder: NotebookFolderDeleteInfo
+  language: 'zh-CN' | 'en-US'
+  loading: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const english = language === 'en-US'
+  const otherFiles = Math.max(0, folder.file_count - folder.note_count)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !loading) onCancel()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [loading, onCancel])
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/25 px-4"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !loading) onCancel()
+      }}
+    >
+      <section className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="notebook-folder-delete-title">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600"><AlertTriangle size={20} /></span>
+          <div className="min-w-0">
+            <h2 id="notebook-folder-delete-title" className="text-base font-semibold text-gray-950">{english ? 'This folder is not empty' : '目录不是空目录'}</h2>
+            <p className="mt-1 break-all text-sm text-gray-500">{folder.path}</p>
+          </div>
+        </div>
+        <p className="mt-4 text-sm leading-6 text-gray-700">
+          {english
+            ? `Continuing will remove ${folder.note_count} notes, ${otherFiles} other files, and ${folder.folder_count} subfolders. You can undo this deletion afterward.`
+            : `继续删除将移除 ${folder.note_count} 篇笔记、${otherFiles} 个其他文件和 ${folder.folder_count} 个子目录。删除后仍可撤销恢复。`}
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button autoFocus className={compactButtonClassName} type="button" disabled={loading} onClick={onCancel}>{english ? 'Cancel' : '取消'}</button>
+          <button className="inline-flex h-9 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50" type="button" disabled={loading} onClick={onConfirm}>
+            {loading ? (english ? 'Deleting…' : '正在删除…') : (english ? 'Delete anyway' : '仍要删除')}
+          </button>
+        </div>
+      </section>
+    </div>
   )
 }
 

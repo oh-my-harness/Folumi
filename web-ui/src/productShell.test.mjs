@@ -61,6 +61,13 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.match(notebook, /method: 'DELETE'/)
   assert.match(notebookRoutes, /delete_empty_folder/)
   assert.match(notebookRoutes, /\.delete\(delete_folder\)/)
+  assert.match(notebook, /function FolderDeleteDialog/)
+  assert.match(notebook, /目录不是空目录/)
+  assert.match(notebook, /仍要删除/)
+  assert.match(notebook, /recursive=true/)
+  assert.match(notebook, /\/api\/notebook\/folders\/restore/)
+  assert.match(notebookRoutes, /trash_folder/)
+  assert.match(notebookRoutes, /restore_trashed_folder/)
 })
 
 test('assistant profile is managed from Memory instead of Settings', () => {

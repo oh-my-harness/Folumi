@@ -74,6 +74,13 @@ struct CreateNotebookFolderRequest {
 #[derive(Deserialize)]
 struct DeleteNotebookFolderQuery {
     path: String,
+    #[serde(default)]
+    recursive: bool,
+}
+
+#[derive(Deserialize)]
+struct RestoreNotebookFolderRequest {
+    token: String,
 }
 
 async fn list_entries(
@@ -221,6 +228,22 @@ async fn delete_folder(
     State(state): State<NotebookState>,
     Query(query): Query<DeleteNotebookFolderQuery>,
 ) -> impl IntoResponse {
+    if query.recursive {
+        return match state.store.trash_folder(&query.path) {
+            Ok(Some(deleted)) => (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "deleted": deleted,
+                    "entries": state.store.list_summaries(Some("default")),
+                    "folders": state.store.list_folders(),
+                })),
+            )
+                .into_response(),
+            Ok(None) => error_response(StatusCode::NOT_FOUND, "notebook folder not found".into()),
+            Err(err) => error_response(StatusCode::CONFLICT, err.to_string()),
+        };
+    }
+
     match state.store.delete_empty_folder(&query.path) {
         Ok(true) => (
             StatusCode::OK,
@@ -231,6 +254,45 @@ async fn delete_folder(
         )
             .into_response(),
         Ok(false) => error_response(StatusCode::NOT_FOUND, "notebook folder not found".into()),
+        Err(err) if err.to_string() == "notebook folder is not empty" => {
+            match state.store.folder_delete_info(&query.path) {
+                Ok(Some(folder)) => (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({
+                        "error": "notebook folder is not empty",
+                        "code": "folder_not_empty",
+                        "folder": folder,
+                    })),
+                )
+                    .into_response(),
+                Ok(None) => {
+                    error_response(StatusCode::NOT_FOUND, "notebook folder not found".into())
+                }
+                Err(info_err) => error_response(StatusCode::CONFLICT, info_err.to_string()),
+            }
+        }
+        Err(err) => error_response(StatusCode::CONFLICT, err.to_string()),
+    }
+}
+
+async fn restore_folder(
+    State(state): State<NotebookState>,
+    Json(req): Json<RestoreNotebookFolderRequest>,
+) -> impl IntoResponse {
+    match state.store.restore_trashed_folder(&req.token) {
+        Ok(Some(path)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "folder": { "path": path },
+                "entries": state.store.list_summaries(Some("default")),
+                "folders": state.store.list_folders(),
+            })),
+        )
+            .into_response(),
+        Ok(None) => error_response(
+            StatusCode::NOT_FOUND,
+            "notebook folder recovery item not found".into(),
+        ),
         Err(err) => error_response(StatusCode::CONFLICT, err.to_string()),
     }
 }
@@ -513,6 +575,10 @@ pub fn notebook_router(store: Arc<NotebookStore>) -> Router {
         .route(
             "/api/notebook/folders",
             axum::routing::post(create_folder).delete(delete_folder),
+        )
+        .route(
+            "/api/notebook/folders/restore",
+            axum::routing::post(restore_folder),
         )
         .route(
             "/api/notebook/import/folder",
@@ -1148,6 +1214,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = response_json(response).await;
+        assert_eq!(body["code"], "folder_not_empty");
+        assert_eq!(body["folder"]["note_count"], 1);
+        assert_eq!(body["folder"]["file_count"], 1);
 
         let response = app
             .clone()
@@ -1211,6 +1281,61 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn recursively_deleted_notebook_folder_can_be_restored() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
+        let entry = store
+            .create(crate::notebook_store::NotebookEntryInput {
+                space_id: None,
+                entry_type: NotebookEntryType::Note,
+                path: Some("projects/archive/plan.md".into()),
+                title: "Plan".into(),
+                markdown: "# Plan".into(),
+                metadata: None,
+                source_session_id: None,
+                source_message_id: None,
+            })
+            .unwrap();
+        let asset_path = dir
+            .path()
+            .join("notebook/vault/projects/archive/diagram.png");
+        std::fs::write(&asset_path, b"png").unwrap();
+        let app = notebook_router(store.clone());
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/api/notebook/folders?path=projects%2Farchive&recursive=true")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let token = body["deleted"]["token"].as_str().unwrap().to_string();
+        assert_eq!(body["deleted"]["folder"]["note_count"], 1);
+        assert!(body["entries"].as_array().unwrap().is_empty());
+        assert!(!asset_path.exists());
+
+        let response = app
+            .oneshot(json_request(
+                Method::POST,
+                "/api/notebook/folders/restore",
+                serde_json::json!({ "token": token }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["folder"]["path"], "projects/archive");
+        assert_eq!(body["entries"][0]["id"], entry.id);
+        assert!(asset_path.exists());
     }
 
     #[tokio::test]
