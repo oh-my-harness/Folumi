@@ -1120,7 +1120,7 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
                 <div
                   key={`folder-draft:${folderDraft?.parentPath ?? ''}`}
                   data-notebook-tree-row="true"
-                  className="flex h-8 w-full items-center gap-1.5 rounded-md bg-white pr-2 text-sm ring-1 ring-blue-200"
+                  className="mx-1 mb-1 flex h-7 w-auto items-center gap-1.5 rounded-md bg-white pr-2 text-sm ring-1 ring-inset ring-blue-200"
                   style={{ paddingLeft: `${26 + row.depth * 14}px` }}
                 >
                   <Folder size={15} className="shrink-0 text-blue-500" />
@@ -1149,7 +1149,7 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
             const node = row.node
             if (node.type === 'folder') {
               return (
-                <div key={`folder:${node.path}`} data-notebook-tree-row="true" data-surface-context-menu="true" className="group flex h-8 w-full items-center gap-1 rounded-md pr-1 text-sm text-gray-700 hover:bg-white" style={{ paddingLeft: `${6 + row.depth * 14}px` }} onContextMenu={(event) => openFolderContextMenu(event, node)}>
+                <div key={`folder:${node.path}`} data-notebook-tree-row="true" data-surface-context-menu="true" className="group mx-1 mb-1 flex h-7 w-auto items-center gap-1 rounded-md pr-1 text-sm text-gray-700 transition-colors hover:bg-white" style={{ paddingLeft: `${6 + row.depth * 14}px` }} onContextMenu={(event) => openFolderContextMenu(event, node)}>
                   <button className="flex min-w-0 flex-1 items-center gap-1.5 text-left" type="button" onClick={() => onToggleFolder(node.path)}>
                     <ChevronDown size={14} className={`shrink-0 text-gray-400 transition-transform ${expandedFolders.has(node.path) ? '' : '-rotate-90'}`} />
                     {expandedFolders.has(node.path) ? <FolderOpen size={16} className="shrink-0 text-blue-500" /> : <Folder size={16} className="shrink-0 text-gray-500" />}
@@ -1163,7 +1163,7 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
 
             const entry = node.entry
             return (
-              <div key={entry.id} data-notebook-tree-row="true" data-surface-context-menu="true" className={`group flex h-8 w-full items-center rounded-md pr-1 text-sm ${activeEntryId === entry.id ? 'bg-white shadow-sm ring-1 ring-blue-100' : 'hover:bg-white'}`} style={{ paddingLeft: `${26 + row.depth * 14}px` }} onContextMenu={(event) => openEntryContextMenu(event, entry)}>
+              <div key={entry.id} data-notebook-tree-row="true" data-surface-context-menu="true" className={`group mx-1 mb-1 flex h-7 w-auto items-center rounded-md pr-1 text-sm transition-colors ${activeEntryId === entry.id ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-100' : 'hover:bg-white'}`} style={{ paddingLeft: `${26 + row.depth * 14}px` }} onContextMenu={(event) => openEntryContextMenu(event, entry)}>
                 <button className="flex min-w-0 flex-1 items-center gap-2 text-left" type="button" title={entry.path ?? entry.title} onClick={() => onSelectEntry(entry.id)}>
                   <FileText size={15} className="shrink-0 text-blue-600" /><span className="min-w-0 flex-1 truncate font-medium text-gray-900">{node.name.replace(/\.md$/i, '')}</span>
                 </button>
