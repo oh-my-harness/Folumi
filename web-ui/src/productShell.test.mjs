@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const sidebar = readFileSync(new URL('./components/Sidebar.tsx', import.meta.url), 'utf8')
+const appTitleBar = readFileSync(new URL('./components/AppTitleBar.tsx', import.meta.url), 'utf8')
 const composer = readFileSync(new URL('./components/ChatBox.tsx', import.meta.url), 'utf8')
 const productGuide = readFileSync(new URL('./components/ProductGuide.tsx', import.meta.url), 'utf8')
 const onboarding = readFileSync(new URL('./components/OnboardingDialog.tsx', import.meta.url), 'utf8')
@@ -20,6 +21,8 @@ const memoryStore = readFileSync(new URL('../../crates/tutor-web/src/memory_stor
 const memoryRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/memory.rs', import.meta.url), 'utf8')
 const agentCapability = readFileSync(new URL('../../crates/tutor-agent/src/capability.rs', import.meta.url), 'utf8')
 const agentLibrary = readFileSync(new URL('../../crates/tutor-agent/src/lib.rs', import.meta.url), 'utf8')
+const tauriConfig = readFileSync(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8')
+const desktopCapabilities = readFileSync(new URL('../../src-tauri/capabilities/default.json', import.meta.url), 'utf8')
 
 test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, and Settings', () => {
   assert.match(sidebar, /export type AppView = 'assistant' \| 'knowledge' \| 'notebook' \| 'memory' \| 'settings'/)
@@ -30,11 +33,19 @@ test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, an
   assert.doesNotMatch(sidebar, /key: '(tutor|space)'/)
 })
 
-test('sidebar keeps its frame control separate from compact branding', () => {
-  assert.match(sidebar, /data-sidebar-frame-control="true"/)
+test('sidebar control lives in a fixed custom window frame above compact branding', () => {
+  assert.match(appTitleBar, /data-app-titlebar="true"/)
+  assert.match(appTitleBar, /app-titlebar-sidebar-toggle absolute left-3/)
+  assert.match(appTitleBar, /data-tauri-drag-region/)
+  assert.match(appTitleBar, /data-window-controls="true"/)
+  assert.match(appTitleBar, /sidebarCollapsed \? <PanelLeftOpen size=\{18\} \/> : <PanelLeftClose size=\{18\} \/>/)
   assert.match(sidebar, /data-sidebar-brand="true"/)
-  assert.match(sidebar, /collapsed \? <PanelLeftOpen size=\{18\} \/> : <PanelLeftClose size=\{18\} \/>/)
+  assert.doesNotMatch(sidebar, /PanelLeftOpen|PanelLeftClose|onToggleCollapsed/)
   assert.doesNotMatch(sidebar, /t\('app\.subtitle'\)/)
+  assert.match(tauriConfig, /"decorations": false/)
+  for (const permission of ['close', 'minimize', 'start-dragging', 'toggle-maximize']) {
+    assert.match(desktopCapabilities, new RegExp(`core:window:allow-${permission}`))
+  }
 })
 
 test('Notebook and Memory are standalone workspaces while Knowledge Base stays RAG-only', () => {

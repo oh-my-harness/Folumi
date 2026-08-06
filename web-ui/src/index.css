@@ -83,6 +83,12 @@ body {
   color: var(--text-primary);
 }
 
+.app-titlebar {
+  border-color: var(--surface-border-subtle);
+  background: var(--app-frame);
+  user-select: none;
+}
+
 /* Reserve scrollbar space up front so panes never shift when overflow changes. */
 .app-shell .overflow-y-auto {
   scrollbar-gutter: stable;

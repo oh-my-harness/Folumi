@@ -6,8 +6,6 @@ import {
   FileText,
   MessageSquare,
   NotebookPen,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pin,
   Settings,
   ShieldOff,
@@ -41,7 +39,6 @@ interface Props {
   onRenameSession: (id: string, title: string) => void
   onDeleteSession: (id: string) => void
   onTogglePinSession: (id: string) => void
-  onToggleCollapsed: () => void
 }
 
 const navItems: Array<{
@@ -65,7 +62,6 @@ export function Sidebar({
   onRenameSession,
   onDeleteSession,
   onTogglePinSession,
-  onToggleCollapsed,
 }: Props) {
   const { t } = useI18n()
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
@@ -115,28 +111,13 @@ export function Sidebar({
 
   return (
     <aside
-      className={`app-sidebar flex h-screen shrink-0 flex-col border-r transition-[width] duration-200 ${
+      className={`app-sidebar flex h-full shrink-0 flex-col border-r transition-[width] duration-200 ${
         collapsed ? 'w-16' : 'w-72'
       }`}
     >
       <div
-        data-sidebar-frame-control="true"
-        className={`flex h-12 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'px-3'}`}
-      >
-        <button
-          type="button"
-          className="rounded-md p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-          title={collapsed ? t('nav.expand') : t('nav.collapse')}
-          aria-label={collapsed ? t('nav.expand') : t('nav.collapse')}
-          onClick={onToggleCollapsed}
-        >
-          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-        </button>
-      </div>
-
-      <div
         data-sidebar-brand="true"
-        className={`flex shrink-0 items-center pb-4 ${collapsed ? 'justify-center px-2' : 'px-4'}`}
+        className={`flex h-14 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'px-4'}`}
       >
         <button
           type="button"

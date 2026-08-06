@@ -9,6 +9,7 @@ import { NotesPage } from './components/NotesPage'
 import { UserMemoryPage } from './components/UserMemoryPage'
 import { OnboardingDialog } from './components/OnboardingDialog'
 import { OnboardingResumeButton } from './components/OnboardingResumeButton'
+import { AppTitleBar } from './components/AppTitleBar'
 import { AppView, Sidebar } from './components/Sidebar'
 import type { DeepSolveTraceEntry } from './components/DeepSolveMessage'
 import type { SourceReference, SourceTarget } from './components/MarkdownMessage'
@@ -1188,7 +1189,12 @@ export default function App() {
 
   return (
     <I18nProvider language={llmSettings.language}>
-    <div className="app-shell flex h-screen overflow-hidden" data-theme={llmSettings.theme}>
+    <div className="app-shell flex h-screen flex-col overflow-hidden" data-theme={llmSettings.theme}>
+      <AppTitleBar
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
+      />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       <Sidebar
         activeView={view}
         activeSessionId={view === 'assistant' ? sessionId : null}
@@ -1199,7 +1205,6 @@ export default function App() {
         onRenameSession={handleRenameSession}
         onDeleteSession={handleDeleteSession}
         onTogglePinSession={handleTogglePinSession}
-        onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -1323,6 +1328,7 @@ export default function App() {
             onStartGuideAssistant={startGuideAssistant}
           />
         )}
+      </div>
       </div>
 
       {memoryApproval && (
