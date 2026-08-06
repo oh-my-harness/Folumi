@@ -1165,7 +1165,7 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
             return (
               <div key={entry.id} data-notebook-tree-row="true" data-surface-context-menu="true" className={`group mx-1 mb-1 flex h-7 w-auto items-center rounded-md pr-1 text-sm transition-colors ${activeEntryId === entry.id ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-100' : 'hover:bg-white'}`} style={{ paddingLeft: `${26 + row.depth * 14}px` }} onContextMenu={(event) => openEntryContextMenu(event, entry)}>
                 <button className="flex min-w-0 flex-1 items-center gap-2 text-left" type="button" title={entry.path ?? entry.title} onClick={() => onSelectEntry(entry.id)}>
-                  <FileText size={15} className="shrink-0 text-blue-600" /><span className="min-w-0 flex-1 truncate font-medium text-gray-900">{node.name.replace(/\.md$/i, '')}</span>
+                  <FileText size={15} className="shrink-0 text-blue-600" /><span className="min-w-0 flex-1 truncate font-medium text-gray-900">{node.name}</span>
                 </button>
                 <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100" type="button" title={english ? 'Delete note' : '删除笔记'} onClick={() => onDeleteEntry(entry)}><Trash2 size={14} /></button>
               </div>

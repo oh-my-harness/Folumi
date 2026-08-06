@@ -77,6 +77,8 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.doesNotMatch(notebook, /window\.prompt/)
   assert.match(notebook, /aria-label=\{english \? 'New folder name' : '新目录名称'\}/)
   assert.match(notebook, /data-notebook-tree-row="true"/)
+  assert.match(notebook, />\{node\.name\}<\/span>/)
+  assert.doesNotMatch(notebook, /node\.name\.replace\(\/\\\.md\$\/i, ''\)/)
   assert.match(notebook, /mx-1 mb-1 flex h-7 w-auto/)
   assert.match(notebook, /ring-inset ring-blue-100/)
   assert.match(notebook, /Copy Vault Path|复制 Vault 路径/)
