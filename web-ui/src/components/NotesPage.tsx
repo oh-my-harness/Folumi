@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Edit3,
   FileText,
   Folder,
   FolderOpen,
@@ -17,7 +16,6 @@ import {
   PanelRightOpen,
   Plus,
   RefreshCw,
-  Save,
   Tags,
   Trash2,
   Undo2,
@@ -28,6 +26,7 @@ import { openDesktopContextMenu } from '../desktop'
 import { normalizeNotebookFileName, notebookPath } from '../notebookSave'
 import { MarkdownMessage } from './MarkdownMessage'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
+import { NotebookLiveEditor } from './NotebookLiveEditor'
 
 interface NotebookEntry {
   id: string
@@ -100,10 +99,9 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
   const [folders, setFolders] = useState<string[]>([])
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(loadExpandedNotebookFolders)
   const knownFolderPathsRef = useRef<Set<string> | null>(null)
+  const notebookRevisionsRef = useRef<Map<string, string>>(new Map())
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detail, setDetail] = useState<NotebookEntry | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editMarkdown, setEditMarkdown] = useState('')
   const [recentlyDeleted, setRecentlyDeleted] = useState<NotebookEntry | null>(null)
   const [watch, setWatch] = useState<NotebookWatchInfo | null>(null)
   const [query, setQuery] = useState('')
@@ -151,6 +149,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       if (!response.ok) throw new Error(errorMessage(data, response.status))
       const nextEntries = (data.entries ?? []) as NotebookEntry[]
       const nextFolders = ((data.folders ?? []) as string[]).filter(Boolean)
+      notebookRevisionsRef.current.clear()
       setEntries(nextEntries)
       setFolders(nextFolders)
       setWatch((data.watch ?? null) as NotebookWatchInfo | null)
@@ -181,6 +180,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       const data = await safeJson(response)
       if (!response.ok) throw new Error(errorMessage(data, response.status))
       const entry = { ...(data.entry as NotebookEntry), revision: data.revision as string }
+      notebookRevisionsRef.current.set(entry.id, entry.revision ?? '')
       setDetail(entry)
       setEntries((items) => items.map((item) => item.id === entry.id ? { ...item, ...entry } : item))
     } catch (error) {
@@ -201,7 +201,6 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
   useEffect(() => {
     if (!focusTarget?.entryId) return
     setActiveId(focusTarget.entryId)
-    setEditingId(null)
   }, [focusTarget?.entryId])
 
   useEffect(() => {
@@ -252,11 +251,6 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
     if (activeEntry?.path) expandFolderPath(parentFolder(activeEntry.path))
   }, [activeEntry?.id, activeEntry?.path, expandFolderPath])
 
-  const startEdit = useCallback((entry: NotebookEntry) => {
-    setEditMarkdown(entry.markdown ?? '')
-    setEditingId(entry.id)
-  }, [])
-
   const createEntry = useCallback(async (folderPath?: string, linkedTitle?: string) => {
     const fallbackTitle = english ? 'Untitled note' : '未命名笔记'
     const title = linkedTitle?.trim() || fallbackTitle
@@ -278,12 +272,12 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       const data = await safeJson(response)
       if (!response.ok) throw new Error(errorMessage(data, response.status))
       const entry = { ...(data.entry as NotebookEntry), revision: data.revision as string }
+      notebookRevisionsRef.current.set(entry.id, entry.revision ?? '')
       expandFolderPath(folderPath)
       setEntries((items) => [entry, ...items.filter((item) => item.id !== entry.id)])
       setActiveId(entry.id)
       setDetail(entry)
       setQuery('')
-      startEdit(entry)
       setStatus(linkedTitle
         ? (english ? `Created linked note: ${entry.title}` : `已创建关联笔记：${entry.title}`)
         : (english ? 'Note created' : '笔记已创建'))
@@ -292,7 +286,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [english, expandFolderPath, startEdit])
+  }, [english, expandFolderPath])
 
   const startCreateFolder = useCallback((parentPath?: string) => {
     const normalizedParent = parentPath?.replace(/\/+$/, '') ?? ''
@@ -357,6 +351,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       const data = await safeJson(response)
       if (!response.ok) throw new Error(errorMessage(data, response.status))
       const updated = { ...(data.entry as NotebookEntry), revision: data.revision as string }
+      notebookRevisionsRef.current.set(updated.id, updated.revision ?? '')
       setEntries((items) => items.map((item) => item.id === updated.id ? { ...item, ...updated } : item))
       setDetail((current) => current?.id === updated.id ? { ...current, ...updated } : current)
       setStatus(english ? `Renamed note to ${fileName}` : `笔记已重命名为 ${fileName}`)
@@ -391,6 +386,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       if (!response.ok) throw new Error(errorMessage(data, response.status))
       const renamedPath = ((data.folder as { path?: string } | undefined)?.path ?? newPath)
       const nextEntries = (data.entries ?? []) as NotebookEntry[]
+      notebookRevisionsRef.current.clear()
       setEntries(nextEntries)
       setFolders(((data.folders ?? []) as string[]).filter(Boolean))
       setDetail((current) => {
@@ -448,11 +444,11 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       const data = await safeJson(response)
       if (!response.ok) throw new Error(errorMessage(data, response.status))
       const nextEntries = (data.entries ?? []) as NotebookEntry[]
+      notebookRevisionsRef.current.clear()
       setEntries(nextEntries)
       setFolders(((data.folders ?? []) as string[]).filter(Boolean))
       setActiveId((current) => current && nextEntries.some((entry) => entry.id === current) ? current : null)
       setDetail(null)
-      setEditingId(null)
       setExpandedFolders((current) => {
         const next = new Set<string>()
         for (const path of current) {
@@ -482,6 +478,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       })
       const data = await safeJson(response)
       if (!response.ok) throw new Error(errorMessage(data, response.status))
+      notebookRevisionsRef.current.clear()
       setEntries((data.entries ?? []) as NotebookEntry[])
       setFolders(((data.folders ?? []) as string[]).filter(Boolean))
       expandFolderPath(recentlyDeletedFolder.path)
@@ -494,39 +491,38 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
     }
   }, [english, expandFolderPath, recentlyDeletedFolder])
 
-  const saveEntry = useCallback(async (entry: NotebookEntry) => {
-    if (!editMarkdown.trim()) return
-    setLoading(true)
+  const saveEntry = useCallback(async (entryId: string, markdown: string) => {
+    if (!markdown.trim()) return false
     try {
-      let revision = entry.revision
+      let revision = notebookRevisionsRef.current.get(entryId)
       if (!revision) {
-        const detailResponse = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`)
+        const detailResponse = await fetch(`/api/notebook/entries/${encodeURIComponent(entryId)}`)
         const detailData = await safeJson(detailResponse)
         if (!detailResponse.ok) throw new Error(errorMessage(detailData, detailResponse.status))
         revision = detailData.revision as string
       }
-      const response = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`, {
+      const response = await fetch(`/api/notebook/entries/${encodeURIComponent(entryId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expected_revision: revision,
-          markdown: editMarkdown,
+          markdown,
         }),
       })
       const data = await safeJson(response)
       if (!response.ok) throw new Error(errorMessage(data, response.status))
       const updated = { ...(data.entry as NotebookEntry), revision: data.revision as string }
-      setEntries((items) => items.map((item) => item.id === updated.id ? updated : item))
-      setDetail(updated)
-      setEditingId(null)
-      setStatus(english ? 'Note saved' : '笔记已保存')
+      notebookRevisionsRef.current.set(updated.id, updated.revision ?? '')
+      setEntries((items) => items.map((item) => item.id === updated.id ? { ...item, ...updated } : item))
+      setDetail((current) => current?.id === updated.id ? { ...current, ...updated } : current)
+      setStatus('')
       await loadDetail(updated.id)
+      return true
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
-    } finally {
-      setLoading(false)
+      return false
     }
-  }, [editMarkdown, english, loadDetail])
+  }, [loadDetail])
 
   const deleteEntry = useCallback(async (entry: NotebookEntry) => {
     if (!window.confirm(english ? `Delete “${entry.title}”?` : `确定删除“${entry.title}”吗？`)) return
@@ -541,7 +537,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       }
       setEntries((items) => items.filter((item) => item.id !== entry.id))
       setActiveId((current) => current === entry.id ? null : current)
-      setEditingId((current) => current === entry.id ? null : current)
+      notebookRevisionsRef.current.delete(entry.id)
       const response = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`, { method: 'DELETE' })
       if (!response.ok) throw new Error(errorMessage(await safeJson(response), response.status))
       setRecentlyDeleted(restorable)
@@ -697,7 +693,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
                 folderDraft={folderDraft}
                 language={language}
                 onToggleFolder={toggleFolder}
-                onSelectEntry={(id) => { setActiveId(id); setEditingId(null) }}
+                onSelectEntry={setActiveId}
                 onCreateEntry={(folderPath) => void createEntry(folderPath)}
                 onCreateFolder={startCreateFolder}
                 onFolderDraftNameChange={(name) => setFolderDraft((current) => current ? { ...current, name } : null)}
@@ -719,18 +715,11 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
 
         <NotebookEditor
           entry={activeEntry}
-          editing={Boolean(activeEntry && editingId === activeEntry.id)}
-          loading={loading}
           language={language}
-          editMarkdown={editMarkdown}
-          onEditMarkdownChange={setEditMarkdown}
-          onStartEdit={startEdit}
-          onCancelEdit={() => setEditingId(null)}
-          onSave={(entry) => void saveEntry(entry)}
-          onDelete={(entry) => void deleteEntry(entry)}
+          onSave={saveEntry}
           onCreateEntry={() => void createEntry()}
           onCreateLinkedEntry={(title) => void createEntry(undefined, title)}
-          onSelectEntry={(id) => { setActiveId(id); setEditingId(null) }}
+          onSelectEntry={setActiveId}
           onSourceNavigate={onSourceNavigate}
         />
       </div>
@@ -797,30 +786,16 @@ function FolderDeleteDialog({ folder, language, loading, onCancel, onConfirm }: 
 
 function NotebookEditor({
   entry,
-  editing,
-  loading,
   language,
-  editMarkdown,
-  onEditMarkdownChange,
-  onStartEdit,
-  onCancelEdit,
   onSave,
-  onDelete,
   onCreateEntry,
   onCreateLinkedEntry,
   onSelectEntry,
   onSourceNavigate,
 }: {
   entry: NotebookEntry | null
-  editing: boolean
-  loading: boolean
   language: 'zh-CN' | 'en-US'
-  editMarkdown: string
-  onEditMarkdownChange: (value: string) => void
-  onStartEdit: (entry: NotebookEntry) => void
-  onCancelEdit: () => void
-  onSave: (entry: NotebookEntry) => void
-  onDelete: (entry: NotebookEntry) => void
+  onSave: (entryId: string, markdown: string) => Promise<boolean>
   onCreateEntry: () => void
   onCreateLinkedEntry: (title: string) => void
   onSelectEntry: (id: string) => void
@@ -875,35 +850,17 @@ function NotebookEditor({
 
   return (
     <section className="flex min-w-0 flex-1 flex-col">
-      <header className="flex justify-end border-b border-gray-200 px-7 py-3">
-        <div className="flex shrink-0 items-center gap-2">
-          {editing ? (
-            <>
-              <button className={compactButtonClassName} type="button" disabled={loading || !editMarkdown.trim()} onClick={() => onSave(entry)}><Save size={15} />{english ? 'Save' : '保存'}</button>
-              <button className={compactButtonClassName} type="button" disabled={loading} onClick={onCancelEdit}><X size={15} />{english ? 'Cancel' : '取消'}</button>
-            </>
-          ) : (
-            <>
-              <button className={compactButtonClassName} type="button" disabled={loading} onClick={() => onStartEdit(entry)}><Edit3 size={15} />{english ? 'Edit' : '编辑'}</button>
-              <button className={iconButtonClassName} type="button" disabled={loading} title={english ? 'Delete note' : '删除笔记'} aria-label={english ? 'Delete note' : '删除笔记'} onClick={() => onDelete(entry)}><Trash2 size={16} /></button>
-            </>
-          )}
-        </div>
-      </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-w-0 flex-1 overflow-y-auto px-7 py-6">
-          {editing ? (
-            <textarea
-              className={`${inputClassName} min-h-[calc(100vh-245px)] resize-y font-mono leading-6`}
-              value={editMarkdown}
-              onChange={(event) => onEditMarkdownChange(event.target.value)}
-              spellCheck={false}
-              aria-label={english ? 'Markdown editor' : 'Markdown 编辑器'}
-            />
-          ) : (
-            <article className="mx-auto max-w-4xl rounded-xl border border-gray-200 bg-gray-50/60 p-6">
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <NotebookLiveEditor
+            entryId={entry.id}
+            markdown={entry.markdown || ''}
+            language={language}
+            onSave={onSave}
+            renderMarkdown={(markdown) => (
               <MarkdownMessage
-                text={entry.markdown || ' '}
+                text={markdown || ' '}
+                disableHeadingLinks
                 onSourceNavigate={(target, reference) => {
                   if (target.type === 'notebook') onSelectEntry(target.entryId)
                   else onSourceNavigate?.(target, reference)
@@ -911,19 +868,17 @@ function NotebookEditor({
                 wikiLinkResolver={wikiLinkResolver}
                 onWikiLinkCreate={onCreateLinkedEntry}
               />
-            </article>
-          )}
-        </div>
-        {!editing && (
-          <NotebookRelationsPanel
-            entry={entry}
-            collapsed={relationsCollapsed}
-            language={language}
-            onCollapsedChange={setRelationsCollapsed}
-            onSelectEntry={onSelectEntry}
-            onCreateLinkedEntry={onCreateLinkedEntry}
+            )}
           />
-        )}
+        </div>
+        <NotebookRelationsPanel
+          entry={entry}
+          collapsed={relationsCollapsed}
+          language={language}
+          onCollapsedChange={setRelationsCollapsed}
+          onSelectEntry={onSelectEntry}
+          onCreateLinkedEntry={onCreateLinkedEntry}
+        />
       </div>
     </section>
   )

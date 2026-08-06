@@ -12,6 +12,8 @@ const knowledge = readFileSync(new URL('./components/KnowledgeBasePage.tsx', imp
 const settings = readFileSync(new URL('./components/SettingsPage.tsx', import.meta.url), 'utf8')
 const memory = readFileSync(new URL('./components/UserMemoryPage.tsx', import.meta.url), 'utf8')
 const notebook = readFileSync(new URL('./components/NotesPage.tsx', import.meta.url), 'utf8')
+const notebookLiveEditor = readFileSync(new URL('./components/NotebookLiveEditor.tsx', import.meta.url), 'utf8')
+const desktopBehavior = readFileSync(new URL('./desktop.ts', import.meta.url), 'utf8')
 const backendMain = readFileSync(new URL('../../crates/tutor-web/src/main.rs', import.meta.url), 'utf8')
 const backendRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/mod.rs', import.meta.url), 'utf8')
 const notebookRoutes = readFileSync(new URL('../../crates/tutor-web/src/routes/notebook.rs', import.meta.url), 'utf8')
@@ -105,6 +107,14 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.match(notebookRoutes, /restore_trashed_folder/)
   assert.match(notebookRoutes, /rename_folder/)
   assert.match(notebookRoutes, /\.patch\(rename_folder\)/)
+  assert.match(notebook, /<NotebookLiveEditor/)
+  assert.match(notebook, /disableHeadingLinks/)
+  assert.match(notebookLiveEditor, /data-notebook-live-preview="true"/)
+  assert.match(notebookLiveEditor, /data-notebook-live-block="true"/)
+  assert.match(notebookLiveEditor, /window\.setTimeout\(\(\) => \{ void enqueueSave\(\) \}, 800\)/)
+  assert.doesNotMatch(notebook, /onStartEdit|onCancelEdit|Markdown 编辑器/)
+  assert.match(desktopBehavior, /value\.startsWith\('#'\)/)
+  assert.match(desktopBehavior, /anchor\.getAttribute\('href'\)/)
 })
 
 test('assistant profile is managed from Memory instead of Settings', () => {

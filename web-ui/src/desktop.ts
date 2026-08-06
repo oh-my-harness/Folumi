@@ -53,7 +53,8 @@ function installExternalLinkHandling() {
     if (!(target instanceof Element)) return
     const anchor = target.closest('a[href]')
     if (!(anchor instanceof HTMLAnchorElement)) return
-    if (!isExternalHref(anchor.href)) return
+    const href = anchor.getAttribute('href') ?? ''
+    if (!isExternalHref(href)) return
 
     event.preventDefault()
     void openExternalUrl(anchor.href).catch((error) => {
@@ -91,7 +92,7 @@ function desktopContextActions(target: Element): DesktopContextAction[] {
   }
 
   const link = target.closest('a[href]')
-  if (link instanceof HTMLAnchorElement && isExternalHref(link.href)) {
+  if (link instanceof HTMLAnchorElement && isExternalHref(link.getAttribute('href') ?? '')) {
     actions.push({
       label: 'Open Link',
       run: () => {
@@ -178,8 +179,12 @@ function hideDesktopContextMenu() {
 }
 
 function isExternalHref(href: string) {
+  const value = href.trim()
+  if (!value || value.startsWith('#') || value.startsWith('/') || value.startsWith('./') || value.startsWith('../')) {
+    return false
+  }
   try {
-    const url = new URL(href)
+    const url = new URL(value)
     return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:'
   } catch {
     return false

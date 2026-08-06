@@ -15,9 +15,10 @@ interface Props {
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
   wikiLinkResolver?: (target: string) => SourceReference | undefined
   onWikiLinkCreate?: (target: string) => void
+  disableHeadingLinks?: boolean
 }
 
-export function MarkdownMessage({ text, onSourceNavigate, wikiLinkResolver, onWikiLinkCreate }: Props) {
+export function MarkdownMessage({ text, onSourceNavigate, wikiLinkResolver, onWikiLinkCreate, disableHeadingLinks = false }: Props) {
   const rawId = useId()
   const sourceListId = `source-refs-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`
   const prepared = prepareMarkdownWithSourceReferences(text, sourceListId, wikiLinkResolver)
@@ -56,6 +57,7 @@ export function MarkdownMessage({ text, onSourceNavigate, wikiLinkResolver, onWi
           </button>
         )
       }
+      if (disableHeadingLinks && href?.startsWith('#')) return <>{children}</>
       return (
         <a {...props} href={href}>
           {children}

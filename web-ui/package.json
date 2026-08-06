@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node --test src/notebookSave.test.mjs src/sessionResilience.test.mjs src/messageActions.test.mjs src/markdownMath.test.mjs src/chatScrollPosition.test.mjs src/settings.test.mjs src/productGuide.test.mjs src/knowledgeCitation.test.mjs src/productShell.test.mjs",
+    "test": "node --test src/notebookSave.test.mjs src/notebookLivePreview.test.mjs src/sessionResilience.test.mjs src/messageActions.test.mjs src/markdownMath.test.mjs src/chatScrollPosition.test.mjs src/settings.test.mjs src/productGuide.test.mjs src/knowledgeCitation.test.mjs src/productShell.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
