@@ -111,17 +111,18 @@ export function Sidebar({
 
   return (
     <aside
-      className={`app-sidebar flex h-full shrink-0 flex-col border-r transition-[width] duration-200 ${
+      className={`app-sidebar flex h-full shrink-0 flex-col overflow-hidden border-r transition-[width] duration-200 ${
         collapsed ? 'w-16' : 'w-72'
       }`}
     >
       <div
         data-sidebar-brand="true"
-        className={`flex h-14 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'px-4'}`}
+        data-sidebar-fixed-column="true"
+        className="flex h-14 w-72 shrink-0 items-center px-4"
       >
         <button
           type="button"
-          className={`flex items-center text-left ${collapsed ? 'justify-center' : 'gap-2.5'}`}
+          className="flex items-center gap-2.5 text-left"
           onClick={() => onNavigate('assistant')}
           title="Folumi"
         >
@@ -134,7 +135,7 @@ export function Sidebar({
         </button>
       </div>
 
-      <nav className={`space-y-1 ${collapsed ? 'px-2' : 'px-3'}`}>
+      <nav data-sidebar-fixed-column="true" className="w-72 shrink-0 space-y-1 px-3">
         {navItems.map((item) => {
           const Icon = item.icon
           const active = activeView === item.key
@@ -143,23 +144,21 @@ export function Sidebar({
             <button
               key={item.key}
               title={label}
-              className={`flex w-full items-center rounded-lg py-2.5 text-left text-sm ${
-                collapsed ? 'justify-center px-2' : 'gap-3 px-3'
-              } ${
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm ${
                 active
                   ? 'bg-gray-900 text-white'
                   : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
               }`}
               onClick={() => onNavigate(item.key)}
             >
-              <Icon size={19} />
+              <Icon size={19} className="shrink-0" />
               {!collapsed && <span>{label}</span>}
             </button>
           )
         })}
       </nav>
 
-      <div className={`mt-6 flex-1 overflow-y-auto ${collapsed ? 'px-2' : 'px-3'}`}>
+      <div data-sidebar-fixed-column="true" className="mt-6 w-72 flex-1 overflow-y-auto px-3">
         {collapsed ? (
           <div className="border-t border-gray-100 pt-3" />
         ) : (
@@ -267,19 +266,17 @@ export function Sidebar({
         )}
       </div>
 
-      <div className={`border-t border-gray-200 ${collapsed ? 'p-2' : 'p-3'}`}>
+      <div data-sidebar-fixed-column="true" className="w-72 shrink-0 border-t border-gray-200 p-3">
         <button
           title={t('nav.settings')}
-          className={`flex w-full items-center rounded-lg py-2.5 text-left text-sm ${
-            collapsed ? 'justify-center px-2' : 'gap-3 px-3'
-          } ${
+          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm ${
             activeView === 'settings'
               ? 'bg-gray-900 text-white'
               : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
           }`}
           onClick={() => onNavigate('settings')}
         >
-          <Settings size={19} />
+          <Settings size={19} className="shrink-0" />
           {!collapsed && <span>{t('nav.settings')}</span>}
         </button>
         {!collapsed && <div className="mt-3 px-3 text-xs text-gray-500">v{__APP_VERSION__}</div>}
