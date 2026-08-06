@@ -193,6 +193,10 @@ index must be rebuildable.
 - Paths are normalized and confined to the associated Notebook root.
 - Mutations are traced and return the final artifact reference and revision.
 - The system should preserve an undo or recovery path for material changes.
+- A Notebook item's user-visible name is its Markdown file name. The stored
+  `title` is derived from that file name; a Markdown H1 remains ordinary body
+  content. Rename and move operations therefore mutate the relative path, not
+  an independent title field.
 
 ### Domain separation
 

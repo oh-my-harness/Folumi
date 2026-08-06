@@ -48,7 +48,6 @@ struct CreateNotebookEntryRequest {
 struct UpdateNotebookEntryRequest {
     expected_revision: String,
     path: Option<String>,
-    title: Option<String>,
     markdown: Option<String>,
     metadata: Option<serde_json::Value>,
     source_session_id: Option<String>,
@@ -69,6 +68,12 @@ struct BindVaultRequest {
 #[derive(Deserialize)]
 struct CreateNotebookFolderRequest {
     path: String,
+}
+
+#[derive(Deserialize)]
+struct RenameNotebookFolderRequest {
+    path: String,
+    new_path: String,
 }
 
 #[derive(Deserialize)]
@@ -224,6 +229,25 @@ async fn create_folder(
     }
 }
 
+async fn rename_folder(
+    State(state): State<NotebookState>,
+    Json(req): Json<RenameNotebookFolderRequest>,
+) -> impl IntoResponse {
+    match state.store.rename_folder(&req.path, &req.new_path) {
+        Ok(Some(path)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "folder": { "path": path },
+                "entries": state.store.list_summaries(Some("default")),
+                "folders": state.store.list_folders(),
+            })),
+        )
+            .into_response(),
+        Ok(None) => error_response(StatusCode::NOT_FOUND, "notebook folder not found".into()),
+        Err(err) => error_response(StatusCode::CONFLICT, err.to_string()),
+    }
+}
+
 async fn delete_folder(
     State(state): State<NotebookState>,
     Query(query): Query<DeleteNotebookFolderQuery>,
@@ -306,7 +330,6 @@ async fn update_entry(
         &entry_id,
         &req.expected_revision,
         NotebookEntryUpdate {
-            title: req.title,
             markdown: req.markdown,
             metadata: req.metadata,
             source_session_id: req.source_session_id,
@@ -574,7 +597,9 @@ pub fn notebook_router(store: Arc<NotebookStore>) -> Router {
         .route("/api/notebook/import", axum::routing::post(import_entries))
         .route(
             "/api/notebook/folders",
-            axum::routing::post(create_folder).delete(delete_folder),
+            axum::routing::post(create_folder)
+                .patch(rename_folder)
+                .delete(delete_folder),
         )
         .route(
             "/api/notebook/folders/restore",
@@ -1226,7 +1251,6 @@ mod tests {
                 &format!("/api/notebook/entries/{entry_id}"),
                 serde_json::json!({
                     "expected_revision": revision.clone(),
-                    "title": "Updated report",
                     "path": "concepts/updated-report.md",
                     "markdown": "# Updated report"
                 }),
@@ -1235,7 +1259,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["entry"]["title"], "Updated report");
+        assert_eq!(body["entry"]["title"], "updated-report");
         assert_eq!(body["entry"]["path"], "concepts/updated-report.md");
         assert_eq!(body["entry"]["markdown"], "# Updated report");
 
@@ -1281,6 +1305,55 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn renames_notebook_folder_and_updates_nested_entry_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(NotebookStore::new_with_path(dir.path().join("notebook")));
+        store.create_folder("projects/drafts/nested").unwrap();
+        let entry = store
+            .create(NotebookEntryInput {
+                space_id: None,
+                entry_type: NotebookEntryType::Note,
+                title: "Ignored title".into(),
+                path: Some("projects/drafts/plan.md".into()),
+                markdown: "# Plan".into(),
+                metadata: None,
+                source_session_id: None,
+                source_message_id: None,
+            })
+            .unwrap();
+        let app = notebook_router(store);
+
+        let response = app
+            .oneshot(json_request(
+                Method::PATCH,
+                "/api/notebook/folders",
+                serde_json::json!({
+                    "path": "projects/drafts",
+                    "new_path": "projects/reference"
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["folder"]["path"], "projects/reference");
+        let renamed_entry = body["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == entry.id)
+            .unwrap();
+        assert_eq!(renamed_entry["path"], "projects/reference/plan.md");
+        assert_eq!(renamed_entry["title"], "plan");
+        assert!(
+            body["folders"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("projects/reference/nested"))
+        );
     }
 
     #[tokio::test]

@@ -453,6 +453,81 @@ impl NotebookStore {
         Ok(folder)
     }
 
+    pub fn rename_folder(&self, path: &str, new_path: &str) -> Result<Option<String>> {
+        let Some(folder) = normalize_folder_path(path) else {
+            return Err(anyhow!("notebook folder path is empty"));
+        };
+        let Some(destination_folder) = normalize_folder_path(new_path) else {
+            return Err(anyhow!("notebook folder destination is empty"));
+        };
+        if folder_uses_reserved_path(&folder) || folder_uses_reserved_path(&destination_folder) {
+            return Err(anyhow!("notebook folder path is reserved"));
+        }
+        if folder == destination_folder {
+            return Ok(Some(folder));
+        }
+        if folder_is_same_or_descendant(&destination_folder, &folder) {
+            return Err(anyhow!("notebook folder cannot be moved into itself"));
+        }
+
+        let vault_root = self.vault_root.lock().unwrap().clone();
+        let source_path = vault_root.join(&folder);
+        let destination_path = vault_root.join(&destination_folder);
+        let metadata = match fs::symlink_metadata(&source_path) {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(err) => return Err(err.into()),
+        };
+        if !metadata.is_dir() {
+            return Err(anyhow!("notebook folder path is not a directory"));
+        }
+        if destination_path.exists() && !folder.eq_ignore_ascii_case(&destination_folder) {
+            return Err(anyhow!("notebook folder destination already exists"));
+        }
+        if let Some(parent) = destination_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::rename(&source_path, &destination_path)?;
+
+        let mut items = self.items.lock().unwrap();
+        let mut folders = self.folders.lock().unwrap();
+        let previous_items = items.clone();
+        let previous_folders = folders.clone();
+        for entry in items.iter_mut() {
+            let Some(entry_path) = entry.path.as_deref() else {
+                continue;
+            };
+            if let Some(path) = replace_folder_prefix(entry_path, &folder, &destination_folder) {
+                entry.path = Some(path);
+                entry.title = title_from_note_path(entry.path.as_deref().unwrap_or_default());
+                entry.updated_at = Utc::now();
+            }
+        }
+        let renamed_folders = folders
+            .iter()
+            .map(|stored| {
+                if stored.eq_ignore_ascii_case(&folder) {
+                    destination_folder.clone()
+                } else if let Some(path) =
+                    replace_folder_prefix(stored, &folder, &destination_folder)
+                {
+                    path
+                } else {
+                    stored.clone()
+                }
+            })
+            .collect::<HashSet<_>>();
+        *folders = renamed_folders;
+        add_folder_and_parents(&destination_folder, &mut folders);
+        if let Err(err) = self.save_index_locked(&items, &folders) {
+            *items = previous_items;
+            *folders = previous_folders;
+            let _ = fs::rename(&destination_path, &source_path);
+            return Err(err);
+        }
+        Ok(Some(destination_folder))
+    }
+
     pub fn delete_empty_folder(&self, path: &str) -> Result<bool> {
         let Some(folder) = normalize_folder_path(path) else {
             return Err(anyhow!("notebook folder path is empty"));
@@ -767,6 +842,7 @@ impl NotebookStore {
         if let Some(path) = requested_path
             && updated.path.as_deref() != Some(path.as_str())
         {
+            items[entry_index].title = title_from_note_path(&path);
             items[entry_index].path = Some(path);
             items[entry_index].updated_at = Utc::now();
             items[entry_index].file_size = None;
@@ -815,6 +891,7 @@ impl NotebookStore {
             return Err(anyhow!("notebook path already exists"));
         }
         let previous_path = items[entry_index].path.clone();
+        items[entry_index].title = title_from_note_path(&path);
         items[entry_index].path = Some(path);
         items[entry_index].updated_at = Utc::now();
         items[entry_index].file_size = None;
@@ -903,21 +980,7 @@ fn apply_notebook_entry_update(
     entry_index: usize,
     input: NotebookEntryUpdate,
 ) -> Result<NotebookEntry> {
-    let needs_path = items[entry_index].path.is_none();
-    let entry_id = items[entry_index].id.clone();
-    let mut used_paths = if needs_path {
-        Some(used_entry_paths_excluding(items, &entry_id))
-    } else {
-        None
-    };
     let entry = &mut items[entry_index];
-    if let Some(title) = input.title {
-        entry.title = normalize_title(&title);
-        if entry.path.is_none() {
-            let used_paths = used_paths.get_or_insert_with(HashSet::new);
-            entry.path = Some(unique_note_path(&entry.title, None, used_paths));
-        }
-    }
     if let Some(markdown) = input.markdown {
         if markdown.trim().is_empty() {
             return Err(anyhow!("notebook markdown is empty"));
@@ -1023,11 +1086,12 @@ impl NotebookIndexEntry {
     }
 
     fn into_entry(self, markdown: String) -> NotebookEntry {
+        let title = title_from_note_path(&self.path);
         NotebookEntry {
             id: self.id,
             space_id: self.space_id,
             entry_type: self.entry_type,
-            title: self.title,
+            title,
             path: Some(self.path),
             markdown,
             metadata: self.metadata,
@@ -1046,8 +1110,9 @@ fn entry_from_input(
     now: DateTime<Utc>,
     used_paths: &mut HashSet<String>,
 ) -> NotebookEntry {
-    let title = normalize_title(&input.title);
-    let path = unique_note_path(&title, input.path.as_deref(), used_paths);
+    let requested_title = normalize_title(&input.title);
+    let path = unique_note_path(&requested_title, input.path.as_deref(), used_paths);
+    let title = title_from_note_path(&path);
     NotebookEntry {
         id: uuid::Uuid::new_v4().to_string(),
         space_id: normalize_space_id(input.space_id),
@@ -1577,7 +1642,6 @@ pub struct NotebookEntryInput {
 }
 
 pub struct NotebookEntryUpdate {
-    pub title: Option<String>,
     pub markdown: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub source_session_id: Option<String>,
@@ -1623,15 +1687,6 @@ fn normalize_title(title: &str) -> String {
 fn used_entry_paths(items: &[NotebookEntry]) -> HashSet<String> {
     items
         .iter()
-        .filter_map(|entry| entry.path.as_ref())
-        .map(|path| path.to_lowercase())
-        .collect()
-}
-
-fn used_entry_paths_excluding(items: &[NotebookEntry], excluded_id: &str) -> HashSet<String> {
-    items
-        .iter()
-        .filter(|entry| entry.id != excluded_id)
         .filter_map(|entry| entry.path.as_ref())
         .map(|path| path.to_lowercase())
         .collect()
@@ -1747,6 +1802,25 @@ fn folder_is_same_or_descendant(path: &str, folder: &str) -> bool {
     path == folder || path.starts_with(&format!("{folder}/"))
 }
 
+fn replace_folder_prefix(path: &str, folder: &str, destination: &str) -> Option<String> {
+    let path_parts = path.replace('\\', "/");
+    let folder_parts = folder.replace('\\', "/");
+    let path_parts = path_parts.split('/').collect::<Vec<_>>();
+    let folder_parts = folder_parts.split('/').collect::<Vec<_>>();
+    if path_parts.len() <= folder_parts.len()
+        || !path_parts
+            .iter()
+            .zip(folder_parts.iter())
+            .all(|(path_part, folder_part)| path_part.eq_ignore_ascii_case(folder_part))
+    {
+        return None;
+    }
+    Some(format!(
+        "{destination}/{}",
+        path_parts[folder_parts.len()..].join("/")
+    ))
+}
+
 fn count_folder_contents(folder: &Path) -> Result<(usize, usize)> {
     let mut file_count = 0usize;
     let mut folder_count = 0usize;
@@ -1859,7 +1933,6 @@ mod tests {
                 &entry.id,
                 &notebook_entry_revision(&entry),
                 NotebookEntryUpdate {
-                    title: Some("Updated".into()),
                     markdown: Some("# Updated".into()),
                     metadata: None,
                     source_session_id: None,
@@ -1870,7 +1943,7 @@ mod tests {
         let ExactNotebookMutationOutcome::Updated(updated) = updated else {
             panic!("fresh revision should update the note");
         };
-        assert_eq!(updated.title, "Updated");
+        assert_eq!(updated.title, "Report");
         assert!(store.delete(&entry.id));
         assert!(store.list(Some("default")).is_empty());
     }
@@ -1909,6 +1982,59 @@ mod tests {
                 .contains(&"projects/archive".to_string())
         );
         assert!(!dir.path().join("notebook/vault/projects/archive").exists());
+    }
+
+    #[test]
+    fn notebook_store_renames_folders_and_derives_note_titles_from_file_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let notebook_root = dir.path().join("notebook");
+        let store = NotebookStore::new_with_path(notebook_root.clone());
+        store.create_folder("projects/archive/assets").unwrap();
+        let entry = store
+            .create(NotebookEntryInput {
+                space_id: None,
+                entry_type: NotebookEntryType::Note,
+                path: Some("projects/archive/plan.md".into()),
+                title: "A different title".into(),
+                markdown: "# Content heading".into(),
+                metadata: None,
+                source_session_id: None,
+                source_message_id: None,
+            })
+            .unwrap();
+        assert_eq!(entry.title, "plan");
+
+        let renamed = store
+            .rename_folder("projects/archive", "projects/reference")
+            .unwrap();
+        assert_eq!(renamed.as_deref(), Some("projects/reference"));
+        let updated = store.get(&entry.id).unwrap();
+        assert_eq!(updated.path.as_deref(), Some("projects/reference/plan.md"));
+        assert_eq!(updated.title, "plan");
+        assert!(
+            notebook_root
+                .join("vault/projects/reference/plan.md")
+                .is_file()
+        );
+        assert!(!notebook_root.join("vault/projects/archive").exists());
+        assert!(
+            store
+                .list_folders()
+                .contains(&"projects/reference/assets".into())
+        );
+
+        let moved = store
+            .move_exact(
+                &updated.id,
+                &notebook_entry_revision(&updated),
+                "projects/reference/renamed-note.md",
+            )
+            .unwrap();
+        let ExactNotebookMutationOutcome::Updated(moved) = moved else {
+            panic!("note rename should succeed");
+        };
+        assert_eq!(moved.title, "renamed-note");
+        assert_eq!(moved.markdown, "# Content heading");
     }
 
     #[test]
@@ -1989,7 +2115,6 @@ mod tests {
                 &entry.id,
                 &notebook_entry_revision(&entry),
                 NotebookEntryUpdate {
-                    title: None,
                     markdown: Some("# TCC\n\nUpdated".into()),
                     metadata: None,
                     source_session_id: None,

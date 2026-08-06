@@ -211,7 +211,7 @@ impl Tool for UpdateNotebookItemTool {
     }
 
     fn description(&self) -> &str {
-        "Update or rename one Notebook item only after an explicit user request and an exact read. Requires the expected revision returned by read_notebook_item."
+        "Update one Notebook item's Markdown only after an explicit user request and an exact read. Requires the expected revision returned by read_notebook_item. Use move_notebook_item to rename it."
     }
 
     fn parameters_schema(&self) -> &serde_json::Value {
@@ -221,7 +221,6 @@ impl Tool for UpdateNotebookItemTool {
                 "properties": {
                     "entry_id": { "type": "string" },
                     "expected_revision": { "type": "string" },
-                    "title": { "type": "string" },
                     "markdown": { "type": "string", "description": "Complete replacement Markdown." },
                     "source_message_id": { "type": "string" }
                 },
@@ -239,12 +238,9 @@ impl Tool for UpdateNotebookItemTool {
         Box::pin(async move {
             let entry_id = required_text(&args, "entry_id")?;
             let expected_revision = required_text(&args, "expected_revision")?;
-            let title = optional_text(&args, "title");
             let markdown = optional_content(&args, "markdown");
-            if title.is_none() && markdown.is_none() {
-                return Err(ToolFailure::invalid_arguments(
-                    "title or markdown is required",
-                ));
+            if markdown.is_none() {
+                return Err(ToolFailure::invalid_arguments("markdown is required"));
             }
             let outcome = self
                 .notebook
@@ -252,7 +248,6 @@ impl Tool for UpdateNotebookItemTool {
                     &entry_id,
                     &expected_revision,
                     NotebookEntryUpdate {
-                        title,
                         markdown,
                         metadata: None,
                         source_session_id: ctx

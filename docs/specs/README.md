@@ -18,6 +18,8 @@ Current product and runtime-facing specs live here.
 - `2026-08-05-remove-product-billing-decision.md` records the accepted removal
   of product-side USD cost display and budget controls while retaining token
   and context usage for diagnostics and benchmarks.
+- `2026-08-06-notebook-file-naming-decision.md` 以 Markdown 文件名作为
+  Notebook 唯一命名来源，并统一文件树重命名交互。
 - `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
   design and remains only as historical context.
 - `2026-07-15-persistent-tutor-design.md` defines persistent tutor identity,

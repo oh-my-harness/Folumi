@@ -87,6 +87,12 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.match(notebook, /className=\{compactButtonClassName\}[\s\S]*?onClick=\{\(\) => startCreateFolder\(\)\}/)
   assert.doesNotMatch(notebook, /Collapse Folder|折叠目录/)
   assert.match(notebook, /Delete Folder|删除目录/)
+  assert.match(notebook, /Rename Folder|重命名目录/)
+  assert.match(notebook, /Rename Note|重命名笔记/)
+  assert.match(notebook, /onDoubleClick/)
+  assert.match(notebook, /method: 'PATCH'/)
+  assert.doesNotMatch(notebook, /aria-label=\{english \? 'Note title' : '笔记标题'\}/)
+  assert.doesNotMatch(notebook, /aria-label=\{english \? 'Note path' : '笔记路径'\}/)
   assert.match(notebook, /method: 'DELETE'/)
   assert.match(notebookRoutes, /delete_empty_folder/)
   assert.match(notebookRoutes, /\.delete\(delete_folder\)/)
@@ -97,6 +103,8 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.match(notebook, /\/api\/notebook\/folders\/restore/)
   assert.match(notebookRoutes, /trash_folder/)
   assert.match(notebookRoutes, /restore_trashed_folder/)
+  assert.match(notebookRoutes, /rename_folder/)
+  assert.match(notebookRoutes, /\.patch\(rename_folder\)/)
 })
 
 test('assistant profile is managed from Memory instead of Settings', () => {

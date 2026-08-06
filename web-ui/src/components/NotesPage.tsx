@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { writeClipboardText } from '../api'
 import { openDesktopContextMenu } from '../desktop'
+import { normalizeNotebookFileName, notebookPath } from '../notebookSave'
 import { MarkdownMessage } from './MarkdownMessage'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
 
@@ -102,8 +103,6 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detail, setDetail] = useState<NotebookEntry | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editTitle, setEditTitle] = useState('')
-  const [editPath, setEditPath] = useState('')
   const [editMarkdown, setEditMarkdown] = useState('')
   const [recentlyDeleted, setRecentlyDeleted] = useState<NotebookEntry | null>(null)
   const [watch, setWatch] = useState<NotebookWatchInfo | null>(null)
@@ -254,8 +253,6 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
   }, [activeEntry?.id, activeEntry?.path, expandFolderPath])
 
   const startEdit = useCallback((entry: NotebookEntry) => {
-    setEditTitle(entry.title)
-    setEditPath(entry.path ?? '')
     setEditMarkdown(entry.markdown ?? '')
     setEditingId(entry.id)
   }, [])
@@ -334,6 +331,83 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       setLoading(false)
     }
   }, [english, expandFolderPath, loading])
+
+  const renameEntry = useCallback(async (entry: NotebookEntry, name: string) => {
+    const fileName = normalizeNotebookFileName(name)
+    if (!fileName) {
+      setStatus(english ? 'Enter a file name' : '请输入文件名')
+      return false
+    }
+    const path = notebookPath(parentFolder(entry.path) ?? '', fileName)
+    if (!path || path === entry.path) return true
+    setLoading(true)
+    try {
+      let revision = entry.revision
+      if (!revision) {
+        const detailResponse = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`)
+        const detailData = await safeJson(detailResponse)
+        if (!detailResponse.ok) throw new Error(errorMessage(detailData, detailResponse.status))
+        revision = detailData.revision as string
+      }
+      const response = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expected_revision: revision, path }),
+      })
+      const data = await safeJson(response)
+      if (!response.ok) throw new Error(errorMessage(data, response.status))
+      const updated = { ...(data.entry as NotebookEntry), revision: data.revision as string }
+      setEntries((items) => items.map((item) => item.id === updated.id ? { ...item, ...updated } : item))
+      setDetail((current) => current?.id === updated.id ? { ...current, ...updated } : current)
+      setStatus(english ? `Renamed note to ${fileName}` : `笔记已重命名为 ${fileName}`)
+      return true
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [english])
+
+  const renameFolder = useCallback(async (folderPath: string, name: string) => {
+    const trimmedName = name.trim()
+    if (!trimmedName || /[\\/]/.test(trimmedName)) {
+      setStatus(english ? 'Enter one folder name without slashes' : '请输入不含斜杠的目录名')
+      return false
+    }
+    const parentSegments = notebookPathSegments(folderPath)
+    parentSegments.pop()
+    const parentPath = parentSegments.join('/')
+    const newPath = parentPath ? `${parentPath}/${trimmedName}` : trimmedName
+    if (newPath === folderPath) return true
+    setLoading(true)
+    try {
+      const response = await fetch('/api/notebook/folders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: folderPath, new_path: newPath }),
+      })
+      const data = await safeJson(response)
+      if (!response.ok) throw new Error(errorMessage(data, response.status))
+      const renamedPath = ((data.folder as { path?: string } | undefined)?.path ?? newPath)
+      const nextEntries = (data.entries ?? []) as NotebookEntry[]
+      setEntries(nextEntries)
+      setFolders(((data.folders ?? []) as string[]).filter(Boolean))
+      setDetail((current) => {
+        if (!current) return current
+        const updated = nextEntries.find((entry) => entry.id === current.id)
+        return updated ? { ...current, ...updated } : current
+      })
+      setExpandedFolders((current) => new Set([...current].map((path) => replaceNotebookFolderPrefix(path, folderPath, renamedPath))))
+      setStatus(english ? `Renamed folder to ${renamedPath}` : `目录已重命名为 ${renamedPath}`)
+      return true
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [english])
 
   const deleteFolder = useCallback(async (folderPath: string) => {
     setLoading(true)
@@ -431,14 +505,11 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
         if (!detailResponse.ok) throw new Error(errorMessage(detailData, detailResponse.status))
         revision = detailData.revision as string
       }
-      const title = editTitle.trim() || (english ? 'Untitled note' : '未命名笔记')
       const response = await fetch(`/api/notebook/entries/${encodeURIComponent(entry.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expected_revision: revision,
-          title,
-          path: editPath.trim() || `${title}.md`,
           markdown: editMarkdown,
         }),
       })
@@ -448,7 +519,6 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
       setEntries((items) => items.map((item) => item.id === updated.id ? updated : item))
       setDetail(updated)
       setEditingId(null)
-      expandFolderPath(parentFolder(updated.path))
       setStatus(english ? 'Note saved' : '笔记已保存')
       await loadDetail(updated.id)
     } catch (error) {
@@ -456,7 +526,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [editMarkdown, editPath, editTitle, english, expandFolderPath, loadDetail])
+  }, [editMarkdown, english, loadDetail])
 
   const deleteEntry = useCallback(async (entry: NotebookEntry) => {
     if (!window.confirm(english ? `Delete “${entry.title}”?` : `确定删除“${entry.title}”吗？`)) return
@@ -633,6 +703,8 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
                 onFolderDraftNameChange={(name) => setFolderDraft((current) => current ? { ...current, name } : null)}
                 onCommitFolder={(parentPath, name) => void createFolder(parentPath, name)}
                 onCancelFolder={() => setFolderDraft(null)}
+                onRenameFolder={renameFolder}
+                onRenameEntry={renameEntry}
                 onDeleteFolder={(folderPath) => void deleteFolder(folderPath)}
                 onDeleteEntry={(entry) => void deleteEntry(entry)}
               />
@@ -650,11 +722,7 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
           editing={Boolean(activeEntry && editingId === activeEntry.id)}
           loading={loading}
           language={language}
-          editTitle={editTitle}
-          editPath={editPath}
           editMarkdown={editMarkdown}
-          onEditTitleChange={setEditTitle}
-          onEditPathChange={setEditPath}
           onEditMarkdownChange={setEditMarkdown}
           onStartEdit={startEdit}
           onCancelEdit={() => setEditingId(null)}
@@ -732,11 +800,7 @@ function NotebookEditor({
   editing,
   loading,
   language,
-  editTitle,
-  editPath,
   editMarkdown,
-  onEditTitleChange,
-  onEditPathChange,
   onEditMarkdownChange,
   onStartEdit,
   onCancelEdit,
@@ -751,11 +815,7 @@ function NotebookEditor({
   editing: boolean
   loading: boolean
   language: 'zh-CN' | 'en-US'
-  editTitle: string
-  editPath: string
   editMarkdown: string
-  onEditTitleChange: (value: string) => void
-  onEditPathChange: (value: string) => void
   onEditMarkdownChange: (value: string) => void
   onStartEdit: (entry: NotebookEntry) => void
   onCancelEdit: () => void
@@ -815,20 +875,7 @@ function NotebookEditor({
 
   return (
     <section className="flex min-w-0 flex-1 flex-col">
-      <header className="flex items-start gap-4 border-b border-gray-200 px-7 py-4">
-        <div className="min-w-0 flex-1">
-          {editing ? (
-            <div className="grid max-w-2xl gap-2">
-              <input className={`${inputClassName} text-base font-semibold`} value={editTitle} onChange={(event) => onEditTitleChange(event.target.value)} aria-label={english ? 'Note title' : '笔记标题'} />
-              <input className={`${inputClassName} font-mono text-xs`} value={editPath} onChange={(event) => onEditPathChange(event.target.value)} aria-label={english ? 'Note path' : '笔记路径'} placeholder="folder/note.md" />
-            </div>
-          ) : (
-            <>
-              <h2 className="truncate text-xl font-semibold text-gray-950">{entry.title}</h2>
-              <p className="mt-1 truncate font-mono text-xs text-gray-400">{entry.path || `${entry.title}.md`}</p>
-            </>
-          )}
-        </div>
+      <header className="flex justify-end border-b border-gray-200 px-7 py-3">
         <div className="flex shrink-0 items-center gap-2">
           {editing ? (
             <>
@@ -1028,12 +1075,15 @@ type FlatNotebookTreeRow = { node: NotebookTreeNode; depth: number }
 type NotebookTreeDisplayRow =
   | { type: 'node'; node: NotebookTreeNode; depth: number }
   | { type: 'folder_draft'; depth: number }
+type NotebookTreeRenameDraft =
+  | { type: 'folder'; path: string; name: string }
+  | { type: 'entry'; entry: NotebookEntry; name: string }
 
 const NOTEBOOK_TREE_ROW_HEIGHT = 32
 const NOTEBOOK_TREE_OVERSCAN_ROWS = 12
 const NOTEBOOK_EXPANDED_FOLDERS_KEY = 'folumi:notebook-expanded-folders:v3'
 
-function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, language, onToggleFolder, onSelectEntry, onCreateEntry, onCreateFolder, onFolderDraftNameChange, onCommitFolder, onCancelFolder, onDeleteFolder, onDeleteEntry }: {
+function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, language, onToggleFolder, onSelectEntry, onCreateEntry, onCreateFolder, onFolderDraftNameChange, onCommitFolder, onCancelFolder, onRenameFolder, onRenameEntry, onDeleteFolder, onDeleteEntry }: {
   nodes: NotebookTreeNode[]
   activeEntryId: string | null
   expandedFolders: Set<string>
@@ -1046,6 +1096,8 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
   onFolderDraftNameChange: (name: string) => void
   onCommitFolder: (parentPath: string, name: string) => void
   onCancelFolder: () => void
+  onRenameFolder: (folderPath: string, name: string) => Promise<boolean>
+  onRenameEntry: (entry: NotebookEntry, name: string) => Promise<boolean>
   onDeleteFolder: (folderPath: string) => void
   onDeleteEntry: (entry: NotebookEntry) => void
 }) {
@@ -1053,6 +1105,9 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(360)
+  const [renameDraft, setRenameDraft] = useState<NotebookTreeRenameDraft | null>(null)
+  const committingRenameRef = useRef(false)
+  const renameInputRef = useRef<HTMLInputElement | null>(null)
   const visibleRows = useMemo<NotebookTreeDisplayRow[]>(() => {
     const rows: NotebookTreeDisplayRow[] = flattenVisibleNotebookTree(nodes, expandedFolders)
       .map((row) => ({ type: 'node', ...row }))
@@ -1085,24 +1140,46 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
     return () => resizeObserver.disconnect()
   }, [])
 
+  const startFolderRename = useCallback((node: Extract<NotebookTreeNode, { type: 'folder' }>) => {
+    setRenameDraft({ type: 'folder', path: node.path, name: node.name })
+  }, [])
+
+  const startEntryRename = useCallback((entry: NotebookEntry, name?: string) => {
+    const segments = notebookEntryPathSegments(entry)
+    setRenameDraft({ type: 'entry', entry, name: name ?? segments[segments.length - 1] ?? entry.title })
+  }, [])
+
+  const submitRename = useCallback(async () => {
+    if (!renameDraft || committingRenameRef.current) return
+    committingRenameRef.current = true
+    const succeeded = renameDraft.type === 'folder'
+      ? await onRenameFolder(renameDraft.path, renameDraft.name)
+      : await onRenameEntry(renameDraft.entry, renameDraft.name)
+    committingRenameRef.current = false
+    if (succeeded) setRenameDraft(null)
+    else window.setTimeout(() => renameInputRef.current?.focus(), 0)
+  }, [onRenameEntry, onRenameFolder, renameDraft])
+
   const openFolderContextMenu = useCallback((event: MouseEvent, node: Extract<NotebookTreeNode, { type: 'folder' }>) => {
     const opened = openDesktopContextMenu(event.clientX, event.clientY, [
       { label: english ? 'New Note Here' : '在此新建笔记', run: () => onCreateEntry(node.path) },
       { label: english ? 'New Folder Here' : '在此新建目录', run: () => onCreateFolder(node.path) },
+      { label: english ? 'Rename Folder' : '重命名目录', run: () => startFolderRename(node) },
       { label: english ? 'Copy Folder Path' : '复制目录路径', run: () => { void writeClipboardText(node.path) } },
       { label: english ? 'Delete Folder' : '删除目录', run: () => onDeleteFolder(node.path) },
     ])
     if (opened) event.preventDefault()
-  }, [english, onCreateEntry, onCreateFolder, onDeleteFolder])
+  }, [english, onCreateEntry, onCreateFolder, onDeleteFolder, startFolderRename])
 
   const openEntryContextMenu = useCallback((event: MouseEvent, entry: NotebookEntry) => {
     const opened = openDesktopContextMenu(event.clientX, event.clientY, [
       { label: english ? 'Open Note' : '打开笔记', run: () => onSelectEntry(entry.id) },
+      { label: english ? 'Rename Note' : '重命名笔记', run: () => startEntryRename(entry) },
       { label: english ? 'Copy Note Path' : '复制笔记路径', run: () => { void writeClipboardText(entry.path ?? entry.title) } },
       { label: english ? 'Delete Note' : '删除笔记', run: () => onDeleteEntry(entry) },
     ])
     if (opened) event.preventDefault()
-  }, [english, onDeleteEntry, onSelectEntry])
+  }, [english, onDeleteEntry, onSelectEntry, startEntryRename])
 
   const submitFolderDraft = useCallback(() => {
     if (!folderDraft) return
@@ -1148,26 +1225,73 @@ function NotebookFileTree({ nodes, activeEntryId, expandedFolders, folderDraft, 
 
             const node = row.node
             if (node.type === 'folder') {
+              const renaming = renameDraft?.type === 'folder' && renameDraft.path === node.path
               return (
                 <div key={`folder:${node.path}`} data-notebook-tree-row="true" data-surface-context-menu="true" className="group mx-1 mb-1 flex h-7 w-auto items-center gap-1 rounded-md pr-1 text-sm text-gray-700 transition-colors hover:bg-white" style={{ paddingLeft: `${6 + row.depth * 14}px` }} onContextMenu={(event) => openFolderContextMenu(event, node)}>
-                  <button className="flex min-w-0 flex-1 items-center gap-1.5 text-left" type="button" onClick={() => onToggleFolder(node.path)}>
-                    <ChevronDown size={14} className={`shrink-0 text-gray-400 transition-transform ${expandedFolders.has(node.path) ? '' : '-rotate-90'}`} />
-                    {expandedFolders.has(node.path) ? <FolderOpen size={16} className="shrink-0 text-blue-500" /> : <Folder size={16} className="shrink-0 text-gray-500" />}
-                    <span className="min-w-0 flex-1 truncate font-medium">{node.name}</span>
-                  </button>
-                  <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New note here' : '在此新建笔记'} onClick={() => onCreateEntry(node.path)}><FileText size={13} /></button>
-                  <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New folder here' : '在此新建目录'} onClick={() => onCreateFolder(node.path)}><Folder size={13} /></button>
+                  {renaming ? (
+                    <>
+                      <ChevronDown size={14} className={`shrink-0 text-gray-400 ${expandedFolders.has(node.path) ? '' : '-rotate-90'}`} />
+                      {expandedFolders.has(node.path) ? <FolderOpen size={16} className="shrink-0 text-blue-500" /> : <Folder size={16} className="shrink-0 text-gray-500" />}
+                      <input
+                        ref={renameInputRef}
+                        autoFocus
+                        className="h-6 min-w-0 flex-1 rounded border border-blue-300 bg-white px-1 text-sm text-gray-900 outline-none ring-2 ring-blue-100"
+                        value={renameDraft.name}
+                        aria-label={english ? 'Rename folder' : '重命名目录'}
+                        onFocus={(event) => event.currentTarget.select()}
+                        onChange={(event) => setRenameDraft({ ...renameDraft, name: event.target.value })}
+                        onBlur={() => void submitRename()}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') { event.preventDefault(); void submitRename() }
+                          else if (event.key === 'Escape') { event.preventDefault(); setRenameDraft(null) }
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <button className="flex min-w-0 flex-1 items-center gap-1.5 text-left" type="button" onClick={() => onToggleFolder(node.path)}>
+                        <ChevronDown size={14} className={`shrink-0 text-gray-400 transition-transform ${expandedFolders.has(node.path) ? '' : '-rotate-90'}`} />
+                        {expandedFolders.has(node.path) ? <FolderOpen size={16} className="shrink-0 text-blue-500" /> : <Folder size={16} className="shrink-0 text-gray-500" />}
+                        <span className="min-w-0 flex-1 truncate font-medium" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); startFolderRename(node) }}>{node.name}</span>
+                      </button>
+                      <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New note here' : '在此新建笔记'} onClick={() => onCreateEntry(node.path)}><FileText size={13} /></button>
+                      <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-blue-50 hover:text-blue-700 group-hover:opacity-100" type="button" title={english ? 'New folder here' : '在此新建目录'} onClick={() => onCreateFolder(node.path)}><Folder size={13} /></button>
+                    </>
+                  )}
                 </div>
               )
             }
 
             const entry = node.entry
+            const renaming = renameDraft?.type === 'entry' && renameDraft.entry.id === entry.id
             return (
               <div key={entry.id} data-notebook-tree-row="true" data-surface-context-menu="true" className={`group mx-1 mb-1 flex h-7 w-auto items-center rounded-md pr-1 text-sm transition-colors ${activeEntryId === entry.id ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-100' : 'hover:bg-white'}`} style={{ paddingLeft: `${26 + row.depth * 14}px` }} onContextMenu={(event) => openEntryContextMenu(event, entry)}>
-                <button className="flex min-w-0 flex-1 items-center gap-2 text-left" type="button" title={entry.path ?? entry.title} onClick={() => onSelectEntry(entry.id)}>
-                  <FileText size={15} className="shrink-0 text-blue-600" /><span className="min-w-0 flex-1 truncate font-medium text-gray-900">{node.name}</span>
-                </button>
-                <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100" type="button" title={english ? 'Delete note' : '删除笔记'} onClick={() => onDeleteEntry(entry)}><Trash2 size={14} /></button>
+                {renaming ? (
+                  <>
+                    <FileText size={15} className="mr-2 shrink-0 text-blue-600" />
+                    <input
+                      ref={renameInputRef}
+                      autoFocus
+                      className="h-6 min-w-0 flex-1 rounded border border-blue-300 bg-white px-1 text-sm text-gray-900 outline-none ring-2 ring-blue-100"
+                      value={renameDraft.name}
+                      aria-label={english ? 'Rename note' : '重命名笔记'}
+                      onFocus={(event) => event.currentTarget.select()}
+                      onChange={(event) => setRenameDraft({ ...renameDraft, name: event.target.value })}
+                      onBlur={() => void submitRename()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') { event.preventDefault(); void submitRename() }
+                        else if (event.key === 'Escape') { event.preventDefault(); setRenameDraft(null) }
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <button className="flex min-w-0 flex-1 items-center gap-2 text-left" type="button" title={entry.path ?? entry.title} onClick={() => onSelectEntry(entry.id)}>
+                      <FileText size={15} className="shrink-0 text-blue-600" /><span className="min-w-0 flex-1 truncate font-medium text-gray-900" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); startEntryRename(entry, node.name) }}>{node.name}</span>
+                    </button>
+                    <button className="rounded p-1 text-gray-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100" type="button" title={english ? 'Delete note' : '删除笔记'} onClick={() => onDeleteEntry(entry)}><Trash2 size={14} /></button>
+                  </>
+                )}
               </div>
             )
           })}
@@ -1254,6 +1378,11 @@ function parentFolder(path?: string | null) {
   const segments = notebookPathSegments(path)
   segments.pop()
   return segments.join('/') || undefined
+}
+
+function replaceNotebookFolderPrefix(path: string, previous: string, next: string) {
+  if (path === previous) return next
+  return path.startsWith(`${previous}/`) ? `${next}${path.slice(previous.length)}` : path
 }
 
 function sortNotebookTreeNodes(nodes: NotebookTreeNode[]) {
