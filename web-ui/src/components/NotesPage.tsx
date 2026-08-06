@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import {
   AlertTriangle,
@@ -24,9 +24,11 @@ import {
 import { writeClipboardText } from '../api'
 import { openDesktopContextMenu } from '../desktop'
 import { normalizeNotebookFileName, notebookPath } from '../notebookSave'
-import { MarkdownMessage } from './MarkdownMessage'
 import type { SourceReference, SourceTarget } from './MarkdownMessage'
-import { NotebookLiveEditor } from './NotebookLiveEditor'
+
+const NotebookLiveEditor = lazy(() => import('./NotebookLiveEditor').then((module) => ({
+  default: module.NotebookLiveEditor,
+})))
 
 interface NotebookEntry {
   id: string
@@ -93,7 +95,7 @@ interface Props {
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
 }
 
-export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
+export function NotesPage({ language, focusTarget }: Props) {
   const english = language === 'en-US'
   const [entries, setEntries] = useState<NotebookEntry[]>([])
   const [folders, setFolders] = useState<string[]>([])
@@ -492,7 +494,6 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
   }, [english, expandFolderPath, recentlyDeletedFolder])
 
   const saveEntry = useCallback(async (entryId: string, markdown: string) => {
-    if (!markdown.trim()) return false
     try {
       let revision = notebookRevisionsRef.current.get(entryId)
       if (!revision) {
@@ -720,7 +721,6 @@ export function NotesPage({ language, focusTarget, onSourceNavigate }: Props) {
           onCreateEntry={() => void createEntry()}
           onCreateLinkedEntry={(title) => void createEntry(undefined, title)}
           onSelectEntry={setActiveId}
-          onSourceNavigate={onSourceNavigate}
         />
       </div>
       {pendingFolderDelete && (
@@ -791,7 +791,6 @@ function NotebookEditor({
   onCreateEntry,
   onCreateLinkedEntry,
   onSelectEntry,
-  onSourceNavigate,
 }: {
   entry: NotebookEntry | null
   language: 'zh-CN' | 'en-US'
@@ -799,37 +798,17 @@ function NotebookEditor({
   onCreateEntry: () => void
   onCreateLinkedEntry: (title: string) => void
   onSelectEntry: (id: string) => void
-  onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
 }) {
   const english = language === 'en-US'
-  const [relationsCollapsed, setRelationsCollapsed] = useState(false)
+  const [relationsCollapsed, setRelationsCollapsed] = useState(true)
 
-  const wikiLinkResolver = useCallback((target: string): SourceReference | undefined => {
+  const resolveWikiLink = useCallback((target: string) => {
     if (!entry) return undefined
     const normalized = target.trim().toLocaleLowerCase()
-    const link = (entry.links ?? []).find((item) => item.target.trim().toLocaleLowerCase() === normalized
+    return (entry.links ?? []).find((item) => item.target.trim().toLocaleLowerCase() === normalized
       || item.target_title?.trim().toLocaleLowerCase() === normalized
       || item.target_id === target)
-    const title = link?.alias || link?.target_title || link?.target || target
-    if (link?.target_id) {
-      return {
-        id: `wiki:${entry.id}:${target}`,
-        label: title,
-        raw: `notebook:${link.target_id}`,
-        surface: 'notebook',
-        title,
-        target: { type: 'notebook', entryId: link.target_id },
-      }
-    }
-    return {
-      id: `wiki:${entry.id}:${target}`,
-      label: title,
-      raw: `notebook:${target}`,
-      surface: 'notebook',
-      title,
-      metadata: { missingReason: english ? 'Create linked note' : '创建关联笔记' },
-    }
-  }, [english, entry])
+  }, [entry])
 
   if (!entry) {
     return (
@@ -851,25 +830,21 @@ function NotebookEditor({
   return (
     <section className="flex min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          <NotebookLiveEditor
-            entryId={entry.id}
-            markdown={entry.markdown || ''}
-            language={language}
-            onSave={onSave}
-            renderMarkdown={(markdown) => (
-              <MarkdownMessage
-                text={markdown || ' '}
-                disableHeadingLinks
-                onSourceNavigate={(target, reference) => {
-                  if (target.type === 'notebook') onSelectEntry(target.entryId)
-                  else onSourceNavigate?.(target, reference)
-                }}
-                wikiLinkResolver={wikiLinkResolver}
-                onWikiLinkCreate={onCreateLinkedEntry}
-              />
-            )}
-          />
+        <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+          <Suspense fallback={<div className="flex min-h-full items-center justify-center text-sm text-gray-400">{english ? 'Loading editor…' : '正在加载编辑器…'}</div>}>
+            <NotebookLiveEditor
+              key={entry.id}
+              entryId={entry.id}
+              markdown={entry.markdown || ''}
+              language={language}
+              onSave={onSave}
+              onWikiLinkOpen={(target) => {
+                const link = resolveWikiLink(target)
+                if (link?.target_id) onSelectEntry(link.target_id)
+                else onCreateLinkedEntry(target)
+              }}
+            />
+          </Suspense>
         </div>
         <NotebookRelationsPanel
           entry={entry}

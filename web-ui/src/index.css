@@ -510,3 +510,72 @@ body {
   overflow-y: hidden;
   padding: 0.25rem 0;
 }
+
+.notebook-direct-editor .milkdown {
+  --crepe-color-background: transparent;
+  --crepe-color-on-background: var(--text-primary);
+  --crepe-color-surface: var(--theme-surface-muted);
+  --crepe-color-surface-low: var(--theme-surface-hover);
+  --crepe-color-on-surface: var(--text-primary);
+  --crepe-color-on-surface-variant: var(--text-secondary);
+  --crepe-color-outline: var(--surface-border);
+  --crepe-color-primary: var(--theme-accent);
+  --crepe-color-secondary: var(--theme-accent-surface);
+  --crepe-color-on-secondary: var(--text-primary);
+  --crepe-color-hover: var(--theme-surface-hover);
+  --crepe-color-selected: var(--theme-accent-border);
+  --crepe-font-title: inherit;
+  --crepe-font-default: inherit;
+  min-height: 100%;
+  background: transparent;
+}
+
+.notebook-direct-editor {
+  container-type: inline-size;
+}
+
+.notebook-direct-editor .milkdown .ProseMirror {
+  min-height: calc(100vh - 205px);
+  padding: 2.5rem 3rem 6rem;
+  color: var(--text-primary);
+  caret-color: var(--theme-accent);
+}
+
+.notebook-direct-editor .milkdown .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.notebook-direct-editor .milkdown .ProseMirror h1,
+.notebook-direct-editor .milkdown .ProseMirror h2,
+.notebook-direct-editor .milkdown .ProseMirror h3,
+.notebook-direct-editor .milkdown .ProseMirror h4 {
+  color: var(--text-primary);
+  font-family: inherit;
+  letter-spacing: -0.015em;
+}
+
+.notebook-direct-editor a[href^="#folumi-wiki-"] {
+  border-radius: 0.25rem;
+  background: var(--theme-accent-surface);
+  color: var(--theme-accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.notebook-direct-editor a[href^="#folumi-embed-"] {
+  color: var(--text-muted);
+  text-decoration-style: dotted;
+}
+
+@media (max-width: 900px) {
+  .notebook-direct-editor .milkdown .ProseMirror {
+    padding: 2rem 1.25rem 5rem;
+  }
+}
+
+@container (max-width: 640px) {
+  .notebook-direct-editor .milkdown .ProseMirror {
+    padding: 2rem 1.25rem 5rem;
+  }
+}
