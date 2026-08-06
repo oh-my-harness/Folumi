@@ -144,14 +144,18 @@ export function Sidebar({
             <button
               key={item.key}
               title={label}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm ${
+              className={`flex h-10 items-center rounded-lg text-left text-sm transition-[width] duration-200 ${
+                collapsed ? 'w-10' : 'w-[264px]'
+              } ${
                 active
                   ? 'bg-gray-900 text-white'
                   : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
               }`}
               onClick={() => onNavigate(item.key)}
             >
-              <Icon size={19} className="shrink-0" />
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+                <Icon size={19} className="shrink-0" />
+              </span>
               {!collapsed && <span>{label}</span>}
             </button>
           )
@@ -160,7 +164,7 @@ export function Sidebar({
 
       <div data-sidebar-fixed-column="true" className="mt-6 w-72 flex-1 overflow-y-auto px-3">
         {collapsed ? (
-          <div className="border-t border-gray-100 pt-3" />
+          <div className="w-10 border-t border-gray-100 pt-3" />
         ) : (
           <>
         <div className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-gray-500">
@@ -269,14 +273,18 @@ export function Sidebar({
       <div data-sidebar-fixed-column="true" className="w-72 shrink-0 border-t border-gray-200 p-3">
         <button
           title={t('nav.settings')}
-          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm ${
+          className={`flex h-10 items-center rounded-lg text-left text-sm transition-[width] duration-200 ${
+            collapsed ? 'w-10' : 'w-[264px]'
+          } ${
             activeView === 'settings'
               ? 'bg-gray-900 text-white'
               : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
           }`}
           onClick={() => onNavigate('settings')}
         >
-          <Settings size={19} className="shrink-0" />
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+            <Settings size={19} className="shrink-0" />
+          </span>
           {!collapsed && <span>{t('nav.settings')}</span>}
         </button>
         {!collapsed && <div className="mt-3 px-3 text-xs text-gray-500">v{__APP_VERSION__}</div>}

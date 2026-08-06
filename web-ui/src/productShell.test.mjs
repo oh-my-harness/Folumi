@@ -43,6 +43,8 @@ test('sidebar control lives in a fixed custom window frame above compact brandin
   assert.match(sidebar, /overflow-hidden border-r transition-\[width\]/)
   assert.equal(sidebar.match(/data-sidebar-fixed-column="true"/g)?.length, 4)
   assert.match(sidebar, /className="w-72 shrink-0 space-y-1 px-3"/)
+  assert.equal(sidebar.match(/collapsed \? 'w-10' : 'w-\[264px\]'/g)?.length, 2)
+  assert.match(sidebar, /flex h-10 w-10 shrink-0 items-center justify-center/)
   assert.doesNotMatch(sidebar, /collapsed \? 'justify-center/)
   assert.doesNotMatch(sidebar, /PanelLeftOpen|PanelLeftClose|onToggleCollapsed/)
   assert.doesNotMatch(sidebar, /t\('app\.subtitle'\)/)
