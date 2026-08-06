@@ -15,19 +15,24 @@
     "reason": "Bounded public search results are useful durable evidence candidates."
   },
   {
-    "tool": "propose_quiz_plan",
-    "projection": "projected",
-    "reason": "Persist the bounded user-review proposal."
-  },
-  {
-    "tool": "create_quiz",
-    "projection": "projected",
-    "reason": "Persist quiz artifact identity and bounded creation metadata."
-  },
-  {
-    "tool": "read_space_item",
+    "tool": "read_notebook_item",
     "projection": "ephemeral",
-    "reason": "Notebook and Quiz bodies are private context; only the read receipt is durable."
+    "reason": "Notebook bodies are private context; only a bounded read receipt is durable."
+  },
+  {
+    "tool": "create_notebook_item",
+    "projection": "projected",
+    "reason": "Persist the bounded Notebook creation receipt and revision metadata."
+  },
+  {
+    "tool": "update_notebook_item",
+    "projection": "projected",
+    "reason": "Persist the bounded revision-checked Notebook update receipt."
+  },
+  {
+    "tool": "move_notebook_item",
+    "projection": "projected",
+    "reason": "Persist the bounded revision-checked Notebook move receipt."
   },
   {
     "tool": "search_notebook",
@@ -43,20 +48,5 @@
     "tool": "propose_notebook_edit",
     "projection": "projected",
     "reason": "Persist the user-review proposal and confirmation requirement."
-  },
-  {
-    "tool": "read_tutor_memory",
-    "projection": "ephemeral",
-    "reason": "Tutor continuity memory is private context."
-  },
-  {
-    "tool": "remember_for_later",
-    "projection": "projected",
-    "reason": "Persist the bounded continuity-memory mutation receipt."
-  },
-  {
-    "tool": "resolve_tutor_memory",
-    "projection": "projected",
-    "reason": "Persist the bounded continuity-memory resolution receipt."
   }
 ]

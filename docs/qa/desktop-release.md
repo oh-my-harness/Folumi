@@ -1,6 +1,6 @@
 # Desktop Release QA Checklist
 
-This checklist applies to the current desktop release, including `v0.3.5`.
+This checklist applies to the current desktop release, including `v0.4.1`.
 
 Use this checklist after running:
 

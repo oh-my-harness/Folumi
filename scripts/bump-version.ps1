@@ -87,7 +87,7 @@ Update-TextFile -Path (Join-Path $root "README.md") -Updater {
 }
 Update-TextFile -Path (Join-Path $root "MANUAL.md") -Updater {
     param($text)
-    Replace-First $text '(?m)^(> [^\r\n]*?)\d+\.\d+\.\d+( [^\r\n]*)$' "`${1}$Version`${2}"
+    Replace-First $text '(?m)^(> [^\r\n]*?)\d+\.\d+\.\d+([^\r\n]*)$' "`${1}$Version`${2}"
 }
 Update-TextFile -Path (Join-Path $root "docs\qa\desktop-release.md") -Updater {
     param($text)

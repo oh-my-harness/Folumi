@@ -1,16 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- Removed the dedicated Research task action, capability, report UI, and
-  workflow. Ordinary Chat now handles research-oriented requests with the
-  existing web, Knowledge Base, Notebook, and citation tools.
-- Retired the obsolete L1/L2/L3 Memory store, activity-event capture,
-  consolidation workflows, maintenance APIs, runtime source/plugin mounting,
-  and related review helpers. Long-term Memory is temporarily unavailable
-  while the replacement item-oriented design is reviewed; Assistant Profile
-  remains available.
-
 All notable changes to this project will be documented in this file.
 
 This project follows Semantic Versioning for source releases. Desktop bundle
@@ -20,41 +9,55 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ## Unreleased
 
+## 0.4.1 - 2026-08-06
+
+### Added
+
+- Added standalone Notebook and Memory workspaces. Notebook now provides a
+  folder tree, Markdown editing, Wiki links, tags, backlinks, relationship
+  navigation, Vault integration, contextual creation, and recoverable folder
+  deletion.
+- Added the item-oriented Saved Memory system with explicit provenance,
+  revision history, conflict replacement, expiration, user editing and
+  forgetting, assistant-write permissions, and JSON export.
+- Added runtime-backed History Recall with persistent indexing, federated
+  search, exact source reads, temporary memory-isolated conversations, and
+  visible navigation back to recalled sessions.
+- Added a one-click Chinese LoCoMo benchmark console with retrieval and
+  end-to-end answer evaluation, versioned JSON results, and comparison charts.
+- Added LanceDB-backed runtime Knowledge integration, verified source reads,
+  duplicate detection, retryable imports, and full-index rebuilding.
+
 ### Changed
 
-- Removed the legacy Tutor-continuity migration panel, import/export API, and
-  ZIP archive route; Folumi now leaves old teaching files untouched and
-  outside the active product boundary.
-- Moved the single Assistant name and behavior configuration from Settings to
-  the standalone Memory workspace.
-- Split Memory into Long-term Memory and Assistant Profile tabs, keeping
-  Long-term Memory as the default view.
-- Promoted Notebook and Memory to standalone primary workspaces.
-- Limited Knowledge Base to RAG source-document management instead of mixing
-  editable Notes into the same interface.
-- Defined the primary interface as Assistant, Knowledge Base, Notebook,
-  Memory, and Settings.
-- Replaced the legacy capability menu with an on-demand Research chat action.
-- Rewrote onboarding and empty states so a first grounded answer no longer
-  requires Tutor, Space, or workflow concepts.
-- Added content-based duplicate detection, retryable failed imports, and an
-  explicit full-index rebuild from stored source documents.
-- Replaced multi-Tutor setup in new conversations with one configurable
-  Assistant Profile and made each session's Sources, Notes, and Memory scope
-  visible in the conversation header.
-- Added a user-facing Memory list with a global switch, provenance and source
-  inspection, revision-safe editing, and confirmed forgetting.
-- Made Note edits and moves revision-safe and atomic, and added deletion
-  confirmation with an immediate restore action.
-- Established Folumi as the local-first personal knowledge assistant product,
-  with Assistant, Sources, Notes, Memory, and Settings as the target scope.
-- Retired Quiz, Space, Student Profile, multi-Tutor, and standalone Research
-  from the active product boundary.
-- Updated desktop and user-facing branding to Folumi while retaining the
-  existing application identifier, data directory, and storage keys so
-  supported user data remains discoverable.
-- Renamed only untouched built-in Tutor Agent usage guides to Folumi; customized
-  guide profiles and Soul content remain unchanged.
+- Reframed Folumi as a local-first personal knowledge assistant with five
+  primary workspaces: Assistant, Knowledge Base, Notebook, Memory, and
+  Settings. Knowledge Base now contains RAG sources only.
+- Consolidated identity into one Assistant Profile managed from Memory, with a
+  visible default Folumi identity and natural, non-narrated memory tool use.
+- Replaced the legacy layered Memory pipeline with runtime knowledge and memory
+  primitives, while keeping product adapters thin and explicit.
+- Simplified ordinary Chat to cover research-oriented questions through its
+  existing knowledge, web, citation, and code tools.
+- Reworked onboarding, empty states, source controls, and product documentation
+  around the streamlined Folumi information architecture.
+
+### Removed
+
+- Removed Quiz, Space, Student Profile, multi-Tutor, standalone Research,
+  billing controls, and the legacy data migration UI and APIs from the active
+  product path.
+- Removed the obsolete L1/L2/L3 Memory files, consolidation workflows, and
+  parallel product-owned recall pipeline.
+
+### Fixed
+
+- Hardened Saved Memory and History Recall routing, source selection, retries,
+  exact reads, session indexing, and durable recall behavior.
+- Restored the IDE-like Notebook workspace and polished file-tree selection,
+  creation dialogs, root context menus, deletion confirmation, and undo.
+- Ensured the desktop backend sidecar exits with its parent process and kept
+  heavy Windows Rust build steps serialized.
 
 ## 0.3.4 - 2026-07-17
 

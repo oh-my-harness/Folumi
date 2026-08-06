@@ -19,7 +19,7 @@ const versions = new Map([
   ['web-ui/package-lock.json packages[""]', packageLock.packages?.['']?.version],
   ['README.md current version', read('README.md').match(/^> 当前版本：`([^`]+)`/m)?.[1]],
   ['README.md document version', read('README.md').match(/^> 文档状态：已按 `v([^`]+)`/m)?.[1]],
-  ['MANUAL.md', read('MANUAL.md').match(/^> 适用版本：([^ ]+)/m)?.[1]],
+  ['MANUAL.md', read('MANUAL.md').match(/^> 适用版本：(\d+\.\d+\.\d+)\s*$/m)?.[1]],
   ['docs/qa/desktop-release.md', read('docs/qa/desktop-release.md').match(/current desktop release, including `v([^`]+)`/)?.[1]],
 ])
 
