@@ -119,40 +119,39 @@ export function Sidebar({
         collapsed ? 'w-16' : 'w-72'
       }`}
     >
-      <div className={`flex items-center ${collapsed ? 'justify-center px-2 py-4' : 'justify-between px-5 py-5'}`}>
+      <div
+        data-sidebar-frame-control="true"
+        className={`flex h-12 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'px-3'}`}
+      >
         <button
-          className={`flex items-center gap-2 text-left ${collapsed ? 'justify-center' : ''}`}
+          type="button"
+          className="rounded-md p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+          title={collapsed ? t('nav.expand') : t('nav.collapse')}
+          aria-label={collapsed ? t('nav.expand') : t('nav.collapse')}
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+        </button>
+      </div>
+
+      <div
+        data-sidebar-brand="true"
+        className={`flex shrink-0 items-center pb-4 ${collapsed ? 'justify-center px-2' : 'px-4'}`}
+      >
+        <button
+          type="button"
+          className={`flex items-center text-left ${collapsed ? 'justify-center' : 'gap-2.5'}`}
           onClick={() => onNavigate('assistant')}
           title="Folumi"
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-blue-600">
-            <Sparkles size={20} />
-          </div>
-          {!collapsed && <div>
-            <div className="text-lg font-semibold text-gray-900">Folumi</div>
-            <div className="text-xs text-gray-500">{t('app.subtitle')}</div>
-          </div>}
+          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-blue-600">
+            <Sparkles size={18} />
+          </span>
+          {!collapsed && (
+            <span className="text-base font-semibold leading-none text-gray-900">Folumi</span>
+          )}
         </button>
-        {!collapsed && (
-          <button
-            className="rounded p-2 text-gray-500 hover:bg-gray-100"
-            title={t('nav.collapse')}
-            onClick={onToggleCollapsed}
-          >
-            <PanelLeftClose size={18} />
-          </button>
-        )}
       </div>
-
-      {collapsed && (
-        <button
-          className="mx-auto mb-2 rounded p-2 text-gray-500 hover:bg-gray-100"
-          title={t('nav.expand')}
-          onClick={onToggleCollapsed}
-        >
-          <PanelLeftOpen size={18} />
-        </button>
-      )}
 
       <nav className={`space-y-1 ${collapsed ? 'px-2' : 'px-3'}`}>
         {navItems.map((item) => {

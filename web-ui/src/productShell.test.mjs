@@ -30,6 +30,13 @@ test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, an
   assert.doesNotMatch(sidebar, /key: '(tutor|space)'/)
 })
 
+test('sidebar keeps its frame control separate from compact branding', () => {
+  assert.match(sidebar, /data-sidebar-frame-control="true"/)
+  assert.match(sidebar, /data-sidebar-brand="true"/)
+  assert.match(sidebar, /collapsed \? <PanelLeftOpen size=\{18\} \/> : <PanelLeftClose size=\{18\} \/>/)
+  assert.doesNotMatch(sidebar, /t\('app\.subtitle'\)/)
+})
+
 test('Notebook and Memory are standalone workspaces while Knowledge Base stays RAG-only', () => {
   assert.match(app, /view === 'notebook'/)
   assert.match(app, /view === 'memory'/)
