@@ -36,6 +36,7 @@ test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, an
 test('sidebar control lives in a fixed custom window frame above compact branding', () => {
   assert.match(appTitleBar, /data-app-titlebar="true"/)
   assert.match(appTitleBar, /app-titlebar-sidebar-toggle absolute left-3/)
+  assert.match(appTitleBar, /app-titlebar-sidebar-toggle[\s\S]*?h-8 w-10/)
   assert.match(appTitleBar, /data-tauri-drag-region/)
   assert.match(appTitleBar, /data-window-controls="true"/)
   assert.match(appTitleBar, /sidebarCollapsed \? <PanelLeftOpen size=\{18\} \/> : <PanelLeftClose size=\{18\} \/>/)

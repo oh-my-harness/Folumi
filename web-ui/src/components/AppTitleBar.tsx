@@ -24,7 +24,7 @@ export function AppTitleBar({ sidebarCollapsed, onToggleSidebar }: Props) {
     >
       <button
         type="button"
-        className="app-titlebar-sidebar-toggle absolute left-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--theme-surface-hover)] hover:text-[var(--text-primary)]"
+        className="app-titlebar-sidebar-toggle absolute left-3 top-1/2 flex h-8 w-10 -translate-y-1/2 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--theme-surface-hover)] hover:text-[var(--text-primary)]"
         title={sidebarCollapsed ? t('nav.expand') : t('nav.collapse')}
         aria-label={sidebarCollapsed ? t('nav.expand') : t('nav.collapse')}
         onClick={onToggleSidebar}
