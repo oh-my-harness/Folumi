@@ -11,6 +11,8 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ### Changed
 
+- Removed Notebook import, Markdown/ZIP export, and Obsidian Vault export. A
+  Notebook library is now managed directly as a user-selected local folder.
 - Replaced the conversation’s single-source and per-message `@` controls with
   one multi-select Sources menu. Multiple source collections and Notebook can
   now be enabled together, and clicking an item again removes it.

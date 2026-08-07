@@ -88,8 +88,8 @@ tool names, or code-level `KnowledgeBase`, `Notebook`, and `Memory` types.
 ### Notebook
 
 - Is a standalone primary workspace and a core Folumi capability.
-- Supports recording, managing, viewing, editing, moving, importing, exporting,
-  deleting, and restoring Markdown notes.
+- Supports recording, managing, viewing, editing, moving, deleting, and restoring
+  Markdown notes in user-selected local folders.
 - Keeps notes user-owned and separate from Knowledge Base source documents.
 - May be selected or referenced from Assistant, but that integration must not
   make Notebook a subsection of Knowledge Base.

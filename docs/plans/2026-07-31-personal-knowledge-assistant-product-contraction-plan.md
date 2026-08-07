@@ -117,7 +117,7 @@ Memory。
 
 - 原始资料、笔记、记忆和 Session 默认保存在本地数据目录。
 - 所有派生索引都可以从权威数据重建。
-- 用户可以导出 Sources 清单、Markdown Notes、Memory 和会话数据。
+- 用户可以导出 Sources 清单、Memory 和会话数据；Notes 直接由本地文件夹管理。
 - 使用远程 LLM 或 Embedding 时明确提示哪些内容可能发送给服务商。
 
 ### 4.4 引用不是装饰
@@ -194,7 +194,7 @@ Quiz、Research、Organize、Code Exec 不再作为并列模式选择项。联�
 
 - Markdown 树、文件夹、标签、Wiki Link 和反向链接；
 - 搜索、预览和编辑；
-- 导入/导出 Obsidian 风格 Vault；
+- 直接绑定和切换本地 Markdown 笔记库，不提供重复的导入导出流程；
 - Agent 受控创建、更新、重命名和移动；
 - 基于 revision 的并发检查；
 - 删除、批量修改和破坏性覆盖使用单独确认与恢复机制。
@@ -517,7 +517,7 @@ runtime crate、Knowledge/Memory 协议和内部通用类型不随品牌重命�
 4. 用户要求将结论保存为 Markdown 笔记，随后让助手基于 revision 修改该笔记。
 5. 用户明确要求记住一个回答偏好，并在新会话中看到该偏好生效。
 6. 用户在设置中查看偏好的来源并将其遗忘，后续会话不再使用。
-7. 用户导出 Sources 清单、Notes、Memory 和 Session 数据。
+7. 用户导出 Sources 清单、Memory 和 Session 数据，并直接在文件系统中备份 Notes。
 8. 整个流程不出现 Quiz、Space、Student Profile、多 Tutor 或 workflow 专有概念。
 
 完成这一场景后，产品才算真正从“功能很多的 Tutor 原型”收缩为“清晰、可信、可长期使用

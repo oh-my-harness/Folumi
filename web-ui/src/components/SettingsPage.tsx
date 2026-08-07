@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   Activity,
   BookMarked,
@@ -6,7 +6,6 @@ import {
   Check,
   CircleHelp,
   Database,
-  Download,
   FolderOpen,
   Globe2,
   Palette,
@@ -15,7 +14,6 @@ import {
   SlidersHorizontal,
   Sun,
   Trash2,
-  Upload,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -69,31 +67,6 @@ type ConfigTestState = {
   message: string
 }
 
-interface NotebookImportPreviewItem {
-  source_path: string
-  title: string
-  markdown_chars: number
-  tags: string[]
-  duplicate_title_entry_id?: string | null
-  duplicate_title?: string | null
-}
-
-interface NotebookImportSkipped {
-  file_name: string
-  reason: string
-}
-
-interface NotebookImportPreview {
-  items: NotebookImportPreviewItem[]
-  skipped: NotebookImportSkipped[]
-  conflict_count: number
-}
-
-interface NotebookImportResult {
-  imported_count: number
-  skipped: NotebookImportSkipped[]
-}
-
 interface NotebookVault {
   id: string
   name: string
@@ -143,10 +116,6 @@ export function SettingsPage({
   const [pendingVaultRemoval, setPendingVaultRemoval] = useState<string | null>(null)
   const [notebookStatus, setNotebookStatus] = useState('笔记设置已就绪')
   const [notebookLoading, setNotebookLoading] = useState(false)
-  const [pendingImportFiles, setPendingImportFiles] = useState<File[]>([])
-  const [importPreview, setImportPreview] = useState<NotebookImportPreview | null>(null)
-  const [importResult, setImportResult] = useState<NotebookImportResult | null>(null)
-  const importInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -190,66 +159,8 @@ export function SettingsPage({
     onChange({ ...settings, language })
   }
 
-  const previewNotebookFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-    const nextFiles = Array.from(files)
-    const form = new FormData()
-    form.append('space_id', 'default')
-    nextFiles.forEach((file) => form.append('file', file))
-    setPendingImportFiles(nextFiles)
-    setImportPreview(null)
-    setImportResult(null)
-    setNotebookLoading(true)
-    try {
-      const res = await fetch('/api/notebook/import/preview', {
-        method: 'POST',
-        body: form,
-      })
-      const data = await safeJson(res)
-      if (!res.ok) throw new Error(errorMessage(data, res.status))
-      const preview = data as unknown as NotebookImportPreview
-      setImportPreview(preview)
-      setNotebookStatus(`找到 ${preview.items.length} 篇可导入笔记`)
-    } catch (err) {
-      setPendingImportFiles([])
-      setNotebookStatus(err instanceof Error ? err.message : String(err))
-    } finally {
-      setNotebookLoading(false)
-    }
-  }
-
-  const importNotebookFiles = async () => {
-    if (pendingImportFiles.length === 0) return
-    const form = new FormData()
-    form.append('space_id', 'default')
-    pendingImportFiles.forEach((file) => form.append('file', file))
-    setNotebookLoading(true)
-    try {
-      const res = await fetch('/api/notebook/import', {
-        method: 'POST',
-        body: form,
-      })
-      const data = await safeJson(res)
-      if (!res.ok) throw new Error(errorMessage(data, res.status))
-      const imported = Array.isArray(data.entries) ? data.entries.length : 0
-      const skippedItems = Array.isArray(data.skipped) ? data.skipped as NotebookImportSkipped[] : []
-      setImportResult({ imported_count: imported, skipped: skippedItems })
-      setPendingImportFiles([])
-      setImportPreview(null)
-      setNotebookStatus(`已导入 ${imported} 篇${skippedItems.length ? `，跳过 ${skippedItems.length} 篇` : ''}`)
-      await refreshNotebookStatus()
-    } catch (err) {
-      setNotebookStatus(err instanceof Error ? err.message : String(err))
-    } finally {
-      setNotebookLoading(false)
-    }
-  }
-
   const bindNotebookVault = async (folderPath: string) => {
     if (!folderPath.trim()) return
-    setPendingImportFiles([])
-    setImportPreview(null)
-    setImportResult(null)
     setNotebookLoading(true)
     try {
       const res = await fetch('/api/notebook/vaults', {
@@ -319,33 +230,6 @@ export function SettingsPage({
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setNotebookStatus(`无法选择文件夹：${message}`)
-    }
-  }
-
-  const cancelNotebookImport = () => {
-    setPendingImportFiles([])
-    setImportPreview(null)
-    setNotebookStatus('已取消导入')
-  }
-
-  const exportNotebookArchive = async (kind: 'backup' | 'vault') => {
-    setNotebookLoading(true)
-    try {
-      const path = kind === 'backup'
-        ? '/api/notebook/export.zip?space_id=default'
-        : '/api/notebook/export-vault.zip?space_id=default'
-      const res = await fetch(path)
-      if (!res.ok) {
-        const data = await safeJson(res)
-        throw new Error(errorMessage(data, res.status))
-      }
-      const blob = await res.blob()
-      downloadBlob(blob, kind === 'backup' ? 'notebook-export.zip' : 'notebook-vault.zip')
-      setNotebookStatus(kind === 'backup' ? '笔记备份已导出' : 'Obsidian 文件已导出')
-    } catch (err) {
-      setNotebookStatus(err instanceof Error ? err.message : String(err))
-    } finally {
-      setNotebookLoading(false)
     }
   }
 
@@ -1063,19 +947,7 @@ export function SettingsPage({
           )}
 
           {activeTab === 'notebook' && (
-            <SettingsPanel icon={BookMarked} title="笔记存储" description="管理笔记位置、导入和备份。">
-              <input
-                ref={importInputRef}
-                className="hidden"
-                type="file"
-                accept=".md,.markdown,.zip,text/markdown,text/plain,application/zip"
-                multiple
-                onChange={(event) => {
-                  void previewNotebookFiles(event.currentTarget.files)
-                  event.currentTarget.value = ''
-                }}
-              />
-
+            <SettingsPanel icon={BookMarked} title="笔记存储" description="管理笔记库使用的文件夹。">
               <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -1153,126 +1025,6 @@ export function SettingsPage({
                   ))}
                 </div>
               </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <section className="rounded-lg border border-gray-200 bg-white p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-50 text-blue-600">
-                      <Upload size={18} />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-900">导入笔记</h4>
-                      <p className="mt-1 text-sm text-gray-500">从 Markdown 文件或 zip 中导入。</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="mt-4 inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400"
-                    disabled={notebookLoading || notebookVaults.length === 0}
-                    onClick={() => importInputRef.current?.click()}
-                  >
-                    <Upload size={15} />
-                    选择文件或 zip
-                  </button>
-                </section>
-
-                <section className="rounded-lg border border-gray-200 bg-white p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-50 text-blue-600">
-                      <Download size={18} />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-900">导出笔记</h4>
-                      <p className="mt-1 text-sm text-gray-500">下载备份，或导出到 Obsidian。</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={notebookLoading || notebookVaults.length === 0}
-                      onClick={() => void exportNotebookArchive('backup')}
-                    >
-                      <Download size={15} />
-                      备份 zip
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={notebookLoading || notebookVaults.length === 0}
-                      onClick={() => void exportNotebookArchive('vault')}
-                    >
-                      <BookMarked size={15} />
-                      Obsidian Vault
-                    </button>
-                  </div>
-                </section>
-              </div>
-
-              {importPreview && (
-                <div className="space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-4 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <span className="font-medium text-gray-900">
-                      导入预览 · {importPreview.items.length} 篇笔记
-                    </span>
-                    {importPreview.conflict_count > 0 && (
-                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
-                        {importPreview.conflict_count} 个重名项
-                      </span>
-                    )}
-                  </div>
-                  <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
-                    {importPreview.items.map((item) => (
-                      <div key={item.source_path} className="rounded-md bg-white p-2">
-                        <div className="truncate font-medium text-gray-800">{item.title}</div>
-                        <div className="mt-0.5 truncate text-xs text-gray-500">{item.source_path} · {item.markdown_chars} chars</div>
-                        {item.duplicate_title_entry_id && (
-                          <div className="mt-1 text-xs text-red-600">与“{item.duplicate_title}”重名</div>
-                        )}
-                      </div>
-                    ))}
-                    {importPreview.skipped.map((item) => (
-                      <div key={`${item.file_name}-${item.reason}`} className="rounded-md bg-red-50 p-2 text-xs text-red-600">
-                        {item.file_name}: {item.reason}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className="inline-flex h-9 items-center justify-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-200"
-                      disabled={notebookLoading || importPreview.items.length === 0}
-                      onClick={() => void importNotebookFiles()}
-                    >
-                      导入
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-9 items-center justify-center rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-600 hover:bg-gray-50"
-                      disabled={notebookLoading}
-                      onClick={cancelNotebookImport}
-                    >
-                      取消
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {importResult && importResult.skipped.length > 0 && (
-                <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                  <div className="font-medium">
-                    已导入 {importResult.imported_count} 篇，跳过 {importResult.skipped.length} 篇
-                  </div>
-                  <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
-                    {importResult.skipped.map((item, index) => (
-                      <div key={`${item.file_name}-${item.reason}-${index}`} className="rounded-md bg-white/70 px-2 py-1.5">
-                        <div className="truncate font-medium">{item.file_name}</div>
-                        <div className="mt-0.5 text-xs text-amber-700">{item.reason}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               <div className={`rounded-md border px-3 py-2 text-sm ${
                 notebookStatus.toLowerCase().includes('failed') || notebookStatus.toLowerCase().includes('error')
@@ -1413,17 +1165,6 @@ function errorMessage(data: Record<string, unknown>, status: number) {
   const message = data.message
   if (typeof message === 'string' && message.trim()) return message
   return `HTTP ${status}`
-}
-
-function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
 }
 
 function EmptyConfig({ label, onAdd }: { label: string; onAdd: () => void }) {

@@ -688,7 +688,7 @@ export function NotesPage({ language, focusTarget, onManageVaults }: Props) {
         <div ref={vaultMenuRef} className="relative">
           <button
             type="button"
-            className="inline-flex h-9 max-w-64 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-700 transition hover:border-blue-200 hover:bg-blue-50 disabled:opacity-50"
+            className="inline-flex h-9 max-w-64 items-center gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 text-sm font-medium text-blue-700 shadow-sm ring-2 ring-blue-100/70 transition hover:border-blue-400 hover:bg-blue-100 disabled:opacity-50"
             disabled={loading}
             aria-expanded={vaultMenuOpen}
             onClick={() => {

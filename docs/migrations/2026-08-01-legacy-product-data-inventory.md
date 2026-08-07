@@ -45,8 +45,7 @@ The removal is complete only when:
 1. no primary page or settings surface presents legacy migration or archive
    controls;
 2. no `/api/migration/legacy*` route is registered;
-3. the web backend has no legacy ZIP export path (Notebook ZIP import/export
-   remains a separate supported capability);
+3. the web backend has no legacy or Notebook ZIP import/export path;
 4. product requirements, user documentation, and desktop QA do not require a
    legacy import/export workflow; and
 5. supported sessions, Sources, Notes, settings, and unified Memory continue to

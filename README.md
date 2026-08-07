@@ -32,7 +32,7 @@
 | --- | --- |
 | Assistant | 基于 runtime session 的多轮对话，按需读取知识、引用来源并使用明确启用的工具。 |
 | 资料（Sources） | 导入和管理只读参考资料，支持 RAG 检索、原文读取、证据引用和来源定位；内部沿用 Knowledge Base 领域模型。 |
-| 笔记（Notebook） | 用户拥有的 Markdown 内容，可记录、管理、查看、链接、导入和导出；助手产出只有经用户确认才写入。 |
+| 笔记（Notebook） | 用户拥有的本地 Markdown 内容，可记录、管理、查看和链接；助手产出只有经用户确认才写入。 |
 | 个性化（Personalization） | “关于我”管理个人信息与参考过往对话，“助手设定”管理助手名称和行为；内部沿用 Memory、Saved Memory 与 History Recall 契约。 |
 | Settings | 模型、embedding、搜索、数据目录、工具权限、外观和 Notebook 存储。 |
 

@@ -1,5 +1,9 @@
 # Notebook Obsidian-Like Plan
 
+> 历史说明：本计划中的笔记导入与导出能力已由
+> `docs/specs/2026-08-08-notebook-import-export-removal-decision.md` 明确撤销；
+> 当前产品直接使用用户选择的本地 Markdown 文件夹。
+
 > Status: proposed | Date: 2026-07-01 | Scope: evolve Space / Notebook from a saved-record list into a Markdown-first connected knowledge workspace.
 
 ## 1. Product Positioning

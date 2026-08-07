@@ -74,8 +74,8 @@ The retained Notebook workspace capabilities are recorded in
   organizing, reading, and editing Notes.
 - **REQ-300** Notes shall be user-owned Markdown stored in the application
   Vault or a user-selected external Vault.
-- **REQ-301** Notes shall support folders, tags, Wiki links, backlinks, import,
-  export, search, and direct editing.
+- **REQ-301** Notes shall support folders, tags, Wiki links, backlinks, search,
+  and direct editing inside user-selected local Markdown folders.
 - **REQ-302** Note mutation tools shall enforce Vault root confinement.
 - **REQ-303** Updates shall use revision checks, and destructive actions shall
   require confirmation with a recovery path.
