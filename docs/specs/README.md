@@ -4,8 +4,10 @@ Current product and runtime-facing specs live here.
 
 - `2026-06-26-product-requirements-spec.md` is the consolidated product requirement source.
 - `2026-08-03-primary-workspaces-decision.md` is the accepted information-
-  architecture decision that keeps Knowledge Base RAG-only and preserves
-  Notebook and Memory as standalone primary workspaces.
+  architecture decision that keeps the internal Knowledge Base domain RAG-only
+  and preserves Notebook and Memory as standalone primary workspaces. Its
+  2026-08-07 amendment defines the user-facing labels Sources/资料,
+  Notebook/笔记, and Personalization/个性化 without renaming internal APIs.
 - `2026-08-03-user-memory-redesign.md` is the accepted Memory design. Its global
   Saved Memory is implemented. The opt-in runtime History Recall baseline is
   integrated as visible, agent-decided tool search without pre-run automatic

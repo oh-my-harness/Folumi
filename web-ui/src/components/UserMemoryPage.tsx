@@ -103,7 +103,7 @@ export function UserMemoryPage({
         fetch('/api/memory/items?include_expired=true'),
         fetch('/api/memory/settings'),
       ])
-      if (!itemsResponse.ok || !settingsResponse.ok) throw new Error(english ? 'Failed to load memory.' : '加载记忆失败。')
+      if (!itemsResponse.ok || !settingsResponse.ok) throw new Error(english ? 'Failed to load personal information.' : '加载个人信息失败。')
       const itemsPayload = await itemsResponse.json() as { items?: MemoryItem[] }
       const settingsPayload = await settingsResponse.json() as MemorySettings
       setItems(itemsPayload.items ?? [])
@@ -170,8 +170,8 @@ export function UserMemoryPage({
         const payload = await response.json() as { code?: string; existing?: MemoryItem }
         if (payload.code === 'memory_conflict' && payload.existing) {
           const confirmed = window.confirm(english
-            ? `This topic already has an active memory:\n\n${payload.existing.content}\n\nReplace it with the new item?`
-            : `这个主题已有一条有效记忆：\n\n${payload.existing.content}\n\n是否用新内容替代它？`)
+            ? `This topic already has active personal information:\n\n${payload.existing.content}\n\nReplace it with the new item?`
+            : `这个主题已有一条有效个人信息：\n\n${payload.existing.content}\n\n是否用新内容替代它？`)
           setBusy(false)
           if (confirmed) await createItem('replace')
           return
@@ -214,8 +214,8 @@ export function UserMemoryPage({
 
   const forgetItem = async (item: MemoryItem) => {
     if (!window.confirm(english
-      ? 'Forget this memory permanently? Its content and recoverable revisions will be removed.'
-      : '确定永久遗忘这条记忆吗？正文和可恢复历史版本都会被移除。')) return
+      ? 'Remove this personal information permanently? Its content and recoverable revisions will be deleted.'
+      : '确定永久移除这条个人信息吗？正文和可恢复历史版本都会被删除。')) return
     setBusy(true)
     setError('')
     try {
@@ -260,14 +260,14 @@ export function UserMemoryPage({
       <div className="flex items-start gap-3 border-b border-gray-200 pb-5">
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Brain size={21} /></span>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold text-gray-950">{english ? 'Memory' : '记忆'}</h1>
-          <p className="mt-1 text-sm text-gray-500">{english ? 'Manage durable cross-session memory and the assistant profile.' : '管理持久的跨会话记忆与助手配置。'}</p>
+          <h1 className="text-xl font-semibold text-gray-950">{english ? 'Personalization' : '个性化'}</h1>
+          <p className="mt-1 text-sm text-gray-500">{english ? 'Decide how the Assistant knows you, references past conversations, and presents itself.' : '决定助手如何认识你、参考过往对话并表现自己。'}</p>
         </div>
       </div>
 
-      <div className="mt-5 flex gap-1 border-b border-gray-200" role="tablist" aria-label={english ? 'Memory sections' : '记忆页面分区'}>
-        <Tab active={activeTab === 'memory'} onClick={() => setActiveTab('memory')} icon={<Brain size={16} />} label={english ? 'Long-term memory' : '长期记忆'} id="memory" />
-        <Tab active={activeTab === 'assistant'} onClick={() => setActiveTab('assistant')} icon={<Bot size={16} />} label={english ? 'Assistant profile' : '助手配置'} id="assistant-profile" />
+      <div className="mt-5 flex gap-1 border-b border-gray-200" role="tablist" aria-label={english ? 'Personalization sections' : '个性化页面分区'}>
+        <Tab active={activeTab === 'memory'} onClick={() => setActiveTab('memory')} icon={<Brain size={16} />} label={english ? 'About me' : '关于我'} id="memory" />
+        <Tab active={activeTab === 'assistant'} onClick={() => setActiveTab('assistant')} icon={<Bot size={16} />} label={english ? 'Assistant setup' : '助手设定'} id="assistant-profile" />
       </div>
 
       {activeTab === 'memory' ? (
@@ -278,20 +278,20 @@ export function UserMemoryPage({
 
           <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <div>
-              <h2 className="font-semibold text-gray-950">{english ? 'Saved Memory settings' : '记忆设置'}</h2>
+              <h2 className="font-semibold text-gray-950">{english ? 'Personal context' : '个人信息与对话'}</h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500">{english
-                ? 'Control saved items, assistant-initiated writes, and on-demand conversation history recall in one place.'
-                : '集中管理保存的记忆、助手主动写入和按需历史检索。'}</p>
+                ? 'Control personal information, assistant updates, and on-demand access to past conversations in one place.'
+                : '集中管理个人信息、助手自动补充和按需参考过往对话。'}</p>
             </div>
 
             <div className="mt-4 divide-y divide-gray-100 rounded-lg border border-gray-100 bg-gray-50/50 px-4">
               <SettingRow
                 icon={<Brain size={17} />}
                 iconClass="bg-blue-100 text-blue-700"
-                title={english ? 'Saved Memory' : '保存的记忆'}
+                title={english ? 'Use personal information' : '使用个人信息'}
                 description={english
-                  ? 'Use active saved items across conversations. Turning this off keeps existing items but removes memory tools from new runs.'
-                  : '在不同会话中使用有效的记忆条目。关闭后仍保留已有条目，但新 run 不再挂载记忆工具。'}
+                  ? 'Use active personal details across conversations. Turning this off keeps existing items but stops new conversations from accessing them.'
+                  : '让助手在不同会话中使用有效的个人信息。关闭后仍保留已有内容，但新对话不再访问。'}
                 state={settings.enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}
                 checked={settings.enabled}
                 disabled={busy || loading}
@@ -300,28 +300,28 @@ export function UserMemoryPage({
               <SettingRow
                 icon={<Bot size={17} />}
                 iconClass="bg-violet-100 text-violet-700"
-                title={english ? 'Assistant-initiated memory writes' : '助手主动添加记忆'}
+                title={english ? 'Allow assistant updates' : '允许助手自动补充'}
                 description={english
-                  ? 'Allow the Assistant to save clearly durable details you directly share without asking each time. Sensitive, inferred, and transient details remain excluded; forgetting still requires approval.'
-                  : '允许助手直接保存你明确透露的姓名、稳定偏好或长期目标等持久信息。敏感、推断和临时信息仍不得主动保存；遗忘仍需审批。'}
+                  ? 'Allow the Assistant to save clearly durable details you directly share without asking each time. Sensitive, inferred, and transient details remain excluded; permanent removal still requires approval.'
+                  : '允许助手直接保存你明确透露的姓名、稳定偏好或长期目标等持久信息。敏感、推断和临时信息仍不得主动保存；永久移除仍需审批。'}
                 state={settings.assistant_write_without_approval ? (english ? 'Allowed' : '已授权') : (english ? 'Approval required' : '需要审批')}
                 checked={settings.assistant_write_without_approval}
                 disabled={busy || loading || !settings.enabled}
                 onChange={(checked) => void updateMemorySettings({ assistant_write_without_approval: checked })}
-                warning={!settings.enabled ? (english ? 'Enable Saved Memory first.' : '请先开启保存的记忆。') : undefined}
+                warning={!settings.enabled ? (english ? 'Turn on personal information first.' : '请先开启“使用个人信息”。') : undefined}
               />
               <SettingRow
                 icon={<History size={17} />}
                 iconClass="bg-cyan-100 text-cyan-700"
-                title={english ? 'History Recall' : '历史检索'}
+                title={english ? 'Reference past conversations' : '参考过往对话'}
                 description={english
-                  ? 'Search eligible durable conversations only when earlier context is needed. There is no hidden pre-run recall, and recalled history is not automatically saved as memory.'
-                  : '仅在需要过往上下文时按需搜索符合权限的持久会话；不会在 run 前隐式自动召回，检索到的历史也不会自动保存为记忆。'}
+                  ? 'Search eligible conversations only when earlier context is needed. Conversations are not read secretly before every answer, and results do not become personal information automatically.'
+                  : '仅在需要过往上下文时按需搜索符合权限的会话；不会在每次回答前偷偷读取，找到的内容也不会自动变成个人信息。'}
                 state={settings.history_recall_enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}
                 checked={settings.history_recall_enabled}
                 disabled={busy || loading || !settings.enabled}
                 onChange={(checked) => void updateMemorySettings({ history_recall_enabled: checked })}
-                warning={!settings.enabled ? (english ? 'Enable Saved Memory first.' : '请先开启保存的记忆。') : undefined}
+                warning={!settings.enabled ? (english ? 'Turn on personal information first.' : '请先开启“使用个人信息”。') : undefined}
               />
             </div>
           </section>
@@ -329,13 +329,13 @@ export function UserMemoryPage({
           <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="font-semibold text-gray-950">{english ? 'Memory items' : '记忆条目'}</h2>
+                <h2 className="font-semibold text-gray-950">{english ? 'Personal information' : '个人信息'}</h2>
                 <p className="mt-1 text-sm text-gray-500">{english ? `${items.length} saved items` : `共 ${items.length} 条`}</p>
               </div>
               <div className="flex gap-2">
                 <button className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm text-gray-700 hover:bg-gray-50" type="button" onClick={() => void exportMemory()} disabled={busy || loading}><Download size={15} />{english ? 'Export' : '导出'}</button>
                 <button className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm text-gray-700 hover:bg-gray-50" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />{english ? 'Refresh' : '刷新'}</button>
-                <button className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700" type="button" onClick={() => setShowCreate((value) => !value)}><Plus size={16} />{english ? 'Add memory' : '添加记忆'}</button>
+                <button className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700" type="button" onClick={() => setShowCreate((value) => !value)}><Plus size={16} />{english ? 'Add information' : '添加信息'}</button>
               </div>
             </div>
 
@@ -355,7 +355,7 @@ export function UserMemoryPage({
             )}
 
             <div className="mt-4 grid gap-2 md:grid-cols-[1fr_170px_170px]">
-              <label><span className="sr-only">{english ? 'Search memory' : '搜索记忆'}</span><input className="input w-full" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={english ? 'Search memory' : '搜索记忆'} /></label>
+              <label><span className="sr-only">{english ? 'Search personal information' : '搜索个人信息'}</span><input className="input w-full" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={english ? 'Search personal information' : '搜索个人信息'} /></label>
               <select className="input" value={kindFilter} onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}><option value="all">{english ? 'All types' : '全部类型'}</option>{kindOptions(english)}</select>
               <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
                 <option value="effective">{english ? 'Effective' : '有效'}</option><option value="all">{english ? 'All states' : '全部状态'}</option><option value="resolved">{english ? 'Resolved' : '已完成'}</option><option value="superseded">{english ? 'Superseded' : '已替代'}</option><option value="expired">{english ? 'Expired' : '已过期'}</option>
@@ -363,14 +363,14 @@ export function UserMemoryPage({
             </div>
 
             <div className="mt-4 space-y-3">
-              {loading ? <Empty text={english ? 'Loading memory…' : '正在加载记忆…'} /> : visibleItems.length === 0 ? <Empty text={english ? 'No memory items match this view.' : '当前视图中没有记忆条目。'} /> : visibleItems.map((item) => (
+              {loading ? <Empty text={english ? 'Loading personal information…' : '正在加载个人信息…'} /> : visibleItems.length === 0 ? <Empty text={english ? 'No personal information matches this view.' : '当前视图中没有匹配的个人信息。'} /> : visibleItems.map((item) => (
                 <article key={item.id} className={`rounded-lg border p-4 ${item.status === 'active' && !item.expired ? 'border-gray-200' : 'border-gray-200 bg-gray-50/70'}`}>
                   {editingId === item.id ? (
                     <div className="grid gap-3">
                       <div className="grid gap-3 md:grid-cols-[160px_1fr]"><KindSelect value={editKind} onChange={setEditKind} english={english} /><input className="input" value={editTopic} onChange={(event) => setEditTopic(normalizeTopicInput(event.target.value))} placeholder={english ? 'Topic key (optional)' : '主题键（可选）'} /></div>
                       <textarea className="min-h-24 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6" maxLength={1200} value={editContent} onChange={(event) => setEditContent(event.target.value)} />
                       <Field label={english ? 'Valid until (optional)' : '有效期至（可选）'}><input className="input max-w-56" type="date" value={editValidUntil} onChange={(event) => setEditValidUntil(event.target.value)} /></Field>
-                      {item.expired && <p className="text-xs text-amber-700">{english ? 'Choose a future date, or clear the date, to renew this expired memory.' : '请选择新的未来日期，或清空日期，以重新确认这条过期记忆。'}</p>}
+                      {item.expired && <p className="text-xs text-amber-700">{english ? 'Choose a future date, or clear the date, to renew this expired information.' : '请选择新的未来日期，或清空日期，以重新确认这条过期信息。'}</p>}
                       <div className="flex justify-end gap-2"><button className="btn-secondary" type="button" onClick={() => setEditingId(null)}>{english ? 'Cancel' : '取消'}</button><button className="btn-primary" type="button" disabled={busy || !editContent.trim() || isPastDate(editValidUntil)} onClick={() => void patchItem(item, { content: editContent.trim(), kind: editKind, topic_key: editTopic.trim() || undefined, clear_topic_key: !editTopic.trim(), valid_until: dateToIso(editValidUntil), clear_valid_until: !editValidUntil, reconfirm: true })}>{english ? 'Save and reconfirm' : '保存并重新确认'}</button></div>
                     </div>
                   ) : (
@@ -385,9 +385,9 @@ export function UserMemoryPage({
                         <div className="flex shrink-0 flex-wrap justify-end gap-1">
                           <IconButton title={item.priority === 'pinned' ? (english ? 'Unpin' : '取消置顶') : (english ? 'Pin' : '置顶')} onClick={() => void patchItem(item, { priority: item.priority === 'pinned' ? 'normal' : 'pinned' })}>{item.priority === 'pinned' ? <PinOff size={15} /> : <Pin size={15} />}</IconButton>
                           {item.status !== 'superseded' && <IconButton title={english ? 'Edit' : '编辑'} onClick={() => startEdit(item)}><Pencil size={15} /></IconButton>}
-                          {item.status !== 'superseded' && <IconButton title={item.expired ? (english ? 'Renew expired memory' : '续期并重新确认') : (english ? 'Reconfirm' : '重新确认')} onClick={() => item.expired ? startEdit(item) : void patchItem(item, { reconfirm: true })}><RefreshCw size={15} /></IconButton>}
+                          {item.status !== 'superseded' && <IconButton title={item.expired ? (english ? 'Renew expired information' : '续期并重新确认') : (english ? 'Reconfirm' : '重新确认')} onClick={() => item.expired ? startEdit(item) : void patchItem(item, { reconfirm: true })}><RefreshCw size={15} /></IconButton>}
                           {matchesResolvable(item.kind) && item.status !== 'superseded' && <IconButton title={item.status === 'resolved' ? (english ? 'Reopen' : '重新打开') : (english ? 'Mark resolved' : '标记完成')} onClick={() => void patchItem(item, { status: item.status === 'resolved' ? 'active' : 'resolved' })}><Check size={15} /></IconButton>}
-                          <IconButton danger title={english ? 'Forget permanently' : '永久遗忘'} onClick={() => void forgetItem(item)}><Trash2 size={15} /></IconButton>
+                          <IconButton danger title={english ? 'Remove permanently' : '永久移除'} onClick={() => void forgetItem(item)}><Trash2 size={15} /></IconButton>
                         </div>
                       </div>
                     </>
@@ -400,7 +400,7 @@ export function UserMemoryPage({
         </div>
       ) : (
         <section id="assistant-profile-panel" role="tabpanel" aria-labelledby="assistant-profile-tab" className="mt-6 max-w-3xl rounded-lg border border-gray-200 bg-white p-5">
-          <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><Bot size={19} /></span><div><h2 className="font-semibold text-gray-950">{english ? 'Assistant profile' : '助手配置'}</h2><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'Define the identity and behavior shared by new conversations.' : '定义所有新会话共用的助手身份与行为偏好。'}</p></div></div>
+          <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><Bot size={19} /></span><div><h2 className="font-semibold text-gray-950">{english ? 'Assistant setup' : '助手设定'}</h2><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'Define the identity and behavior shared by new conversations.' : '定义所有新会话共用的助手身份与行为偏好。'}</p></div></div>
           <div className="mt-4 grid gap-4">
             <Field label={english ? 'Assistant name' : '助手名称'}>
               <input className="input" value={assistantName} onChange={(event) => onAssistantProfileChange({ name: event.target.value, instructions: assistantInstructions })} />
@@ -426,7 +426,7 @@ export function UserMemoryPage({
                 </div>
               </div>
             )}
-            <p className="text-xs text-gray-400">{english ? 'Changes are saved automatically and apply to new conversations only. Existing conversations keep the profile captured when they were created. Memory switches do not disable this profile.' : '更改会自动保存，但只应用于新会话；已有会话继续使用创建时保存的配置。Memory 开关不会禁用助手配置。'}</p>
+            <p className="text-xs text-gray-400">{english ? 'Changes are saved automatically and apply to new conversations only. Existing conversations keep the setup captured when they were created. Personal information controls do not disable this setup.' : '更改会自动保存，但只应用于新会话；已有会话继续使用创建时保存的设定。“关于我”中的开关不会禁用助手设定。'}</p>
           </div>
         </section>
       )}

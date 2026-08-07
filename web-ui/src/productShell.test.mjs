@@ -8,7 +8,9 @@ const composer = readFileSync(new URL('./components/ChatBox.tsx', import.meta.ur
 const productGuide = readFileSync(new URL('./components/ProductGuide.tsx', import.meta.url), 'utf8')
 const onboarding = readFileSync(new URL('./components/OnboardingDialog.tsx', import.meta.url), 'utf8')
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+const i18n = readFileSync(new URL('./i18n.tsx', import.meta.url), 'utf8')
 const knowledge = readFileSync(new URL('./components/KnowledgeBasePage.tsx', import.meta.url), 'utf8')
+const knowledgePage = readFileSync(new URL('./components/KnowledgePage.tsx', import.meta.url), 'utf8')
 const settings = readFileSync(new URL('./components/SettingsPage.tsx', import.meta.url), 'utf8')
 const memory = readFileSync(new URL('./components/UserMemoryPage.tsx', import.meta.url), 'utf8')
 const notebook = readFileSync(new URL('./components/NotesPage.tsx', import.meta.url), 'utf8')
@@ -26,13 +28,19 @@ const agentLibrary = readFileSync(new URL('../../crates/tutor-agent/src/lib.rs',
 const tauriConfig = readFileSync(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8')
 const desktopCapabilities = readFileSync(new URL('../../src-tauri/capabilities/default.json', import.meta.url), 'utf8')
 
-test('primary navigation exposes Assistant, Knowledge Base, Notebook, Memory, and Settings', () => {
+test('primary navigation exposes intent-oriented Sources, Notebook, and Personalization labels', () => {
   assert.match(sidebar, /export type AppView = 'assistant' \| 'knowledge' \| 'notebook' \| 'memory' \| 'settings'/)
   assert.match(sidebar, /key: 'assistant'/)
   assert.match(sidebar, /key: 'knowledge'/)
   assert.match(sidebar, /key: 'notebook'/)
   assert.match(sidebar, /key: 'memory'/)
   assert.doesNotMatch(sidebar, /key: '(tutor|space)'/)
+  assert.match(i18n, /'nav\.knowledge': '资料'/)
+  assert.match(i18n, /'nav\.memory': '个性化'/)
+  assert.match(i18n, /'nav\.knowledge': 'Sources'/)
+  assert.match(i18n, /'nav\.memory': 'Personalization'/)
+  assert.doesNotMatch(i18n, /'nav\.knowledge': '知识库'/)
+  assert.doesNotMatch(i18n, /'nav\.memory': '记忆'/)
 })
 
 test('sidebar control lives in a fixed custom window frame above compact branding', () => {
@@ -57,12 +65,15 @@ test('sidebar control lives in a fixed custom window frame above compact brandin
   }
 })
 
-test('Notebook and Memory are standalone workspaces while Knowledge Base stays RAG-only', () => {
+test('Notebook and Personalization are standalone while Sources stays RAG-only', () => {
   assert.match(app, /view === 'notebook'/)
   assert.match(app, /view === 'memory'/)
   assert.doesNotMatch(knowledge, /NotesPage|Search Sources and Notes/)
   assert.doesNotMatch(settings, /UserMemoryPage|LegacyMigrationPanel/)
   assert.doesNotMatch(memory, /LegacyMigrationPanel|\/api\/migration\/legacy/)
+  assert.match(knowledgePage, /资料集/)
+  assert.match(knowledgePage, /参考资料/)
+  assert.doesNotMatch(knowledgePage, /知识库/)
 })
 
 test('Notebook keeps its IDE-like workspace instead of regressing to a flat note list', () => {
@@ -123,8 +134,9 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.match(desktopBehavior, /anchor\.getAttribute\('href'\)/)
 })
 
-test('assistant profile is managed from Memory instead of Settings', () => {
-  assert.match(memory, /Assistant profile|助手配置/)
+test('assistant setup is managed from Personalization instead of Settings', () => {
+  assert.match(memory, /Assistant setup|助手设定/)
+  assert.match(memory, /About me|关于我/)
   assert.match(memory, /assistantName/)
   assert.match(memory, /assistantInstructions/)
   assert.match(memory, /useState<'memory' \| 'assistant'>\('memory'\)/)
@@ -134,9 +146,9 @@ test('assistant profile is managed from Memory instead of Settings', () => {
   assert.match(memory, /id=\{`\$\{id\}-tab`\}/)
   assert.match(memory, /onSessionNavigate/)
   assert.match(memory, /留空时，运行时会使用输入框占位内容所示的默认 Folumi 身份与行为说明/)
-  assert.match(memory, /已有会话继续使用创建时保存的配置/)
+  assert.match(memory, /已有会话继续使用创建时保存的设定/)
   assert.match(memory, /customNameWithDefaultIdentity/)
-  assert.doesNotMatch(settings, /Assistant profile|助手配置|assistantName|assistantInstructions/)
+  assert.doesNotMatch(settings, /Assistant setup|助手设定|assistantName|assistantInstructions/)
   assert.match(app, /onAssistantProfileChange/)
 })
 
@@ -145,10 +157,10 @@ test('legacy data migration stays outside the active product boundary', () => {
   assert.doesNotMatch(backendRoutes, /pub mod migration/)
 })
 
-test('retired layered memory is replaced by explicit revisioned Saved Memory', () => {
+test('retired layered memory is presented as revisioned personal information', () => {
   const activeBackend = [backendMain, notebookRoutes, knowledgeRoutes, websocketRoutes].join('\n')
   assert.doesNotMatch(activeBackend, /MemoryEventCategory|record_event|memory_workflow|L1\/|L2\/|L3\//)
-  assert.match(memory, /Saved Memory|保存的记忆/)
+  assert.match(memory, /Personal information|个人信息/)
   assert.match(memory, /\/api\/memory\/items/)
   assert.match(memory, /\/api\/memory\/export\.json/)
   assert.match(memory, /reconfirm: true/)
@@ -159,25 +171,26 @@ test('retired layered memory is replaced by explicit revisioned Saved Memory', (
   assert.match(backendRoutes, /pub mod memory/)
 })
 
-test('History Recall is visible tool search without hidden pre-run injection', () => {
-  assert.match(memory, /不会在 run 前隐式自动召回/)
+test('past conversation reference is visible tool search without hidden pre-run injection', () => {
+  assert.match(memory, /Reference past conversations|参考过往对话/)
+  assert.match(memory, /不会在每次回答前偷偷读取/)
   assert.doesNotMatch(memory, /由 runtime 提供|Runtime powered/)
   assert.match(websocketRoutes, /source_id exactly `session_recall`/)
   assert.match(websocketRoutes, /tool trace and source link/)
   assert.doesNotMatch(websocketRoutes, /with_runtime_plugin|history_recall_plugin/)
 })
 
-test('assistant memory writes are proactive but user-controlled', () => {
-  assert.match(memory, /助手主动添加记忆/)
+test('assistant personal-information updates are proactive but user-controlled', () => {
+  assert.match(memory, /允许助手自动补充/)
   assert.match(memory, /assistant_write_without_approval/)
   assert.match(websocketRoutes, /clearly durable and personally useful context/)
   assert.match(websocketRoutes, /Memory deletion still requires explicit user intent and separate approval/)
 })
 
 test('memory controls share one settings card and the search field has no overlapping icon', () => {
-  const settingsIndex = memory.indexOf("english ? 'Saved Memory settings'")
-  const historyIndex = memory.indexOf("english ? 'History Recall'")
-  const itemsIndex = memory.indexOf("english ? 'Memory items'")
+  const settingsIndex = memory.indexOf("english ? 'Personal context'")
+  const historyIndex = memory.indexOf("english ? 'Reference past conversations'")
+  const itemsIndex = memory.indexOf("english ? 'Personal information'")
   assert.ok(settingsIndex >= 0 && settingsIndex < historyIndex && historyIndex < itemsIndex)
   assert.doesNotMatch(memory, /<Search\b/)
 })
@@ -213,8 +226,8 @@ test('retired Research mode is absent while normal Chat keeps source tools', () 
   assert.match(websocketRoutes, /with_web_search/)
 })
 
-test('onboarding teaches model, knowledge, and asking without legacy hierarchy', () => {
-  assert.match(onboarding, /steps: \['准备模型', '加入知识', '开始提问'\]/)
+test('onboarding teaches model, sources, and asking without legacy hierarchy', () => {
+  assert.match(onboarding, /steps: \['准备模型', '加入资料', '开始提问'\]/)
   assert.doesNotMatch(onboarding, /onManageTutors|onOpenMemory|OnboardingModeGuide/)
 })
 

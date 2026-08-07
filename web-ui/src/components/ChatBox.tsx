@@ -338,7 +338,7 @@ export function ChatBox({
       setSaveNotebookFolder(folderFromNotebookPath(relativePath))
       setSaveNotebookFileName(relativePath.split('/').pop() ?? fileName)
       if (notebookPathExists(relativePath, notebookEntryPaths)) {
-        throw new Error('该位置已经存在同名 Notebook 笔记，请选择其他文件名。')
+        throw new Error('该位置已经存在同名笔记，请选择其他文件名。')
       }
       setSaveNotebookBusy(true)
       const result = await onSaveToNotebook(markdown, { filePath: relativePath, entryType, title: selectedTitle })

@@ -41,7 +41,7 @@ export function knowledgeCitationsFromTrace(payload: Record<string, unknown>): K
     index: 0,
     source,
     text: target?.sessionId
-      ? `Runtime 历史检索来源 ${handle}`
+      ? `过往对话来源 ${handle}`
       : `Verified course evidence ${handle}`,
     kind: 'rag',
     title,

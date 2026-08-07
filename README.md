@@ -2,13 +2,13 @@
 
 **Folumi** 是一个基于
 [`llm-harness-runtime`](https://github.com/oh-my-harness/llm-harness-runtime)
-构建的本地优先个人知识助手。它围绕知识来源、Markdown 笔记和用户可控记忆，帮助用户与自己的长期资料持续对话。
+构建的本地优先个人知识助手。它围绕参考资料、Markdown 笔记和用户可控的个性化信息，帮助用户与自己的长期资料持续对话。
 
-当前代码由 `llm-tutor` 演进而来，产品界面和运行路径已经收缩为单一助手、知识来源、Markdown 笔记与用户可控记忆。旧 Tutor、Quiz 及其数据迁移或归档入口已退出产品运行路径。
+当前代码由 `llm-tutor` 演进而来，产品界面和运行路径已经收缩为单一助手、参考资料、Markdown 笔记与用户可控个性化。旧 Tutor、Quiz 及其数据迁移或归档入口已退出产品运行路径。
 
 > 当前版本：`0.4.2`
 >
-> 当前阶段：Folumi 产品收缩基线已完成；后续迭代聚焦知识库管理与个人助手体验。
+> 当前阶段：Folumi 产品收缩基线已完成；后续迭代聚焦资料管理与个人助手体验。
 >
 > 文档状态：已按 `v0.4.2` 与 2026-08-03 的一级工作区调整更新。
 
@@ -17,7 +17,7 @@
 - [使用手册](./MANUAL.md)：首次配置和全部用户功能
 - [产品需求规格](./docs/specs/2026-06-26-product-requirements-spec.md)
 - [一级工作区决策](./docs/specs/2026-08-03-primary-workspaces-decision.md)：Knowledge Base、Notebook、Memory 的长期产品边界
-- [新记忆系统提案](./docs/specs/2026-08-03-user-memory-redesign.md)：保存的记忆、历史检索、Session 边界与冲突失效规则
+- [个性化系统设计](./docs/specs/2026-08-03-user-memory-redesign.md)：个人信息、过往对话引用、Session 边界与冲突失效规则
 - [Folumi 产品收缩计划](./docs/plans/2026-07-31-personal-knowledge-assistant-product-contraction-plan.md)
 - [旧产品数据迁移清单](./docs/migrations/2026-08-01-legacy-product-data-inventory.md)
 - [桌面发布计划](./docs/plans/2026-06-28-tauri-desktop-release-plan.md)
@@ -31,12 +31,12 @@
 | 领域 | Folumi 提供的能力 |
 | --- | --- |
 | Assistant | 基于 runtime session 的多轮对话，按需读取知识、引用来源并使用明确启用的工具。 |
-| Knowledge Base | 导入和管理只读资料，支持 RAG 检索、原文读取、证据引用和来源定位。 |
-| Notebook | 用户拥有的 Markdown 内容，可记录、管理、查看、链接、导入和导出；助手产出只有经用户确认才写入。 |
-| Memory | “保存的记忆”与“助手配置”可用；记忆默认关闭，只接受用户直接操作或逐次确认的助手写入，并支持有效期重确认和 JSON 导出。History Recall 也默认关闭；开启后，助手仅在用户提到旧对话时通过可见工具按需检索 runtime Session，不进行 run 前自动召回，也不会自动写入 Saved Memory。 |
+| 资料（Sources） | 导入和管理只读参考资料，支持 RAG 检索、原文读取、证据引用和来源定位；内部沿用 Knowledge Base 领域模型。 |
+| 笔记（Notebook） | 用户拥有的 Markdown 内容，可记录、管理、查看、链接、导入和导出；助手产出只有经用户确认才写入。 |
+| 个性化（Personalization） | “关于我”管理个人信息与参考过往对话，“助手设定”管理助手名称和行为；内部沿用 Memory、Saved Memory 与 History Recall 契约。 |
 | Settings | 模型、embedding、搜索、数据目录、工具权限、外观和 Notebook 存储。 |
 
-目标主导航包含 **Assistant、Knowledge Base、Notebook、Memory、Settings**。Knowledge Base 只管理用于 RAG 的只读来源；Notebook 是记录、管理和查看 Markdown 笔记的独立工作区；Memory 统一承载助手身份、行为偏好和长期记忆控制。三个长期数据域保持清晰的数据边界。Quiz、Space、Student Profile、多 Tutor 和独立 Research 模式属于冻结范围。
+目标主导航包含 **助手、资料、笔记、个性化、设置**。资料只管理用于 RAG 的只读来源；笔记是记录、管理和查看 Markdown 内容的独立工作区；个性化统一承载个人信息、过往对话引用权限和助手设定。三个长期数据域保持清晰的数据边界。Quiz、Space、Student Profile、多 Tutor 和独立 Research 模式属于冻结范围。
 
 ## 快速开始
 
@@ -104,7 +104,7 @@ npm run dev --prefix web-ui
 进入应用左侧“设置”：
 
 1. 在“LLM”中添加 OpenAI-compatible 或 Anthropic Messages 配置，并运行连接测试。
-2. 如需知识库，在“嵌入模型”中配置并测试 embedding 服务。
+2. 如需导入资料，在“嵌入模型”中配置并测试 embedding 服务。
 3. 如需稳定联网研究，在“搜索”中配置搜索服务。
 4. 在“笔记本”中决定使用应用本地 Notebook，还是绑定外部 Markdown Vault。
 5. 在“能力”中设置会话预算和工具审批策略。

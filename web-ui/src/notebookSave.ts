@@ -107,7 +107,7 @@ export function relativeNotebookPath(vaultRoot: string, selectedPath: string) {
   }
   const relative = selected.slice(root === '/' ? 1 : root.length + 1)
   if (!/\.md$/i.test(relative)) {
-    throw new Error('Notebook 笔记必须使用 .md 文件扩展名。')
+    throw new Error('笔记必须使用 .md 文件扩展名。')
   }
   return relative.replace(/\\/g, '/')
 }

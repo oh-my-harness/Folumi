@@ -87,7 +87,7 @@ test('maps a runtime history read to its source conversation', () => {
   assert.deepEqual(citations, [{
     index: 0,
     source: 'session-a',
-    text: 'Runtime 历史检索来源 [K:run-scope:2]',
+    text: '过往对话来源 [K:run-scope:2]',
     kind: 'rag',
     title: '历史对话 · session-a',
     kb: undefined,

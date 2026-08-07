@@ -414,7 +414,7 @@ export function sourceSurfaceLabel(surface: SourceSurface) {
   if (surface === 'chat') return 'Chat'
   if (surface === 'notebook') return 'Notebook'
   if (surface === 'quiz') return 'Quiz'
-  if (surface === 'kb') return 'Knowledge Base'
+  if (surface === 'kb') return 'Sources'
   if (surface === 'web') return 'Web'
   return 'Source'
 }

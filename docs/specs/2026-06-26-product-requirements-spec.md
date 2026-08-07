@@ -1,6 +1,6 @@
 # Folumi Product Requirements Specification
 
-> Status: active target baseline | Last updated: 2026-08-05
+> Status: active target baseline | Last updated: 2026-08-07
 
 This specification is authoritative for the current product. Historical Tutor,
 Quiz, Space, Student Profile, and standalone Research requirements remain in
@@ -16,8 +16,9 @@ The retained Notebook workspace capabilities are recorded in
 ## 1. Product Definition
 
 - **REQ-001** Folumi shall be a local-first personal knowledge assistant.
-- **REQ-002** The primary navigation shall contain Assistant, Knowledge Base,
-  Notebook, Memory, and Settings.
+- **REQ-002** The primary navigation shall contain Assistant, Sources,
+  Notebook, Personalization, and Settings. Chinese labels shall be 助手、资料、
+  笔记、个性化、设置. Knowledge Base and Memory remain internal domain names.
 - **REQ-003** The product shall expose one Assistant identity rather than a
   user-managed collection of Tutors.
 - **REQ-004** Sources, Notes, Memory, and Sessions shall remain distinct data
@@ -34,8 +35,8 @@ The retained Notebook workspace capabilities are recorded in
   durable task results, and the selected knowledge scope.
 - **REQ-102** Switching sessions or reloading the application shall not lose a
   running task or duplicate completed output.
-- **REQ-103** The composer shall allow explicit selection of a knowledge base
-  and exact Note references.
+- **REQ-103** The composer shall allow explicit selection of a Source
+  collection and exact Note references.
 - **REQ-104** Referenced Notes shall be persisted by stable identity and read
   on demand with `read_notebook_item`; their full text shall not be blindly
   injected into every prompt.
@@ -52,8 +53,9 @@ The retained Notebook workspace capabilities are recorded in
 
 ## 3. Sources
 
-- **REQ-199** Knowledge Base shall be a dedicated RAG source workspace and
-  shall not embed editable Notes or Memory management in the same interface.
+- **REQ-199** Sources shall be a dedicated RAG source workspace and shall not
+  embed editable Notes or Personalization management in the same interface.
+  Individual Knowledge Base containers shall be labeled Source collections.
 - **REQ-200** Sources shall preserve original documents and source metadata as
   authoritative data.
 - **REQ-201** The product shall expose import progress, failure reasons, retry,
@@ -97,16 +99,17 @@ The retained Notebook workspace capabilities are recorded in
 > Recall baseline now uses the runtime cross-Session contract. Runtime Sessions
 > own conversation-local continuity and are not Saved Memory scopes.
 
-- **REQ-399** Memory shall be a standalone primary workspace for configuring
-  the single Assistant profile and for enabling, reviewing, editing, and
-  forgetting long-term memory. These responsibilities shall be separated into
-  Assistant Profile and Long-term Memory tabs, with Long-term Memory selected
-  by default.
-- **REQ-400** Long-term Memory shall be optional and controlled by a master
-  switch.
-- **REQ-401** Long-term Memory shall distinguish explicit Saved Memory from
-  opt-in History Recall; History Recall shall be independently controllable and
-  disabled by default. The first release shall expose History Recall as visible,
+- **REQ-399** Personalization shall be a standalone primary workspace for
+  configuring the single Assistant and for enabling, reviewing, editing, and
+  forgetting durable personal context. These responsibilities shall be
+  separated into Assistant setup and About me tabs, with About me selected by
+  default. Memory remains the internal domain name.
+- **REQ-400** Personal information shall be optional and controlled by a master
+  switch labeled Use personal information.
+- **REQ-401** About me shall distinguish explicit Personal information
+  (internal Saved Memory) from opt-in Reference past conversations (internal
+  History Recall); past-conversation reference shall be independently
+  controllable and disabled by default. The first release shall expose History Recall as visible,
   agent-decided Knowledge tool calls when prior conversation context is clearly
   requested or referenced, and shall not inject hidden recall before every run.
 - **REQ-402** Users shall be able to inspect, add, edit, pin, complete,
@@ -115,8 +118,8 @@ The retained Notebook workspace capabilities are recorded in
 - **REQ-403** Saved Memory shall use the user-facing kinds fact, preference,
   goal, and continuity without creating hidden storage layers.
 - **REQ-404** Saved Memory may be created when the user explicitly asks to
-  remember something, adds an item in the Memory UI, or directly states clearly
-  durable and personally useful information such as a preferred name, stable
+  remember something, adds an item in the Personalization UI, or directly
+  states clearly durable and personally useful information such as a preferred name, stable
   preference, goal, or continuity item and the Assistant proposes a bounded
   write. The Assistant shall not infer unstated facts or proactively save
   transient, third-party, secret, or sensitive details. Notebook and Knowledge
@@ -131,7 +134,7 @@ The retained Notebook workspace capabilities are recorded in
   resolved, superseded, expired, or forgotten items do not participate in
   normal recall.
 - **REQ-407** Assistant name and behavior instructions shall be managed from
-  Memory rather than duplicated in Settings; they shall not override runtime
+  Personalization rather than duplicated in Settings; they shall not override runtime
   safety, tool approval, or data-access policy.
 - **REQ-408** Notebook and Knowledge Base operations shall never be captured as
   long-term Memory merely because they occurred.
@@ -156,7 +159,7 @@ The retained Notebook workspace capabilities are recorded in
   or provide its own knowledge sources and policies without adopting Folumi's
   organization.
 - **REQ-416** Assistant-initiated Saved Memory writes shall require per-item
-  approval by default. The Memory UI shall expose a separate, default-off
+  approval by default. The Personalization UI shall expose a separate, default-off
   permission allowing only assistant `memory_write` operations to skip that
   approval. Forgetting, conflict resolution, and destructive changes shall not
   inherit the permission. Disabling Memory shall revoke the active permission.
@@ -175,12 +178,15 @@ The retained Notebook workspace capabilities are recorded in
 ## 6. Settings, Privacy, and Portability
 
 - **REQ-600** Users shall configure LLM, embedding, search, appearance, Note
-  Vault, and tool governance through Settings; Assistant profile, Memory policy,
-  and Memory items shall be managed from the standalone Memory workspace.
+  Vault, and tool governance through Settings; Assistant setup, Memory policy,
+  and Personal information shall be managed from the standalone
+  Personalization workspace.
 - **REQ-601** Product data shall remain local unless a configured provider or
   explicit external tool call requires transmission.
-- **REQ-602** The UI shall make current knowledge scope and long-term Memory
-  behavior understandable to the user.
+- **REQ-602** The UI shall use intent-oriented labels—Sources for external
+  evidence, Notebook for user-authored Markdown, and Personalization for how
+  the Assistant knows the user and continues conversations—rather than expose
+  Knowledge Base or Memory as primary navigation labels.
 - **REQ-603** Sources, Notes, settings, sessions, and Memory shall have explicit
   preservation or export behavior.
 

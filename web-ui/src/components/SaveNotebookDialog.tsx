@@ -74,7 +74,7 @@ export function SaveNotebookDialog({
             <Folder size={18} />
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-950">保存到笔记本</h3>
+            <h3 className="text-sm font-semibold text-gray-950">保存到笔记</h3>
             <p className="mt-1 text-xs text-gray-500">选择 Notebook 文件夹并确认最终文件名。</p>
           </div>
         </div>

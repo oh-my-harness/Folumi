@@ -78,14 +78,14 @@ const chineseCopy = {
     attachment: {
       toolbar: '附件',
       label: '上传临时资料',
-      description: '回形针按钮。上传的文件只作为当前消息的临时上下文，不会自动进入知识库或 Notebook。',
+      description: '回形针按钮。上传的文件只作为当前消息的临时上下文，不会自动进入资料或 Notebook。',
       steps: ['点击“附件”并选择一个或多个支持的文本类文件。', '确认文件标签出现在输入框上方，再随问题一起发送。'],
     },
     source: {
-      toolbar: '不关联知识库',
-      label: '关联知识库或 Notebook',
-      description: '数据库按钮。为整个会话关联一个资料源：知识库使用检索，Notebook 使用 Markdown 文本搜索；当前一次只能选择其中一种。',
-      steps: ['先在知识库中完成嵌入配置和资料入库，或在 Notebook 中准备笔记。', '回到会话，从该下拉框选择具体知识库或 Notebook。'],
+      toolbar: '不关联资料',
+      label: '关联资料集或 Notebook',
+      description: '数据库按钮。为整个会话关联一个资料源：资料集使用检索，Notebook 使用 Markdown 文本搜索；当前一次只能选择其中一种。',
+      steps: ['先在资料页完成嵌入配置和材料入库，或在 Notebook 中准备笔记。', '回到会话，从该下拉框选择具体资料集或 Notebook。'],
     },
     mention: {
       toolbar: '@ 笔记',
@@ -114,14 +114,14 @@ const englishCopy: typeof chineseCopy = {
     attachment: {
       toolbar: 'Attachments',
       label: 'Upload temporary material',
-      description: 'The paperclip button. Uploaded files are temporary context for the current message and are not added to Knowledge Base or Notebook.',
+      description: 'The paperclip button. Uploaded files are temporary context for the current message and are not added to Sources or Notebook.',
       steps: ['Click Attachments and choose one or more supported text files.', 'Confirm their chips appear above the toolbar, then send them with your question.'],
     },
     source: {
-      toolbar: 'No knowledge base',
-      label: 'Associate Knowledge Base or Notebook',
-      description: 'The database button associates one source with the conversation. Knowledge Base uses retrieval; Notebook uses Markdown text search. Only one can be selected at a time.',
-      steps: ['First ingest material into a Knowledge Base or prepare notes in Notebook.', 'Return to Chat and select the Knowledge Base or Notebook from this menu.'],
+      toolbar: 'No sources',
+      label: 'Associate a source collection or Notebook',
+      description: 'The database button associates one source with the conversation. Source collections use retrieval; Notebook uses Markdown text search. Only one can be selected at a time.',
+      steps: ['First ingest material into a source collection or prepare notes in Notebook.', 'Return to Chat and select the source collection or Notebook from this menu.'],
     },
     mention: {
       toolbar: '@ Notes',

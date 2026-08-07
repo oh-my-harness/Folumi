@@ -767,7 +767,7 @@ export function SettingsPage({
           )}
 
           {activeTab === 'embedding' && (
-            <SettingsPanel icon={Database} title="嵌入模型" description="知识库入库和检索会使用这里的向量模型配置。">
+            <SettingsPanel icon={Database} title="嵌入模型" description="资料入库和检索会使用这里的向量模型配置。">
               {settings.embeddingConfigs.length === 0 ? (
                 <EmptyConfig onAdd={addEmbeddingConfig} label="暂无嵌入模型配置" />
               ) : (

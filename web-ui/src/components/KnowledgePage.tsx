@@ -198,7 +198,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
     if (!selectedNewEmbedding || busy) return
     setBusy(true)
     setCreateError('')
-    setStatus('正在创建知识库...')
+    setStatus('正在创建资料集...')
     try {
       const name = newKbName.trim() || `knowledge-${knowledgeBases.length + 1}`
       const res = await fetch('/api/knowledge-bases', {
@@ -216,7 +216,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
       setCreateError('')
       setCreateDialogOpen(false)
       setTab('upload')
-      setStatus('知识库已创建')
+      setStatus('资料集已创建')
       onChanged?.()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -241,7 +241,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
         setActiveKbId(null)
         setSelectedDocId(null)
       }
-      setStatus('知识库已删除')
+      setStatus('资料集已删除')
       onChanged?.()
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
@@ -532,7 +532,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="truncate text-xl font-semibold text-gray-950">
-                  {activeKb?.name ?? '知识库'}
+                  {activeKb?.name ?? '参考资料'}
                 </h1>
                 {activeKb && (
                   <Badge tone="green" icon={<CheckCircle2 size={14} />}>
@@ -543,7 +543,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
               <p className="mt-1.5 text-xs text-gray-600">
                 {activeKb
                   ? `${activeKb.embedding.model} · ${activeKb.embedding.dimensions ?? '未知'}维 · 最近更新 ${formatTime(activeKb.updated_at)}`
-                  : '创建知识库后，即可添加资料并进行语义检索。'}
+                  : '创建资料集后，即可添加外部材料并进行语义检索。'}
               </p>
             </div>
             <div className="text-xs text-gray-500">{status}</div>
@@ -668,7 +668,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                     </p>
                     <div className="mt-4 flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3">
                       <div className="min-w-0 flex-1 text-sm text-gray-600">
-                        原始文档是权威数据；此操作会重建当前知识库全部向量片段，不会修改原文。
+                        原始文档是权威数据；此操作会重建当前资料集的全部向量片段，不会修改原文。
                       </div>
                       <button className={secondaryButtonClassName} type="button" onClick={reindexKnowledgeBase} disabled={busy || activeKb.documents.length === 0}>
                         <RefreshCw size={16} className={busy ? 'animate-spin' : ''} />
@@ -788,11 +788,11 @@ function KnowledgeListPanel({
   if (collapsed) {
     return (
       <section className="flex w-12 shrink-0 flex-col items-center border-r border-gray-200 bg-gray-50 py-3">
-        <button className={iconButtonClassName} type="button" title="展开知识库列表" onClick={onExpand}>
+        <button className={iconButtonClassName} type="button" title="展开资料集列表" onClick={onExpand}>
           <PanelLeftOpen size={17} />
         </button>
         <span className="mt-3 [writing-mode:vertical-rl] text-xs font-medium tracking-wide text-gray-500">
-          知识库
+          资料集
         </span>
       </section>
     )
@@ -802,7 +802,7 @@ function KnowledgeListPanel({
     <section className="flex w-72 shrink-0 flex-col border-r border-gray-200 bg-gray-50">
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold text-gray-950">知识库</h2>
+          <h2 className="text-base font-semibold text-gray-950">资料集</h2>
           <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
             {totalCount}
           </span>
@@ -820,7 +820,7 @@ function KnowledgeListPanel({
           disabled={!canCreate || busy}
         >
           <Plus size={17} />
-          新建知识库
+          新建资料集
         </button>
         <div className="relative mt-3">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -828,7 +828,7 @@ function KnowledgeListPanel({
             className="h-10 w-full rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm outline-none placeholder:text-gray-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-50"
             value={search}
             onChange={(event) => onSearch(event.target.value)}
-            placeholder="搜索知识库..."
+            placeholder="搜索资料集..."
           />
         </div>
       </div>
@@ -888,11 +888,11 @@ function EmptyKnowledgeState({
         <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
           <Database size={21} />
         </span>
-        <h2 className="mt-4 text-base font-semibold text-gray-950">暂无知识库</h2>
+        <h2 className="mt-4 text-base font-semibold text-gray-950">暂无资料</h2>
         <p className="mt-2 text-sm leading-6 text-gray-500">
           {canCreate
-            ? '新建知识库并选择嵌入模型，然后添加你的课程资料。'
-            : '请先在设置中配置嵌入模型，再新建知识库。'}
+            ? '新建资料集并选择嵌入模型，然后添加需要参考的外部材料。'
+            : '请先在设置中配置嵌入模型，再新建资料集。'}
         </p>
         <button
           className={`${primaryButtonClassName} mt-5`}
@@ -901,7 +901,7 @@ function EmptyKnowledgeState({
           disabled={!canCreate}
         >
           <Plus size={17} />
-          新建知识库
+          新建资料集
         </button>
       </div>
     </div>
@@ -963,7 +963,7 @@ function CreateKnowledgeBaseDialog({
             </span>
             <div className="min-w-0">
               <h2 id="create-knowledge-base-title" className="text-base font-semibold text-gray-950">
-                新建知识库
+                新建资料集
               </h2>
               <p className="mt-1 text-xs leading-5 text-gray-500">
                 嵌入模型创建后不可更换，后续入库和检索将固定使用该配置。
@@ -974,7 +974,7 @@ function CreateKnowledgeBaseDialog({
             className={iconButtonClassName}
             type="button"
             title="关闭"
-            aria-label="关闭新建知识库弹窗"
+            aria-label="关闭新建资料集弹窗"
             onClick={onClose}
             disabled={busy}
           >
@@ -989,7 +989,7 @@ function CreateKnowledgeBaseDialog({
           }}
         >
           <div className="grid gap-4 px-5 py-5">
-            <Field label="知识库名称">
+            <Field label="资料集名称">
               <input
                 ref={nameInputRef}
                 className={inputClassName}

@@ -1221,8 +1221,8 @@ export default function App() {
                     temporaryConversation ? 'text-amber-800' : 'text-gray-600'
                   } ${sessionId || running ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
                   title={llmSettings.language === 'en-US'
-                    ? 'Do not use Saved Memory or History Recall, and do not add this chat to the recall index.'
-                    : '不使用保存的记忆或历史检索，也不把本会话加入历史检索索引。'}
+                    ? 'Do not use personal information or reference past conversations; this chat will not be searchable from future conversations.'
+                    : '不使用个人信息，也不参考过往对话；本会话同样不会被未来对话检索。'}
                 >
                   <span>{llmSettings.language === 'en-US' ? 'Temporary chat' : '临时对话'}</span>
                   <input
@@ -1339,10 +1339,10 @@ export default function App() {
               <div>
                 <h2 id="memory-approval-title" className="font-semibold text-gray-950">{llmSettings.language === 'en-US'
                   ? memoryApproval.tool === 'memory_write' ? 'Save this memory?' : 'Forget this memory?'
-                  : memoryApproval.tool === 'memory_write' ? '保存这条记忆吗？' : '遗忘这条记忆吗？'}</h2>
+                  : memoryApproval.tool === 'memory_write' ? '保存这条个人信息吗？' : '移除这条个人信息吗？'}</h2>
                 <p className="mt-1 text-sm leading-6 text-gray-500">{llmSettings.language === 'en-US'
                   ? 'The assistant cannot change long-term memory until you approve this exact operation.'
-                  : '在你批准这次精确操作之前，助手无法更改长期记忆。'}</p>
+                  : '在你批准这次精确操作之前，助手无法更改你的个人信息。'}</p>
               </div>
             </div>
             <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm">

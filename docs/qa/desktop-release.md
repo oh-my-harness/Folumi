@@ -42,17 +42,17 @@ Use this checklist after running:
 - [ ] Ask Chat to research a sourced topic, verify citations, and save the answer to Notebook.
 - [ ] Reference one exact Note in Assistant and confirm the agent reads it on demand.
 - [ ] Create, edit, move, delete, and restore a Note; confirm all paths remain inside the configured Vault.
-- [ ] Turn Memory off and confirm a new conversation neither recalls nor proposes long-term Memory.
-- [ ] Confirm Memory defaults to the Long-term Memory tab, then switch to Assistant Profile, change the name and behavior instructions, and verify a new conversation uses them while Settings has no duplicate Assistant tab.
-- [ ] Confirm Saved Memory, assistant-initiated writes, and History Recall switches are aligned in one Memory settings card, and the Memory items search placeholder has no leading icon overlap.
-- [ ] Turn Memory on, review one item, edit it, then forget it.
-- [ ] With Saved Memory and History Recall enabled, save a preferred name, start a new conversation, ask the short follow-up `我呢`, and confirm the agent searches Saved Memory and reads the exact result before answering instead of claiming not to know.
+- [ ] Turn “Use personal information / 使用个人信息” off and confirm a new conversation neither recalls nor proposes durable personal information.
+- [ ] Confirm Personalization defaults to the About me / 关于我 tab, then switch to Assistant setup / 助手设定, change the name and behavior instructions, and verify a new conversation uses them while Settings has no duplicate Assistant tab.
+- [ ] Confirm Use personal information, Allow assistant updates, and Reference past conversations are aligned in one Personal context card, and the Personal information search placeholder has no leading icon overlap.
+- [ ] Turn personal information on, review one item, edit it, then remove it.
+- [ ] With personal information and past-conversation reference enabled, save a preferred name, start a new conversation, ask the short follow-up `我呢`, and confirm the agent searches and reads the exact result before answering instead of claiming not to know.
 - [ ] Mention a transient event in one conversation, start another conversation, ask indirectly about that event (for example `我早上吃了什么`), and confirm the agent searches History Recall without needing a reminder. If the first query misses, confirm it retries once with simpler content keywords or a federated search.
 - [ ] For both recall checks, confirm the tool trace remains visible but the answer does not narrate `我查一下记忆` or equivalent implementation steps.
-- [ ] Confirm Memory contains no legacy Tutor/Quiz migration or archive controls.
+- [ ] Confirm Personalization contains no legacy Tutor/Quiz migration or archive controls.
 - [ ] Confirm requests to `/api/migration/legacy` return `404 Not Found`.
 - [ ] Close and restart the app.
-- [ ] Confirm sessions, Sources, Notes, and Memory still exist after restart.
+- [ ] Confirm sessions, Sources, Notes, and Personalization data still exist after restart.
 - [ ] Record the child `tutor-web` PID, close the app normally, and confirm that
       PID exits and its local port is released within five seconds.
 - [ ] Start the app again, force-stop only the desktop parent process, and
