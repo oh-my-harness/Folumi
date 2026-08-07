@@ -1,13 +1,10 @@
 import { CrepeBuilder } from '@milkdown/crepe/builder'
-import { blockEdit } from '@milkdown/crepe/feature/block-edit'
 import { codeMirror } from '@milkdown/crepe/feature/code-mirror'
-import { cursor } from '@milkdown/crepe/feature/cursor'
 import { latex } from '@milkdown/crepe/feature/latex'
 import { linkTooltip } from '@milkdown/crepe/feature/link-tooltip'
 import { listItem } from '@milkdown/crepe/feature/list-item'
 import { placeholder } from '@milkdown/crepe/feature/placeholder'
 import { table } from '@milkdown/crepe/feature/table'
-import { toolbar } from '@milkdown/crepe/feature/toolbar'
 import { replaceAll } from '@milkdown/kit/utils'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
@@ -104,11 +101,8 @@ export function NotebookLiveEditor({
       root,
       defaultValue: prepareNotebookMarkdownForEditor(initialDocument.body),
     })
-      .addFeature(cursor)
       .addFeature(listItem)
       .addFeature(linkTooltip)
-      .addFeature(blockEdit)
-      .addFeature(toolbar)
       .addFeature(placeholder, {
         mode: 'doc',
         text: english ? 'Start writing…' : '开始写笔记…',
@@ -216,10 +210,6 @@ export function NotebookLiveEditor({
       onCut={() => { userEditObservedRef.current = true }}
       onDrop={() => { userEditObservedRef.current = true }}
       onPaste={() => { userEditObservedRef.current = true }}
-      onMouseDown={(event) => {
-        const target = event.target
-        if (target instanceof Element && target.closest('.milkdown button')) userEditObservedRef.current = true
-      }}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
     >
