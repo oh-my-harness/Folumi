@@ -9,7 +9,6 @@ use crate::notebook_tool::{
     CreateNotebookItemTool, ListNotebookTreeTool, MoveNotebookItemTool, ProposeNotebookEditTool,
     ReadNotebookItemTool, SearchNotebookTool, UpdateNotebookItemTool,
 };
-use crate::routes::notebook_mentions::{NotebookMention, resolve_notebook_mention};
 use crate::session::{
     ActiveRunSummary, LlmSessionConfig, SearchSessionConfig, SessionEntry, SessionPool,
 };
@@ -160,10 +159,7 @@ fn run_stage_from_trace(kind: &str, data: &serde_json::Value) -> Option<String> 
 #[serde(tag = "type")]
 enum ClientMessage {
     #[serde(rename = "message")]
-    Message {
-        content: String,
-        mentions: Option<Vec<NotebookMention>>,
-    },
+    Message { content: String },
     #[serde(rename = "stop")]
     Stop,
     #[serde(rename = "approval_response")]
@@ -173,7 +169,6 @@ enum ClientMessage {
 struct TutorMessageInput {
     entry: SessionEntry,
     content: String,
-    mentions: Vec<NotebookMention>,
     run_id: String,
     cancel: CancellationToken,
     memory_approver: Arc<WebMemoryApprovalCoordinator>,
@@ -266,7 +261,7 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
             Message::Text(text) => {
                 let parsed = serde_json::from_str::<ClientMessage>(&text);
                 match parsed {
-                    Ok(ClientMessage::Message { content, mentions }) => {
+                    Ok(ClientMessage::Message { content }) => {
                         let Some((run_id, cancel)) =
                             pool.try_start_active_run(&session_id, &entry.capability)
                         else {
@@ -305,7 +300,6 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
                                 TutorMessageInput {
                                     entry: active_entry,
                                     content,
-                                    mentions: mentions.unwrap_or_default(),
                                     run_id: run_id.clone(),
                                     cancel,
                                     memory_approver: run_memory_approver.clone(),
@@ -393,10 +387,10 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
 }
 
 fn agent_knowledge_access_context(
-    knowledge_base_id: Option<&str>,
+    knowledge_base_ids: &[String],
     memory_enabled: bool,
 ) -> KnowledgeAccessContext {
-    let scope = crate::knowledge_runtime::agent_knowledge_scope(knowledge_base_id);
+    let scope = crate::knowledge_runtime::agent_knowledge_scope_for_bases(knowledge_base_ids);
     let mut access = KnowledgeAccessContext::new(
         scope,
         PrincipalRef::new(crate::knowledge_runtime::LOCAL_USER_ID, "local_user"),
@@ -415,14 +409,14 @@ fn agent_knowledge_access_context(
 pub(crate) fn agent_run_request(
     content: String,
     session_id: &str,
-    knowledge_base_id: Option<&str>,
+    knowledge_base_ids: &[String],
     memory_enabled: bool,
     history_recall_enabled: bool,
 ) -> tutor_agent::Result<RunRequest> {
     let mut request = RunRequest::from_text(content);
-    if knowledge_base_id.is_some() || memory_enabled || history_recall_enabled {
+    if !knowledge_base_ids.is_empty() || memory_enabled || history_recall_enabled {
         request = request.with_extension(agent_knowledge_access_context(
-            knowledge_base_id,
+            knowledge_base_ids,
             memory_enabled,
         ));
     }
@@ -466,25 +460,11 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
     let TutorMessageInput {
         entry,
         content,
-        mentions,
         run_id,
         cancel,
         memory_approver,
     } = input;
     let history_len = pool.history_len(&entry.id).await + 1;
-    let user_message_index = next_user_message_index(&pool, &entry.id).await;
-    if !mentions.is_empty() {
-        let _ = pool
-            .append_message_mentions(
-                &entry.id,
-                user_message_index,
-                mentions
-                    .iter()
-                    .map(|mention| serde_json::to_value(mention).unwrap_or_default())
-                    .collect(),
-            )
-            .await;
-    }
     let _ = entry
         .stream
         .status(
@@ -557,14 +537,25 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
         if let Some(search) = web_search_config_for_session(entry.search.clone()) {
             router = router.with_web_search(search);
         }
-        let course_source = match (entry.embedding.clone(), entry.kb.as_deref()) {
-            (Some(embedding), Some(kb)) => {
-                let rag = tutor_rag::LanceDbRag::new(rag_root.clone(), embedding);
-                Some(Arc::new(tutor_rag::LanceDbKnowledgeSource::new(rag, kb))
-                    as Arc<dyn KnowledgeSource>)
-            }
-            _ => None,
-        };
+        let knowledge_base_ids = entry
+            .knowledge_bases
+            .iter()
+            .map(|binding| binding.id.clone())
+            .collect::<Vec<_>>();
+        let course_source = (!entry.knowledge_bases.is_empty()).then(|| {
+            let sources = entry
+                .knowledge_bases
+                .iter()
+                .map(|binding| {
+                    (
+                        tutor_rag::LanceDbRag::new(rag_root.clone(), binding.embedding.clone()),
+                        binding.id.clone(),
+                    )
+                })
+                .collect();
+            Arc::new(tutor_rag::MultiLanceDbKnowledgeSource::new(sources))
+                as Arc<dyn KnowledgeSource>
+        });
         let memory_settings = memory
             .settings()
             .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?;
@@ -604,24 +595,10 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             history_recall_enabled.then(|| pool.history_recall_knowledge_source()),
             &runtime_security,
         )?;
-        let resolved_content =
-            resolve_message_content_with_space_mentions(&notebook, &content, &mentions);
-        if !mentions.is_empty() {
-            let _ = entry
-                .stream
-                .status(
-                    "space_context",
-                    serde_json::json!({
-                        "count": mentions.len(),
-                        "resolved": resolved_content.resolved_count,
-                    }),
-                )
-                .await;
-        }
         let request = agent_run_request(
-            resolved_content.content,
+            content,
             &entry.id,
-            entry.kb.as_deref(),
+            &knowledge_base_ids,
             memory_enabled,
             history_recall_enabled,
         )?;
@@ -718,75 +695,6 @@ fn session_memory_features(
     (memory_enabled, memory_enabled && history_recall_enabled)
 }
 
-async fn next_user_message_index(pool: &SessionPool, session_id: &str) -> usize {
-    pool.messages(session_id)
-        .await
-        .map(|messages| {
-            messages
-                .iter()
-                .filter(|message| matches!(crate::session::message_role(message), Some("user")))
-                .count()
-                + 1
-        })
-        .unwrap_or(1)
-}
-
-struct ResolvedMessageContent {
-    content: String,
-    resolved_count: usize,
-}
-
-fn resolve_message_content_with_space_mentions(
-    notebook: &NotebookStore,
-    content: &str,
-    mentions: &[NotebookMention],
-) -> ResolvedMessageContent {
-    if mentions.is_empty() {
-        return ResolvedMessageContent {
-            content: content.to_string(),
-            resolved_count: 0,
-        };
-    }
-
-    let mut resolved_count = 0usize;
-    let mut blocks = Vec::new();
-    for mention in mentions.iter().take(8) {
-        let Some((resolved_id, _markdown)) = resolve_notebook_mention(notebook, mention) else {
-            continue;
-        };
-        resolved_count += 1;
-        let path = mention
-            .metadata
-            .get("path")
-            .and_then(|value| value.as_str())
-            .unwrap_or("");
-        blocks.push(format!(
-            "- id: {}; item_type: {}; target_id: {}; title: {}; path: {}",
-            resolved_id,
-            mention.mention_type,
-            mention.target_id.as_deref().unwrap_or(""),
-            mention.title,
-            path
-        ));
-    }
-
-    if blocks.is_empty() {
-        return ResolvedMessageContent {
-            content: content.to_string(),
-            resolved_count,
-        };
-    }
-
-    ResolvedMessageContent {
-        content: format!(
-            "The user explicitly referenced these Notebook entries. Use read_notebook_item with the exact target_id before relying on a referenced note, and identify the note when you use it.\n\n{}\n\nUser message:\n{}",
-            blocks.join("\n"),
-            content
-        ),
-        resolved_count,
-    }
-}
-
 fn web_search_config_for_session(
     config: Option<SearchSessionConfig>,
 ) -> Option<tutor_tools::WebSearchConfig> {
@@ -845,11 +753,10 @@ fn llm_config_for_session(config: Option<LlmSessionConfig>) -> tutor_agent::Resu
 mod tests {
     use super::*;
     use crate::memory_runtime::USER_MEMORY_PROFILE_ATTRIBUTE;
-    use crate::notebook_store::{NotebookEntryInput, NotebookEntryType};
 
     #[test]
     fn agent_knowledge_access_is_scoped_to_session_resources() {
-        let access = agent_knowledge_access_context(Some("kb-a"), true);
+        let access = agent_knowledge_access_context(&["kb-a".into()], true);
 
         assert_eq!(access.scope.namespace, tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
         assert_eq!(access.scope.tenant.as_deref(), Some("local-user"));
@@ -880,8 +787,14 @@ mod tests {
 
     #[test]
     fn ordinary_agent_request_carries_typed_knowledge_context() {
-        let request =
-            agent_run_request("hello".into(), "session-a", Some("kb-a"), true, true).unwrap();
+        let request = agent_run_request(
+            "hello".into(),
+            "session-a",
+            &["kb-a".into(), "kb-b".into()],
+            true,
+            true,
+        )
+        .unwrap();
 
         let knowledge = request
             .extensions
@@ -894,6 +807,14 @@ mod tests {
                 .get(tutor_rag::KNOWLEDGE_BASE_SCOPE_ATTRIBUTE)
                 .map(String::as_str),
             Some("kb-a")
+        );
+        assert_eq!(
+            knowledge
+                .scope
+                .attributes
+                .get(tutor_rag::KNOWLEDGE_BASE_IDS_SCOPE_ATTRIBUTE)
+                .map(String::as_str),
+            Some("[\"kb-a\",\"kb-b\"]")
         );
         assert_eq!(
             request
@@ -974,43 +895,6 @@ mod tests {
         assert_eq!(session_memory_features(true, true, true), (false, false));
         assert_eq!(session_memory_features(true, true, false), (true, true));
         assert_eq!(session_memory_features(true, false, false), (true, false));
-    }
-
-    #[test]
-    fn resolves_notebook_mentions_into_turn_context() {
-        let dir = tempfile::tempdir().unwrap();
-        let notebook = NotebookStore::new_with_path(dir.path().join("notebook"));
-        let entry = notebook
-            .create(NotebookEntryInput {
-                space_id: None,
-                entry_type: NotebookEntryType::Note,
-                path: None,
-                title: "Mask notes".into(),
-                markdown: "Alignment marks are used during lithography.".into(),
-                metadata: None,
-                source_session_id: None,
-                source_message_id: None,
-            })
-            .unwrap();
-
-        let resolved = resolve_message_content_with_space_mentions(
-            &notebook,
-            "summarize this",
-            &[NotebookMention {
-                id: format!("notebook_entry:{}", entry.id),
-                mention_type: "notebook_entry".into(),
-                target_id: Some(entry.id),
-                title: "Mask notes".into(),
-                preview: None,
-                metadata: serde_json::json!({}),
-            }],
-        );
-
-        assert_eq!(resolved.resolved_count, 1);
-        assert!(resolved.content.contains("read_notebook_item"));
-        assert!(resolved.content.contains("notebook_entry:"));
-        assert!(!resolved.content.contains("Alignment marks"));
-        assert!(resolved.content.contains("User message:\nsummarize this"));
     }
 
     #[tokio::test]

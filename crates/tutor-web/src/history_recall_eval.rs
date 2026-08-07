@@ -685,6 +685,7 @@ async fn create_session(pool: &Arc<SessionPool>, temporary: bool) -> String {
     pool.create_with_config(SessionCreateConfig {
         capability: "chat".into(),
         kb: None,
+        knowledge_bases: vec![],
         notebook_enabled: false,
         llm: None,
         search: None,

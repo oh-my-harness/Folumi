@@ -18,13 +18,29 @@ use crate::memory_store::MemoryStore;
 pub(crate) const LOCAL_USER_ID: &str = "local-user";
 const SESSION_RECALL_NAMESPACE: &str = "folumi-session-history";
 
+#[cfg(test)]
 pub(crate) fn agent_knowledge_scope(knowledge_base_id: Option<&str>) -> KnowledgeScope {
+    agent_knowledge_scope_for_bases(
+        &knowledge_base_id
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub(crate) fn agent_knowledge_scope_for_bases(knowledge_base_ids: &[String]) -> KnowledgeScope {
     let mut scope = KnowledgeScope::new(tutor_rag::AGENT_KNOWLEDGE_NAMESPACE);
     scope.tenant = Some(LOCAL_USER_ID.into());
-    if let Some(knowledge_base_id) = knowledge_base_id {
+    if let Some(knowledge_base_id) = knowledge_base_ids.first() {
         scope.attributes.insert(
             tutor_rag::KNOWLEDGE_BASE_SCOPE_ATTRIBUTE.into(),
-            knowledge_base_id.to_string(),
+            knowledge_base_id.clone(),
+        );
+    }
+    if !knowledge_base_ids.is_empty() {
+        scope.attributes.insert(
+            tutor_rag::KNOWLEDGE_BASE_IDS_SCOPE_ATTRIBUTE.into(),
+            serde_json::to_string(knowledge_base_ids).unwrap_or_else(|_| "[]".into()),
         );
     }
     // These values describe the trusted local-user boundary. Whether Saved
@@ -166,11 +182,16 @@ impl KnowledgeAuthorizer for AgentKnowledgeAuthorizer {
                     action,
                     KnowledgeAction::Discover | KnowledgeAction::Search | KnowledgeAction::Read
                 )
-                && access
+                && (access
                     .scope
                     .attributes
-                    .get(tutor_rag::KNOWLEDGE_BASE_SCOPE_ATTRIBUTE)
-                    .is_some_and(|kb| !kb.trim().is_empty());
+                    .get(tutor_rag::KNOWLEDGE_BASE_IDS_SCOPE_ATTRIBUTE)
+                    .is_some_and(|value| value != "[]")
+                    || access
+                        .scope
+                        .attributes
+                        .get(tutor_rag::KNOWLEDGE_BASE_SCOPE_ATTRIBUTE)
+                        .is_some_and(|kb| !kb.trim().is_empty()));
             let memory_profile = access
                 .scope
                 .attributes

@@ -11,9 +11,9 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ### Changed
 
-- Unified the Assistant composer’s source, Note, and model selectors with
-  clearer headers, roomier option cards, consistent selected states, and a
-  more usable Note search and empty state.
+- Replaced the conversation’s single-source and per-message `@` controls with
+  one multi-select Sources menu. Multiple source collections and Notebook can
+  now be enabled together, and clicking an item again removes it.
 - Rewrote high-frequency interface copy around Personalization, Sources,
   onboarding, help, and Settings in shorter everyday language, while keeping
   technical terms only where service configuration requires them.

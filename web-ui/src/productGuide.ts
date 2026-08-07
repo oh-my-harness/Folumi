@@ -7,7 +7,7 @@ export type ProductGuideTopic =
   | 'notebook'
   | 'memory'
 
-export type ComposerGuideControl = 'attachment' | 'source' | 'mention' | 'model' | 'send'
+export type ComposerGuideControl = 'attachment' | 'source' | 'model' | 'send'
 
 export interface ProductGuideState {
   topic: ProductGuideTopic
@@ -33,7 +33,6 @@ export const productGuideTopics: ProductGuideTopic[] = [
 export const composerGuideControls: ComposerGuideControl[] = [
   'attachment',
   'source',
-  'mention',
   'model',
   'send',
 ]

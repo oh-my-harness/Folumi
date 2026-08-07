@@ -15,9 +15,16 @@ Function('module', 'exports', compiled)(module, module.exports)
 const { guideAssistantStarterPrompt, normalizeProductGuideState } = module.exports
 
 test('restores valid independent help navigation state', () => {
+  assert.deepEqual(normalizeProductGuideState({ topic: 'notebook', composerControl: 'source' }), {
+    topic: 'notebook',
+    composerControl: 'source',
+  })
+})
+
+test('retires the removed note mention control from saved help state', () => {
   assert.deepEqual(normalizeProductGuideState({ topic: 'notebook', composerControl: 'mention' }), {
     topic: 'notebook',
-    composerControl: 'mention',
+    composerControl: 'attachment',
   })
 })
 

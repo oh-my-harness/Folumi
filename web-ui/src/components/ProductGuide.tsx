@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import {
-  AtSign,
   Bot,
   Brain,
   Database,
@@ -92,7 +91,6 @@ export function ProductGuide({ onNavigate, onStartGuideAssistant, onRestartOnboa
               <GuideRows items={[
                 { icon: <Paperclip size={18} />, title: copy.materials.attachmentTitle, text: copy.materials.attachmentText, action: copy.showInComposer, onClick: () => selectComposerControl('attachment') },
                 { icon: <Database size={18} />, title: copy.materials.sourceTitle, text: copy.materials.sourceText, action: copy.showInComposer, onClick: () => selectComposerControl('source') },
-                { icon: <AtSign size={18} />, title: copy.materials.mentionTitle, text: copy.materials.mentionText, action: copy.showInComposer, onClick: () => selectComposerControl('mention') },
               ]} />
             </GuideSection>
           )}
@@ -215,14 +213,12 @@ const chineseCopy = {
     openChat: '打开真实聊天界面',
   },
   materials: {
-    title: '三种添加资料的方式',
+    title: '两种添加资料的方式',
     description: '根据文件要用多久，选择合适的方式。',
     attachmentTitle: '附件：只用于这条消息',
     attachmentText: '适合临时阅读文件，不会保存到资料或笔记。',
     sourceTitle: '资料或笔记：用于整次聊天',
-    sourceText: '适合在聊天中反复参考一组内容。一次选择一个来源。',
-    mentionTitle: '@ 笔记：指定一篇内容',
-    mentionText: '适合直接告诉助手要看哪篇笔记。',
+    sourceText: '适合在聊天中反复参考资料。资料集和笔记可以同时选择多个。',
   },
   knowledge: {
     title: '配置并使用资料',
@@ -234,7 +230,7 @@ const chineseCopy = {
   notebook: {
     title: '配置并使用笔记',
     description: '写下、整理并连接自己的想法。',
-    steps: ['在“设置 > 笔记本”选择笔记保存位置。', '进入“笔记”页面创建和编辑内容。', '聊天时选择“笔记”，即可查找多篇内容。', '只需要一篇时，使用 @ 按钮指定。'],
+    steps: ['在“设置 > 笔记本”选择笔记保存位置。', '进入“笔记”页面创建和编辑内容。', '聊天时在“关联资料”中选择“笔记”，即可查找多篇内容。'],
     settings: '笔记本设置',
     open: '打开笔记',
   },
@@ -268,14 +264,12 @@ const englishCopy: typeof chineseCopy = {
     openChat: 'Open the real Chat interface',
   },
   materials: {
-    title: 'Three ways to add material',
+    title: 'Two ways to add material',
     description: 'Choose based on how long you need the file.',
     attachmentTitle: 'Attachment: this message only',
     attachmentText: 'Use it to read a file once. It is not saved to Sources or Notebook.',
     sourceTitle: 'Sources or Notebook: the whole conversation',
-    sourceText: 'Use a collection repeatedly throughout a conversation. Choose one source at a time.',
-    mentionTitle: '@ note: choose one note',
-    mentionText: 'Use it to tell the Assistant exactly which note to read.',
+    sourceText: 'Use sources repeatedly throughout a conversation. Select multiple collections and Notebook together.',
   },
   knowledge: {
     title: 'Configure and use Sources',
@@ -287,7 +281,7 @@ const englishCopy: typeof chineseCopy = {
   notebook: {
     title: 'Configure and use Notebook',
     description: 'Write, organize, and connect your own ideas.',
-    steps: ['Choose where notes are saved under Settings > Notebook.', 'Create and edit content on the Notebook page.', 'Choose Notebook in Chat to search across notes.', 'Use @ when you need one exact note.'],
+    steps: ['Choose where notes are saved under Settings > Notebook.', 'Create and edit content on the Notebook page.', 'Choose Notebook under Sources in Chat to search across notes.'],
     settings: 'Notebook settings',
     open: 'Open Notebook',
   },

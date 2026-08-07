@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use axum::{
     Json, Router,
@@ -11,8 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::knowledge_store::KnowledgeStore;
 use crate::session::{
-    AssistantSessionConfig, LlmSessionConfig, SearchSessionConfig, SessionCreateConfig,
-    SessionPool, message_role, message_text,
+    AssistantSessionConfig, KnowledgeSessionBinding, LlmSessionConfig, SearchSessionConfig,
+    SessionCreateConfig, SessionPool, message_role, message_text,
 };
 
 #[derive(Clone)]
@@ -25,6 +28,7 @@ pub struct SessionsState {
 struct CreateSessionRequest {
     capability: Option<String>,
     kb: Option<String>,
+    kbs: Option<Vec<String>>,
     notebook_enabled: Option<bool>,
     llm: Option<CreateLlmConfig>,
     search: Option<CreateSearchConfig>,
@@ -69,6 +73,7 @@ struct UpdateSessionRequest {
     capability: Option<String>,
     name: Option<String>,
     kb: Option<String>,
+    kbs: Option<Vec<String>>,
     notebook_enabled: Option<bool>,
     llm: Option<CreateLlmConfig>,
     search: Option<CreateSearchConfig>,
@@ -114,8 +119,9 @@ async fn create_session(
         )
             .into_response();
     }
-    let (kb, embedding) = match knowledge_binding(&state.knowledge, req.kb, notebook_enabled) {
-        Ok(binding) => binding,
+    let requested_kbs = req.kbs.unwrap_or_else(|| req.kb.into_iter().collect());
+    let knowledge_bases = match knowledge_bindings(&state.knowledge, requested_kbs) {
+        Ok(bindings) => bindings,
         Err(err) => {
             return (
                 StatusCode::BAD_REQUEST,
@@ -124,10 +130,15 @@ async fn create_session(
                 .into_response();
         }
     };
+    let kb = knowledge_bases.first().map(|binding| binding.id.clone());
+    let embedding = knowledge_bases
+        .first()
+        .map(|binding| binding.embedding.clone());
     match pool
         .create_with_config(SessionCreateConfig {
             capability,
             kb,
+            knowledge_bases,
             notebook_enabled,
             llm,
             search,
@@ -282,20 +293,6 @@ async fn get_session(
                 .into_response();
         }
     };
-    let message_mentions = match pool.message_mentions(&id).await {
-        Ok(items) => items,
-        Err(err) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": err.to_string() })),
-            )
-                .into_response();
-        }
-    };
-    let mentions_by_user_index = message_mentions
-        .into_iter()
-        .map(|item| (item.user_message_index, item.mentions))
-        .collect::<HashMap<_, _>>();
     let message_citations = match pool.message_citations(&id).await {
         Ok(items) => items,
         Err(err) => {
@@ -324,7 +321,6 @@ async fn get_session(
         .into_iter()
         .map(|item| (item.assistant_message_index, item.artifacts))
         .collect::<HashMap<_, _>>();
-    let mut user_message_index = 0usize;
     let mut assistant_message_index = 0usize;
 
     (
@@ -333,6 +329,7 @@ async fn get_session(
             "id": entry.id,
             "capability": entry.capability,
             "kb": entry.kb,
+            "kbs": entry.knowledge_bases.iter().map(|binding| binding.id.clone()).collect::<Vec<_>>(),
             "notebook_enabled": entry.notebook_enabled,
             "assistant": entry.assistant,
             "temporary": entry.temporary,
@@ -349,14 +346,7 @@ async fn get_session(
                     "role": role,
                     "text": message_text(&message),
                 });
-                if role == "user" {
-                    user_message_index += 1;
-                    if let Some(mentions) = mentions_by_user_index.get(&user_message_index)
-                        && let Some(map) = value.as_object_mut()
-                    {
-                        map.insert("mentions".into(), serde_json::Value::Array(mentions.clone()));
-                    }
-                } else if role == "assistant" {
+                if role == "assistant" {
                     assistant_message_index += 1;
                     if let Some(citations) = citations_by_assistant_index.get(&assistant_message_index)
                         && let Some(map) = value.as_object_mut()
@@ -476,7 +466,7 @@ async fn update_session(
             return session_not_found();
         };
         if notebook_enabled {
-            if !pool.set_knowledge(&id, None, None) || !pool.set_notebook_enabled(&id, true) {
+            if !pool.set_notebook_enabled(&id, true) {
                 return (
                     StatusCode::NOT_FOUND,
                     Json(serde_json::json!({ "error": "session not found" })),
@@ -492,34 +482,28 @@ async fn update_session(
         }
     }
 
-    if let Some(kb) = req.kb {
-        let normalized_kb = kb.trim().to_string();
+    let requested_kbs = req.kbs.or_else(|| req.kb.map(|kb| vec![kb]));
+    if let Some(kbs) = requested_kbs {
         let Some(_entry) = pool.ensure_entry(&id).await else {
             return session_not_found();
         };
-        let (kb, embedding) = if normalized_kb.is_empty() {
-            (None, None)
-        } else {
-            let Some(item) = state.knowledge.get(&normalized_kb) else {
+        let knowledge_bases = match knowledge_bindings(&state.knowledge, kbs) {
+            Ok(bindings) => bindings,
+            Err(error) => {
                 return (
                     StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": "knowledge base not found" })),
+                    Json(serde_json::json!({ "error": error.to_string() })),
                 )
                     .into_response();
-            };
-            (Some(item.id), Some(item.embedding))
+            }
         };
 
-        let _ = pool.ensure_entry(&id).await;
-        if !pool.set_knowledge(&id, kb, embedding) {
+        if !pool.set_knowledge_bases(&id, knowledge_bases) {
             return (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({ "error": "session not found" })),
             )
                 .into_response();
-        }
-        if !normalized_kb.is_empty() {
-            let _ = pool.set_notebook_enabled(&id, false);
         }
     }
 
@@ -831,27 +815,32 @@ pub fn sessions_router(pool: Arc<SessionPool>, knowledge: Arc<KnowledgeStore>) -
         .with_state(state)
 }
 
-fn knowledge_binding(
+fn knowledge_bindings(
     knowledge: &KnowledgeStore,
-    kb: Option<String>,
-    notebook_enabled: bool,
-) -> Result<(Option<String>, Option<tutor_rag::EmbeddingConfig>), anyhow::Error> {
-    if notebook_enabled {
-        return Ok((None, None));
-    }
-
-    let Some(kb) = kb
+    kbs: Vec<String>,
+) -> Result<Vec<KnowledgeSessionBinding>, anyhow::Error> {
+    const MAX_SELECTED_KNOWLEDGE_BASES: usize = 12;
+    let mut seen = HashSet::new();
+    let ids = kbs
+        .into_iter()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-    else {
-        return Ok((None, None));
-    };
-
-    let Some(item) = knowledge.get(&kb) else {
-        return Err(anyhow::anyhow!("knowledge base not found"));
-    };
-
-    Ok((Some(item.id), Some(item.embedding)))
+        .filter(|value| seen.insert(value.clone()))
+        .collect::<Vec<_>>();
+    if ids.len() > MAX_SELECTED_KNOWLEDGE_BASES {
+        return Err(anyhow::anyhow!("too many knowledge bases selected"));
+    }
+    ids.into_iter()
+        .map(|id| {
+            let item = knowledge
+                .get(&id)
+                .ok_or_else(|| anyhow::anyhow!("knowledge base not found"))?;
+            Ok(KnowledgeSessionBinding {
+                id: item.id,
+                embedding: item.embedding,
+            })
+        })
+        .collect()
 }
 
 fn title_from_messages(messages: &[llm_harness_types::AgentMessage]) -> Option<String> {
@@ -985,5 +974,64 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn creates_and_restores_multiple_sources_with_notebook() {
+        let dir = tempfile::tempdir().unwrap();
+        let knowledge = KnowledgeStore::new_with_path(dir.path().join("knowledge.json"));
+        let embedding = tutor_rag::EmbeddingConfig {
+            provider: "openai".into(),
+            model: "text-embedding-3-small".into(),
+            api_key: "sk-test".into(),
+            base_url: None,
+            embeddings_path: None,
+            dimensions: Some(1536),
+            send_dimensions: false,
+        };
+        let first = knowledge.create("First", embedding.clone()).unwrap();
+        let second = knowledge.create("Second", embedding).unwrap();
+        let app = sessions_router(
+            SessionPool::new_with_root(dir.path().join("sessions")),
+            knowledge,
+        );
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/api/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "capability": "chat",
+                            "kbs": [first.id, second.id],
+                            "notebook_enabled": true,
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(created.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let id = created["id"].as_str().unwrap();
+
+        let detail = app
+            .oneshot(
+                Request::get(format!("/api/sessions/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(detail.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let detail: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(detail["kbs"].as_array().unwrap().len(), 2);
+        assert_eq!(detail["notebook_enabled"], true);
     }
 }

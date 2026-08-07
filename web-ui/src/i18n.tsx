@@ -23,19 +23,14 @@ export type TranslationKey =
   | 'chat.empty.description'
   | 'chat.input.placeholder'
   | 'chat.attachments'
-  | 'chat.knowledge.none'
-  | 'chat.knowledge.none.description'
   | 'chat.knowledge.use.description'
   | 'chat.notebook.description'
+  | 'chat.source.select'
+  | 'chat.source.selected'
   | 'chat.source.menu.title'
   | 'chat.source.menu.description'
-  | 'chat.notes.menu.title'
-  | 'chat.notes.menu.description'
   | 'chat.model.menu.title'
   | 'chat.model.menu.description'
-  | 'chat.notes.searchPlaceholder'
-  | 'chat.notes.updating'
-  | 'chat.notes.noMatching'
   | 'chat.model.select'
   | 'chat.model.none'
   | 'chat.model.configureFirst'
@@ -92,19 +87,14 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.empty.description': '直接提问，也可以带上资料或笔记。',
     'chat.input.placeholder': '今天我能帮您什么？',
     'chat.attachments': '附件',
-    'chat.knowledge.none': '不关联资料',
-    'chat.knowledge.none.description': '只参考这次聊天',
     'chat.knowledge.use.description': '从这个资料集中查找答案',
     'chat.notebook.description': '从你的笔记中查找内容',
+    'chat.source.select': '关联资料',
+    'chat.source.selected': '已选',
     'chat.source.menu.title': '选择参考内容',
-    'chat.source.menu.description': '选择这次聊天要参考的内容',
-    'chat.notes.menu.title': '引用笔记',
-    'chat.notes.menu.description': '为这条消息指定一篇笔记',
+    'chat.source.menu.description': '点击选择，再次点击取消',
     'chat.model.menu.title': '选择模型',
     'chat.model.menu.description': '选择回答所用的模型',
-    'chat.notes.searchPlaceholder': '搜索笔记...',
-    'chat.notes.updating': '更新中...',
-    'chat.notes.noMatching': '没有匹配内容。',
     'chat.model.select': '选择模型',
     'chat.model.none': '暂无模型配置',
     'chat.model.configureFirst': '请先到设置中添加对话模型',
@@ -160,19 +150,14 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.empty.description': 'Ask directly, with sources or notes when useful.',
     'chat.input.placeholder': 'How can I help today?',
     'chat.attachments': 'Attachments',
-    'chat.knowledge.none': 'No sources',
-    'chat.knowledge.none.description': 'Use only this conversation',
     'chat.knowledge.use.description': 'Find answers in this source collection',
     'chat.notebook.description': 'Find content in your notes',
+    'chat.source.select': 'Sources',
+    'chat.source.selected': 'Selected',
     'chat.source.menu.title': 'Choose references',
-    'chat.source.menu.description': 'Choose what this conversation can reference',
-    'chat.notes.menu.title': 'Reference a note',
-    'chat.notes.menu.description': 'Choose one note for this message',
+    'chat.source.menu.description': 'Click to select; click again to remove',
     'chat.model.menu.title': 'Choose a model',
     'chat.model.menu.description': 'Choose the model that answers',
-    'chat.notes.searchPlaceholder': 'Search notes...',
-    'chat.notes.updating': 'Updating...',
-    'chat.notes.noMatching': 'No matching content.',
     'chat.model.select': 'Select model',
     'chat.model.none': 'No model profiles',
     'chat.model.configureFirst': 'Add a chat model in Settings first',

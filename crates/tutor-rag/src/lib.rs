@@ -20,7 +20,8 @@ mod knowledge_source;
 
 pub use knowledge_source::{
     AGENT_KNOWLEDGE_NAMESPACE, COURSE_KNOWLEDGE_NAMESPACE, COURSE_KNOWLEDGE_SOURCE_ID,
-    KNOWLEDGE_BASE_SCOPE_ATTRIBUTE, LanceDbKnowledgeSource,
+    KNOWLEDGE_BASE_IDS_SCOPE_ATTRIBUTE, KNOWLEDGE_BASE_SCOPE_ATTRIBUTE, LanceDbKnowledgeSource,
+    MultiLanceDbKnowledgeSource,
 };
 
 const TABLE_NAME: &str = "knowledge_chunks_v1";

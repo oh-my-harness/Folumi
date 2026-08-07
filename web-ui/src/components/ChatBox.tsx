@@ -3,7 +3,6 @@ import type { ChangeEvent, ReactNode, RefObject } from 'react'
 import {
   AlertCircle,
   ArrowUp,
-  AtSign,
   BookOpen,
   Brain,
   Check,
@@ -46,7 +45,7 @@ import {
 } from '../chatScrollPosition'
 import { SaveNotebookDialog, SaveNotebookOutcomeDialog } from './SaveNotebookDialog'
 
-type OpenMenu = 'knowledge' | 'notes' | 'model' | null
+type OpenMenu = 'knowledge' | 'model' | null
 
 export interface SaveToNotebookOptions {
   folderPath?: string
@@ -64,7 +63,6 @@ interface Message {
   deepSolve?: DeepSolveTraceEntry[]
   notebookEditProposal?: NotebookEditProposal
   attachments?: ChatAttachment[]
-  mentions?: NotebookMention[]
 }
 
 export interface ChatAttachment {
@@ -75,16 +73,6 @@ export interface ChatAttachment {
   text?: string
   error?: string
   truncated?: boolean
-}
-
-export interface NotebookMention {
-  id: string
-  type: 'notebook_entry'
-  target_id?: string | null
-  question_id?: string | null
-  title: string
-  preview?: string | null
-  metadata?: Record<string, unknown>
 }
 
 export interface NotebookEditProposal {
@@ -123,14 +111,14 @@ interface Props {
   llmConfigs: LlmModelConfig[]
   activeLlmConfigId: string | null
   knowledgeBases: Array<{ id: string; name: string }>
-  selectedKnowledgeBaseId: string
+  selectedKnowledgeBaseIds: string[]
   selectedNotebookEnabled: boolean
   initialDraft?: { id: number; text: string } | null
-  onSend: (text: string, attachments?: ChatAttachment[], mentions?: NotebookMention[]) => void
+  onSend: (text: string, attachments?: ChatAttachment[]) => void
   onStop?: () => void
   onEditUserMessage?: (messageIndex: number, nextText: string) => void
   onAskDeepSolveStep?: (step: { id: string; title: string; summary?: string }) => void
-  onKnowledgeBaseChange: (id: string) => void
+  onKnowledgeBaseToggle: (id: string) => void
   onNotebookEnabledChange: (enabled: boolean) => void
   onLlmConfigChange: (id: string) => void
   notebookFolders?: string[]
@@ -158,14 +146,14 @@ export function ChatBox({
   llmConfigs,
   activeLlmConfigId,
   knowledgeBases,
-  selectedKnowledgeBaseId,
+  selectedKnowledgeBaseIds,
   selectedNotebookEnabled,
   initialDraft,
   onSend,
   onStop,
   onEditUserMessage,
   onAskDeepSolveStep,
-  onKnowledgeBaseChange,
+  onKnowledgeBaseToggle,
   onNotebookEnabledChange,
   onLlmConfigChange,
   notebookFolders = [],
@@ -183,7 +171,6 @@ export function ChatBox({
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null)
   const [editingMessageText, setEditingMessageText] = useState('')
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
-  const [mentions, setMentions] = useState<NotebookMention[]>([])
   const [saveNotebookMarkdown, setSaveNotebookMarkdown] = useState<string | null>(null)
   const [saveNotebookFolder, setSaveNotebookFolder] = useState('')
   const [saveNotebookNewFolder, setSaveNotebookNewFolder] = useState('')
@@ -218,12 +205,11 @@ export function ChatBox({
 
   const handleSend = () => {
     const readyAttachments = attachments.filter((attachment) => !attachment.error)
-    if ((!input.trim() && readyAttachments.length === 0 && mentions.length === 0) || disabled || running) return
+    if ((!input.trim() && readyAttachments.length === 0) || disabled || running) return
     shouldStickToBottomRef.current = true
-    onSend(input.trim(), readyAttachments, mentions)
+    onSend(input.trim(), readyAttachments)
     setInput('')
     setAttachments([])
-    setMentions([])
   }
 
   const startEditUserMessage = (index: number, text: string) => {
@@ -282,14 +268,6 @@ export function ChatBox({
 
   const handleRemoveAttachment = (id: string) => {
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
-  }
-
-  const handleAddMention = (mention: NotebookMention) => {
-    setMentions((current) => current.some((item) => item.id === mention.id) ? current : [...current, mention])
-  }
-
-  const handleRemoveMention = (id: string) => {
-    setMentions((current) => current.filter((mention) => mention.id !== id))
   }
 
   const openSaveNotebookDialog = async (
@@ -501,9 +479,9 @@ export function ChatBox({
               llmConfigs={llmConfigs}
               activeLlmConfigId={activeLlmConfigId}
               knowledgeBases={knowledgeBases}
-              selectedKnowledgeBaseId={selectedKnowledgeBaseId}
+              selectedKnowledgeBaseIds={selectedKnowledgeBaseIds}
               selectedNotebookEnabled={selectedNotebookEnabled}
-              onKnowledgeBaseChange={onKnowledgeBaseChange}
+              onKnowledgeBaseToggle={onKnowledgeBaseToggle}
               onNotebookEnabledChange={onNotebookEnabledChange}
               onLlmConfigChange={onLlmConfigChange}
               onSend={handleSend}
@@ -511,9 +489,6 @@ export function ChatBox({
               attachments={attachments}
               onAddAttachments={handleAddAttachments}
               onRemoveAttachment={handleRemoveAttachment}
-              mentions={mentions}
-              onAddMention={handleAddMention}
-              onRemoveMention={handleRemoveMention}
               disabled={disabled}
               running={running}
               variant="center"
@@ -618,9 +593,6 @@ export function ChatBox({
                         {msg.attachments && msg.attachments.length > 0 && (
                           <AttachmentSummary attachments={msg.attachments} />
                         )}
-                        {msg.mentions && msg.mentions.length > 0 && (
-                          <MentionSummary mentions={msg.mentions} />
-                        )}
                       </div>
                     )}
                     {editingMessageIndex !== i && (
@@ -655,9 +627,9 @@ export function ChatBox({
               llmConfigs={llmConfigs}
               activeLlmConfigId={activeLlmConfigId}
               knowledgeBases={knowledgeBases}
-              selectedKnowledgeBaseId={selectedKnowledgeBaseId}
+              selectedKnowledgeBaseIds={selectedKnowledgeBaseIds}
               selectedNotebookEnabled={selectedNotebookEnabled}
-              onKnowledgeBaseChange={onKnowledgeBaseChange}
+              onKnowledgeBaseToggle={onKnowledgeBaseToggle}
               onNotebookEnabledChange={onNotebookEnabledChange}
               onLlmConfigChange={onLlmConfigChange}
               onSend={handleSend}
@@ -665,9 +637,6 @@ export function ChatBox({
               attachments={attachments}
               onAddAttachments={handleAddAttachments}
               onRemoveAttachment={handleRemoveAttachment}
-              mentions={mentions}
-              onAddMention={handleAddMention}
-              onRemoveMention={handleRemoveMention}
               disabled={disabled}
               running={running}
               variant="bottom"
@@ -861,9 +830,9 @@ function Composer({
   llmConfigs,
   activeLlmConfigId,
   knowledgeBases,
-  selectedKnowledgeBaseId,
+  selectedKnowledgeBaseIds,
   selectedNotebookEnabled,
-  onKnowledgeBaseChange,
+  onKnowledgeBaseToggle,
   onNotebookEnabledChange,
   onLlmConfigChange,
   onSend,
@@ -871,9 +840,6 @@ function Composer({
   attachments,
   onAddAttachments,
   onRemoveAttachment,
-  mentions,
-  onAddMention,
-  onRemoveMention,
   disabled,
   running,
   variant,
@@ -884,9 +850,9 @@ function Composer({
   llmConfigs: LlmModelConfig[]
   activeLlmConfigId: string | null
   knowledgeBases: Array<{ id: string; name: string }>
-  selectedKnowledgeBaseId: string
+  selectedKnowledgeBaseIds: string[]
   selectedNotebookEnabled: boolean
-  onKnowledgeBaseChange: (id: string) => void
+  onKnowledgeBaseToggle: (id: string) => void
   onNotebookEnabledChange: (enabled: boolean) => void
   onLlmConfigChange: (id: string) => void
   onSend: () => void
@@ -894,9 +860,6 @@ function Composer({
   attachments: ChatAttachment[]
   onAddAttachments: (attachments: ChatAttachment[]) => void
   onRemoveAttachment: (id: string) => void
-  mentions: NotebookMention[]
-  onAddMention: (mention: NotebookMention) => void
-  onRemoveMention: (id: string) => void
   disabled: boolean
   running: boolean
   variant: 'center' | 'bottom'
@@ -904,31 +867,11 @@ function Composer({
   const { t } = useI18n()
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [readingAttachments, setReadingAttachments] = useState(false)
-  const [noteQuery, setNoteQuery] = useState('')
-  const [noteMentions, setNoteMentions] = useState<NotebookMention[]>([])
-  const [loadingNoteMentions, setLoadingNoteMentions] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
-  const activeKnowledge = selectedNotebookEnabled
-    ? { id: '__notebook__', name: 'Notebook' }
-    : knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId)
   const activeModel = llmConfigs.find((item) => item.id === activeLlmConfigId) ?? llmConfigs[0] ?? null
-  const knowledgeOptions = [
-    {
-      id: '',
-      name: t('chat.knowledge.none'),
-      description: t('chat.knowledge.none.description'),
-      icon: <Database size={21} />,
-    },
-    ...knowledgeBases.map((item) => ({
-      id: item.id,
-      name: item.name,
-      description: t('chat.knowledge.use.description'),
-      icon: <Database size={21} />,
-    })),
-  ]
+  const selectedSourceCount = selectedKnowledgeBaseIds.length + (selectedNotebookEnabled ? 1 : 0)
   const sourceOptions = [
-    { ...knowledgeOptions[0]!, type: 'none' as const },
     {
       id: '__notebook__',
       type: 'notebook' as const,
@@ -936,9 +879,12 @@ function Composer({
       description: t('chat.notebook.description'),
       icon: <FileText size={21} />,
     },
-    ...knowledgeOptions.slice(1).map((item) => ({
-      ...item,
+    ...knowledgeBases.map((item) => ({
+      id: item.id,
       type: 'knowledge_base' as const,
+      name: item.name,
+      description: t('chat.knowledge.use.description'),
+      icon: <Database size={21} />,
     })),
   ]
 
@@ -969,36 +915,6 @@ function Composer({
       setReadingAttachments(false)
     }
   }
-
-  useEffect(() => {
-    if (openMenu !== 'notes') return
-    let cancelled = false
-    const controller = new AbortController()
-    setLoadingNoteMentions(true)
-    const timer = window.setTimeout(() => {
-      const params = new URLSearchParams()
-      if (noteQuery.trim()) params.set('q', noteQuery.trim())
-      params.set('limit', '50')
-      fetch(`/api/notebook/mentions?${params.toString()}`, { signal: controller.signal })
-        .then(async (res) => {
-          const data = await res.json().catch(() => ({})) as { mentions?: NotebookMention[] }
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          if (!cancelled) setNoteMentions(data.mentions ?? [])
-        })
-        .catch(() => {
-          if (!cancelled) setNoteMentions([])
-        })
-        .finally(() => {
-          if (!cancelled) setLoadingNoteMentions(false)
-        })
-    }, 160)
-
-    return () => {
-      cancelled = true
-      controller.abort()
-      window.clearTimeout(timer)
-    }
-  }, [openMenu, noteQuery])
 
   return (
     <div
@@ -1034,11 +950,6 @@ function Composer({
           />
         </div>
       )}
-      {mentions.length > 0 && (
-        <div className="border-t border-blue-50 px-4 py-2">
-          <MentionSummary mentions={mentions} removable onRemove={onRemoveMention} />
-        </div>
-      )}
       <div className="relative flex flex-wrap items-center gap-2 border-t border-blue-50 px-4 py-2">
 
         <button
@@ -1062,7 +973,7 @@ function Composer({
           <ToolbarButton
             active={openMenu === 'knowledge'}
             icon={<Database size={18} />}
-            label={activeKnowledge?.name ?? t('chat.knowledge.none')}
+            label={selectedSourceCount > 0 ? `${t('chat.source.selected')} ${selectedSourceCount}` : t('chat.source.select')}
             onClick={() => toggleMenu('knowledge')}
           />
           {openMenu === 'knowledge' && (
@@ -1074,78 +985,24 @@ function Composer({
               <div className="space-y-1 p-2">
                 {sourceOptions.map((item) => (
                   <DropdownOption
-                    key={item.id || 'none'}
+                    key={item.id}
                     selected={
                       item.type === 'notebook'
                         ? selectedNotebookEnabled
-                        : item.type === 'none'
-                          ? !selectedNotebookEnabled && !selectedKnowledgeBaseId
-                          : !selectedNotebookEnabled && item.id === selectedKnowledgeBaseId
+                        : selectedKnowledgeBaseIds.includes(item.id)
                     }
                     icon={item.icon}
                     title={item.name}
                     description={item.description}
                     onClick={() => {
                       if (item.type === 'notebook') {
-                        onNotebookEnabledChange(true)
+                        onNotebookEnabledChange(!selectedNotebookEnabled)
                       } else {
-                        onKnowledgeBaseChange(item.id)
+                        onKnowledgeBaseToggle(item.id)
                       }
-                      setOpenMenu(null)
                     }}
                   />
                 ))}
-              </div>
-            </DropdownPanel>
-          )}
-        </div>
-
-        <div className="relative">
-          <ToolbarButton
-            active={openMenu === 'notes'}
-            icon={<AtSign size={18} />}
-            label={mentions.length > 0 ? `${t('nav.notebook')} ${mentions.length}` : t('nav.notebook')}
-            onClick={() => toggleMenu('notes')}
-          />
-          {openMenu === 'notes' && (
-            <DropdownPanel
-              widthClassName="w-[21rem] max-w-[calc(100vw-1.5rem)]"
-              className="flex max-h-[min(19rem,calc(100vh-7rem))] flex-col"
-              title={t('chat.notes.menu.title')}
-              description={t('chat.notes.menu.description')}
-            >
-              <div className="shrink-0 space-y-1.5 border-b border-gray-100 bg-white px-3 py-2.5">
-                <input
-                  className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm outline-none transition placeholder:text-gray-400 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-50"
-                  value={noteQuery}
-                  onChange={(event) => setNoteQuery(event.target.value)}
-                  placeholder={t('chat.notes.searchPlaceholder')}
-                  autoFocus
-                />
-                {loadingNoteMentions && (
-                  <div className="px-1 text-xs text-blue-600">{t('chat.notes.updating')}</div>
-                )}
-              </div>
-              <div className="min-h-0 space-y-1 overflow-y-auto p-2">
-                {noteMentions.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
-                    {t('chat.notes.noMatching')}
-                  </div>
-                ) : (
-                  noteMentions.map((mention) => (
-                    <DropdownOption
-                      key={mention.id}
-                      selected={mentions.some((item) => item.id === mention.id)}
-                      icon={noteMentionIcon(mention)}
-                      title={mention.title}
-                      description={noteMentionDescription(mention)}
-                      onClick={() => {
-                        onAddMention(mention)
-                        setOpenMenu(null)
-                      }}
-                    />
-                  ))
-                )}
               </div>
             </DropdownPanel>
           )}
@@ -1198,7 +1055,7 @@ function Composer({
             running ? 'bg-gray-900 hover:bg-gray-800' : 'bg-blue-600 hover:bg-blue-700'
           }`}
           onClick={running ? onStop : onSend}
-          disabled={disabled || (!running && !input.trim() && attachments.filter((attachment) => !attachment.error).length === 0 && mentions.length === 0)}
+          disabled={disabled || (!running && !input.trim() && attachments.filter((attachment) => !attachment.error).length === 0)}
           type="button"
           title={running ? t('chat.stop') : t('chat.send')}
         >
@@ -1360,56 +1217,6 @@ function AttachmentSummary({
       ))}
     </div>
   )
-}
-
-function MentionSummary({
-  mentions,
-  removable = false,
-  onRemove,
-}: {
-  mentions: NotebookMention[]
-  removable?: boolean
-  onRemove?: (id: string) => void
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {mentions.map((mention) => (
-        <div
-          key={mention.id}
-          className="flex max-w-full items-center gap-2 rounded-xl border border-blue-100 bg-white px-3 py-2 text-xs text-gray-700"
-          title={mention.preview || mention.title}
-        >
-          <span className="shrink-0 text-blue-600">{noteMentionIcon(mention, 16)}</span>
-          <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700">
-            {noteMentionTypeLabel(mention)}
-          </span>
-          <span className="min-w-0 truncate font-medium">{mention.title}</span>
-          {removable && (
-            <button
-              className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-blue-50 hover:text-gray-900"
-              type="button"
-              onClick={() => onRemove?.(mention.id)}
-              title="Remove note reference"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function noteMentionIcon(_mention: NotebookMention, size = 21) {
-  return <FileText size={size} />
-}
-
-function noteMentionTypeLabel(_mention: NotebookMention) {
-  return 'Note'
-}
-
-function noteMentionDescription(mention: NotebookMention) {
-  return [noteMentionTypeLabel(mention), mention.preview].filter(Boolean).join(' - ')
 }
 
 function formatBytes(bytes: number) {

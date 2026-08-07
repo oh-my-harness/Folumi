@@ -1,7 +1,7 @@
 ﻿import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { ChatBox } from './components/ChatBox'
-import type { ChatAttachment, ContextStats, NotebookEditProposal, NotebookMention, SaveToNotebookOptions } from './components/ChatBox'
+import type { ChatAttachment, ContextStats, NotebookEditProposal, SaveToNotebookOptions } from './components/ChatBox'
 import { TracePanel, TraceEntry } from './components/TracePanel'
 import { SettingsPage, type SettingsTab } from './components/SettingsPage'
 import { KnowledgeBasePage } from './components/KnowledgeBasePage'
@@ -62,7 +62,6 @@ interface Message {
   deepSolve?: DeepSolveTraceEntry[]
   notebookEditProposal?: NotebookEditProposal
   attachments?: ChatAttachment[]
-  mentions?: NotebookMention[]
 }
 
 interface Citation {
@@ -116,13 +115,13 @@ interface SessionListResponse {
 interface SessionDetailResponse {
   capability?: Capability
   kb?: string | null
+  kbs?: string[]
   notebook_enabled?: boolean
   temporary?: boolean
   llm?: { model?: string | null } | null
   messages?: Array<{
     role: 'user' | 'assistant'
     text: string
-    mentions?: NotebookMention[]
     citations?: Citation[]
   }>
   trace?: Array<{
@@ -184,7 +183,7 @@ export default function App() {
   const [streamingText, setStreamingText] = useState('')
   const streamingRef = useRef('')
   const progressStreamingRef = useRef('')
-  const pendingSessionSendRef = useRef<{ sessionId: string; content: string; mentions: NotebookMention[] } | null>(null)
+  const pendingSessionSendRef = useRef<{ sessionId: string; content: string } | null>(null)
   const [traceEntries, setTraceEntries] = useState<TraceEntry[]>([])
   const pendingCitationsRef = useRef<Citation[]>([])
   const pendingDeepSolveRef = useRef<DeepSolveTraceEntry[]>([])
@@ -197,7 +196,7 @@ export default function App() {
   const [notebookFolders, setNotebookFolders] = useState<string[]>([])
   const [notebookEntryPaths, setNotebookEntryPaths] = useState<string[]>([])
   const [notebookVault, setNotebookVault] = useState<NotebookVaultInfo | null>(null)
-  const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState<string>('')
+  const [selectedKnowledgeBaseIds, setSelectedKnowledgeBaseIds] = useState<string[]>([])
   const [selectedNotebookEnabled, setSelectedNotebookEnabled] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [traceCollapsed, setTraceCollapsed] = useState(true)
@@ -270,7 +269,6 @@ export default function App() {
         (data.messages ?? []).map((message) => ({
           role: message.role,
           text: message.text,
-          mentions: message.mentions,
           citations: message.citations,
         })),
         restoredTrace,
@@ -314,7 +312,7 @@ export default function App() {
           })
         }
       }
-      setSelectedKnowledgeBaseId(data.kb ?? '')
+      setSelectedKnowledgeBaseIds(data.kbs ?? (data.kb ? [data.kb] : []))
       setSelectedNotebookEnabled(Boolean(data.notebook_enabled))
       setTemporaryConversation(Boolean(data.temporary))
       const title = data.metadata?.name || restored.find((message) => message.role === 'user')?.text
@@ -553,10 +551,7 @@ export default function App() {
     const data = await res.json() as { knowledge_bases?: KnowledgeBaseOption[] }
     const items = data.knowledge_bases ?? []
     setKnowledgeBases(items.map((item) => ({ id: item.id, name: item.name })))
-    setSelectedKnowledgeBaseId((current) => {
-      if (current && items.some((item) => item.id === current)) return current
-      return ''
-    })
+    setSelectedKnowledgeBaseIds((current) => current.filter((id) => items.some((item) => item.id === id)))
   }, [])
 
   const refreshNotebookFolders = useCallback(async () => {
@@ -576,7 +571,7 @@ export default function App() {
     const pending = pendingSessionSendRef.current
     if (!pending || pending.sessionId !== sessionId) return
     pendingSessionSendRef.current = null
-    send({ type: 'message', content: pending.content, mentions: pending.mentions })
+    send({ type: 'message', content: pending.content })
   }, [sessionId, send])
 
   const persistSettings = useCallback((nextSettings: typeof llmSettings) => {
@@ -642,20 +637,19 @@ export default function App() {
     })
   }, [refreshSessions, refreshKnowledgeBases, refreshNotebookFolders, pushStatus])
 
-  const handleSend = useCallback(async (text: string, attachments: ChatAttachment[] = [], mentions: NotebookMention[] = []) => {
+  const handleSend = useCallback(async (text: string, attachments: ChatAttachment[] = []) => {
     try {
       const content = buildMessageContentWithAttachments(text, attachments)
-      const displayText = text.trim() || (attachments.length > 0 ? `Sent ${attachments.length} attachment(s)` : `Referenced ${mentions.length} note(s)`)
+      const displayText = text.trim() || `Sent ${attachments.length} attachment(s)`
       let sid = sessionId
       let createdSession = false
       if (!sid) {
-        const kb = selectedKnowledgeBaseId || null
         const res = await fetch('/api/sessions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             capability,
-            kb,
+            kbs: selectedKnowledgeBaseIds,
             notebook_enabled: selectedNotebookEnabled,
             temporary: temporaryConversation,
             assistant: {
@@ -673,24 +667,24 @@ export default function App() {
         const createdSessionId = data.id as string
         sid = createdSessionId
         createdSession = true
-        pendingSessionSendRef.current = { sessionId: createdSessionId, content, mentions }
+        pendingSessionSendRef.current = { sessionId: createdSessionId, content }
         activateSession(createdSessionId)
         promoteRecentSession(setRecentSessions, createdSessionId, sessionTitleFromMessage(displayText), temporaryConversation)
       } else {
         promoteRecentSession(setRecentSessions, sid, sessionTitleFromMessage(displayText))
       }
 
-      setMessages((prev) => [...prev, { role: 'user', text: displayText, attachments, mentions }])
+      setMessages((prev) => [...prev, { role: 'user', text: displayText, attachments }])
       setRunning(true)
       pushStatus({ kind: 'thinking', label: 'Thinking', detail: capabilityLabel(capability) })
-      if (!createdSession) send({ type: 'message', content, mentions }, sid)
+      if (!createdSession) send({ type: 'message', content }, sid)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       pushStatus({ kind: 'error', label: 'Error', detail: message })
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [sessionId, capability, llmSettings, selectedLlmConfigId, selectedKnowledgeBaseId, selectedNotebookEnabled, temporaryConversation, send, pushStatus, activateSession])
+  }, [sessionId, capability, llmSettings, selectedLlmConfigId, selectedKnowledgeBaseIds, selectedNotebookEnabled, temporaryConversation, send, pushStatus, activateSession])
 
   const handleStopGeneration = useCallback(() => {
     if (!running) return
@@ -729,7 +723,7 @@ export default function App() {
           pendingNotebookEditProposalRef.current = undefined
           setRunning(true)
           pushStatus({ kind: 'thinking', label: 'Thinking', detail: capabilityLabel(capability) })
-          send({ type: 'message', content: nextText, mentions: [] })
+          send({ type: 'message', content: nextText })
           promoteRecentSession(setRecentSessions, sessionId, sessionTitleFromMessage(nextText))
           return
         }
@@ -740,7 +734,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           capability,
-          kb: selectedKnowledgeBaseId || null,
+          kbs: selectedKnowledgeBaseIds,
           notebook_enabled: selectedNotebookEnabled,
           temporary: temporaryConversation,
           assistant: {
@@ -770,14 +764,14 @@ export default function App() {
       pendingNotebookEditProposalRef.current = undefined
       setRunning(true)
       pushStatus({ kind: 'thinking', label: 'Thinking', detail: capabilityLabel(capability) })
-      pendingSessionSendRef.current = { sessionId: nextSessionId, content: nextText, mentions: [] }
+      pendingSessionSendRef.current = { sessionId: nextSessionId, content: nextText }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       pushStatus({ kind: 'error', label: 'Error', detail: message })
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [capability, llmSettings, selectedLlmConfigId, messages, pushStatus, running, selectedKnowledgeBaseId, selectedNotebookEnabled, temporaryConversation, send, sessionId, activateSession])
+  }, [capability, llmSettings, selectedLlmConfigId, messages, pushStatus, running, selectedKnowledgeBaseIds, selectedNotebookEnabled, temporaryConversation, send, sessionId, activateSession])
 
   const handleSaveToNotebook = useCallback(async (markdown: string, options: SaveToNotebookOptions = {}): Promise<SaveToNotebookResult> => {
     try {
@@ -955,7 +949,7 @@ export default function App() {
   const startGuideAssistant = useCallback(() => {
     startNewChat()
     setCapability('chat')
-    setSelectedKnowledgeBaseId('')
+    setSelectedKnowledgeBaseIds([])
     setSelectedNotebookEnabled(false)
     setStarterDraft({ id: Date.now(), text: guideAssistantStarterPrompt(llmSettings.language) })
   }, [llmSettings.language, startNewChat])
@@ -977,17 +971,19 @@ export default function App() {
     setView(destination === 'notebook' ? 'notebook' : 'knowledge')
   }, [startNewChat])
 
-  const handleKnowledgeBaseChange = useCallback(async (nextKb: string) => {
+  const handleKnowledgeBaseToggle = useCallback(async (knowledgeBaseId: string) => {
     if (running) return
-    setSelectedKnowledgeBaseId(nextKb)
-    setSelectedNotebookEnabled(false)
+    const nextKnowledgeBaseIds = selectedKnowledgeBaseIds.includes(knowledgeBaseId)
+      ? selectedKnowledgeBaseIds.filter((id) => id !== knowledgeBaseId)
+      : [...selectedKnowledgeBaseIds, knowledgeBaseId]
+    setSelectedKnowledgeBaseIds(nextKnowledgeBaseIds)
     if (!sessionId) return
 
     try {
       const res = await fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kb: nextKb, notebook_enabled: false }),
+        body: JSON.stringify({ kbs: nextKnowledgeBaseIds }),
       })
       if (!res.ok) {
         throw new Error(`failed to update session knowledge base: HTTP ${res.status}`)
@@ -996,19 +992,18 @@ export default function App() {
       const message = err instanceof Error ? err.message : String(err)
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
     }
-  }, [running, sessionId])
+  }, [running, selectedKnowledgeBaseIds, sessionId])
 
   const handleNotebookEnabledChange = useCallback(async (enabled: boolean) => {
     if (running) return
     setSelectedNotebookEnabled(enabled)
-    if (enabled) setSelectedKnowledgeBaseId('')
     if (!sessionId) return
 
     try {
       const res = await fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notebook_enabled: enabled, kb: enabled ? '' : undefined }),
+        body: JSON.stringify({ notebook_enabled: enabled }),
       })
       if (!res.ok) {
         throw new Error(`failed to update session source: HTTP ${res.status}`)
@@ -1246,14 +1241,14 @@ export default function App() {
                   llmConfigs={llmSettings.llmConfigs}
                   activeLlmConfigId={selectedLlmConfigId}
                   knowledgeBases={knowledgeBases}
-                  selectedKnowledgeBaseId={selectedKnowledgeBaseId}
+                  selectedKnowledgeBaseIds={selectedKnowledgeBaseIds}
                   selectedNotebookEnabled={selectedNotebookEnabled}
                   initialDraft={starterDraft}
                   onSend={handleSend}
                   onStop={handleStopGeneration}
                   onEditUserMessage={handleEditUserMessage}
                   onAskDeepSolveStep={handleAskDeepSolveStep}
-                  onKnowledgeBaseChange={handleKnowledgeBaseChange}
+                  onKnowledgeBaseToggle={handleKnowledgeBaseToggle}
                   onNotebookEnabledChange={handleNotebookEnabledChange}
                   onLlmConfigChange={handleLlmConfigChange}
                   notebookFolders={notebookFolders}

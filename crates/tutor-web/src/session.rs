@@ -52,6 +52,12 @@ pub struct AssistantSessionConfig {
     pub instructions: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KnowledgeSessionBinding {
+    pub id: String,
+    pub embedding: tutor_rag::EmbeddingConfig,
+}
+
 impl Default for AssistantSessionConfig {
     fn default() -> Self {
         Self {
@@ -65,6 +71,7 @@ impl Default for AssistantSessionConfig {
 pub struct SessionCreateConfig {
     pub capability: String,
     pub kb: Option<String>,
+    pub knowledge_bases: Vec<KnowledgeSessionBinding>,
     pub notebook_enabled: bool,
     pub llm: Option<LlmSessionConfig>,
     pub search: Option<SearchSessionConfig>,
@@ -79,6 +86,7 @@ pub struct SessionEntry {
     pub id: String,
     pub capability: String,
     pub kb: Option<String>,
+    pub knowledge_bases: Vec<KnowledgeSessionBinding>,
     pub notebook_enabled: bool,
     pub llm: Option<LlmSessionConfig>,
     pub search: Option<SearchSessionConfig>,
@@ -110,13 +118,6 @@ pub struct PersistedCompactSummary {
     pub summary: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub message_count: usize,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PersistedMessageMentions {
-    pub user_message_index: usize,
-    pub mentions: Vec<serde_json::Value>,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -169,6 +170,8 @@ struct ProductSessionMetadata {
     capability: String,
     #[serde(default)]
     kb: Option<String>,
+    #[serde(default)]
+    knowledge_bases: Vec<KnowledgeSessionBinding>,
     #[serde(default)]
     notebook_enabled: bool,
     #[serde(default)]
@@ -335,6 +338,7 @@ impl SessionPool {
         self.create_with_config(SessionCreateConfig {
             capability: capability.to_string(),
             kb,
+            knowledge_bases: vec![],
             notebook_enabled,
             llm,
             search,
@@ -353,6 +357,7 @@ impl SessionPool {
         let SessionCreateConfig {
             capability,
             kb,
+            mut knowledge_bases,
             notebook_enabled,
             llm,
             search,
@@ -360,6 +365,14 @@ impl SessionPool {
             assistant,
             temporary,
         } = config;
+        if knowledge_bases.is_empty()
+            && let (Some(id), Some(config)) = (kb.as_ref(), embedding.as_ref())
+        {
+            knowledge_bases.push(KnowledgeSessionBinding {
+                id: id.clone(),
+                embedding: config.clone(),
+            });
+        }
         let recall_enabled = self.history_recall_enabled() && !temporary;
         let storage = self
             .repo
@@ -387,6 +400,7 @@ impl SessionPool {
             id: id.clone(),
             capability: capability.clone(),
             kb: kb.clone(),
+            knowledge_bases: knowledge_bases.clone(),
             notebook_enabled,
             llm: llm.clone(),
             search: search.clone(),
@@ -401,6 +415,7 @@ impl SessionPool {
             ProductSessionMetadata {
                 capability,
                 kb,
+                knowledge_bases,
                 notebook_enabled,
                 llm,
                 search,
@@ -428,10 +443,30 @@ impl SessionPool {
             .map(|value| value.capability.as_str())
             .unwrap_or("chat");
         let capability = normalize_retired_capability(stored_capability).to_string();
+        let knowledge_bases = product
+            .as_ref()
+            .map(|value| {
+                if !value.knowledge_bases.is_empty() {
+                    return value.knowledge_bases.clone();
+                }
+                value
+                    .kb
+                    .as_ref()
+                    .zip(value.embedding.as_ref())
+                    .map(|(id, embedding)| {
+                        vec![KnowledgeSessionBinding {
+                            id: id.clone(),
+                            embedding: embedding.clone(),
+                        }]
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
         let entry = SessionEntry {
             id: meta.id.clone(),
             capability: capability.clone(),
             kb: product.as_ref().and_then(|value| value.kb.clone()),
+            knowledge_bases,
             notebook_enabled: product
                 .as_ref()
                 .map(|value| value.notebook_enabled)
@@ -783,57 +818,6 @@ impl SessionPool {
         Ok(())
     }
 
-    pub async fn append_message_mentions(
-        &self,
-        id: &str,
-        user_message_index: usize,
-        mentions: Vec<serde_json::Value>,
-    ) -> Result<(), llm_harness_types::SessionError> {
-        if mentions.is_empty() {
-            return Ok(());
-        }
-        self.open_runtime_session(id)
-            .await?
-            .append(SessionEntryPayload::Custom {
-                custom_type: "message_mentions".into(),
-                data: serde_json::json!({
-                    "user_message_index": user_message_index,
-                    "mentions": mentions,
-                }),
-            })
-            .await?;
-        Ok(())
-    }
-
-    pub async fn message_mentions(
-        &self,
-        id: &str,
-    ) -> Result<Vec<PersistedMessageMentions>, llm_harness_types::SessionError> {
-        let entries = self
-            .open_runtime_session(id)
-            .await?
-            .read_active_path()
-            .await?;
-        Ok(entries
-            .into_iter()
-            .filter_map(|entry| {
-                let SessionEntryPayload::Custom { custom_type, data } = entry.payload else {
-                    return None;
-                };
-                if custom_type != "message_mentions" {
-                    return None;
-                }
-                let user_message_index = data.get("user_message_index")?.as_u64()? as usize;
-                let mentions = data.get("mentions")?.as_array()?.clone();
-                Some(PersistedMessageMentions {
-                    user_message_index,
-                    mentions,
-                    timestamp: entry.timestamp,
-                })
-            })
-            .collect())
-    }
-
     pub async fn append_message_citations(
         &self,
         id: &str,
@@ -1044,6 +1028,7 @@ impl SessionPool {
         true
     }
 
+    #[cfg(test)]
     pub fn set_knowledge(
         &self,
         id: &str,
@@ -1055,20 +1040,47 @@ impl SessionPool {
             return false;
         };
 
-        let has_kb = kb.is_some();
+        entry.knowledge_bases = match (kb.clone(), embedding.clone()) {
+            (Some(id), Some(embedding)) => vec![KnowledgeSessionBinding { id, embedding }],
+            _ => vec![],
+        };
         entry.kb = kb;
         entry.embedding = embedding;
-        if has_kb {
-            entry.notebook_enabled = false;
-        }
         let kb = entry.kb.clone();
         let embedding = entry.embedding.clone();
-        let notebook_enabled = entry.notebook_enabled;
+        let knowledge_bases = entry.knowledge_bases.clone();
         drop(sessions);
         self.update_product_metadata(id, |metadata| {
             metadata.kb = kb;
             metadata.embedding = embedding;
-            metadata.notebook_enabled = notebook_enabled;
+            metadata.knowledge_bases = knowledge_bases;
+        });
+        true
+    }
+
+    pub fn set_knowledge_bases(
+        &self,
+        id: &str,
+        knowledge_bases: Vec<KnowledgeSessionBinding>,
+    ) -> bool {
+        let mut sessions = self.sessions.lock().unwrap();
+        let Some(entry) = sessions.get_mut(id) else {
+            return false;
+        };
+
+        entry.kb = knowledge_bases.first().map(|binding| binding.id.clone());
+        entry.embedding = knowledge_bases
+            .first()
+            .map(|binding| binding.embedding.clone());
+        entry.knowledge_bases = knowledge_bases;
+        let kb = entry.kb.clone();
+        let embedding = entry.embedding.clone();
+        let knowledge_bases = entry.knowledge_bases.clone();
+        drop(sessions);
+        self.update_product_metadata(id, |metadata| {
+            metadata.kb = kb;
+            metadata.embedding = embedding;
+            metadata.knowledge_bases = knowledge_bases;
         });
         true
     }
@@ -1080,17 +1092,9 @@ impl SessionPool {
         };
 
         entry.notebook_enabled = notebook_enabled;
-        if notebook_enabled {
-            entry.kb = None;
-            entry.embedding = None;
-        }
         drop(sessions);
         self.update_product_metadata(id, |metadata| {
             metadata.notebook_enabled = notebook_enabled;
-            if notebook_enabled {
-                metadata.kb = None;
-                metadata.embedding = None;
-            }
         });
         true
     }
@@ -1158,6 +1162,7 @@ impl SessionPool {
             .or_insert_with(|| ProductSessionMetadata {
                 capability: "chat".into(),
                 kb: None,
+                knowledge_bases: vec![],
                 notebook_enabled: false,
                 llm: None,
                 search: None,
@@ -1480,6 +1485,7 @@ mod tests {
             .create_with_config(SessionCreateConfig {
                 capability: "chat".into(),
                 kb: None,
+                knowledge_bases: vec![],
                 notebook_enabled: false,
                 llm: None,
                 search: None,
@@ -1721,37 +1727,6 @@ mod tests {
         assert_eq!(traces.len(), 1);
         assert_eq!(traces[0].kind, "tool_call");
         assert_eq!(traces[0].payload["tool"], "knowledge_search");
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[tokio::test]
-    async fn message_mentions_survive_pool_reopen() {
-        let root = std::env::temp_dir().join(format!("llm-tutor-test-{}", uuid::Uuid::new_v4()));
-        let pool = SessionPool::new_with_root(&root);
-        let id = pool
-            .create("chat", None, false, None, None, None)
-            .await
-            .unwrap();
-
-        pool.append_message_mentions(
-            &id,
-            1,
-            vec![serde_json::json!({
-                "id": "notebook_entry:note-1",
-                "type": "notebook_entry",
-                "target_id": "note-1",
-                "title": "Note 1"
-            })],
-        )
-        .await
-        .unwrap();
-
-        drop(pool);
-        let reopened = SessionPool::new_with_root(&root);
-        let mentions = reopened.message_mentions(&id).await.unwrap();
-        assert_eq!(mentions.len(), 1);
-        assert_eq!(mentions[0].user_message_index, 1);
-        assert_eq!(mentions[0].mentions[0]["title"], "Note 1");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -2064,7 +2039,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_pool_updates_notebook_binding_and_clears_knowledge() {
+    async fn session_pool_keeps_notebook_and_knowledge_bindings_together() {
         let pool = test_pool();
         let id = pool
             .create("chat", None, false, None, None, None)
@@ -2087,8 +2062,9 @@ mod tests {
 
         let updated = pool.get(&id).unwrap();
         assert!(updated.notebook_enabled);
-        assert!(updated.kb.is_none());
-        assert!(updated.embedding.is_none());
+        assert_eq!(updated.kb.as_deref(), Some("kb-1"));
+        assert_eq!(updated.knowledge_bases.len(), 1);
+        assert!(updated.embedding.is_some());
     }
 
     #[tokio::test]
@@ -2128,6 +2104,7 @@ mod tests {
         let entry = reopened.ensure_entry(&id).await.unwrap();
 
         assert_eq!(entry.kb.as_deref(), Some("kb-1"));
+        assert_eq!(entry.knowledge_bases.len(), 1);
         assert_eq!(
             entry.llm.as_ref().map(|config| config.provider.as_str()),
             Some("deepseek")
@@ -2171,6 +2148,7 @@ mod tests {
             .create_with_config(SessionCreateConfig {
                 capability: "chat".into(),
                 kb: None,
+                knowledge_bases: vec![],
                 notebook_enabled: false,
                 llm: None,
                 search: None,

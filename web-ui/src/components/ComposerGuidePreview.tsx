@@ -1,4 +1,4 @@
-import { ArrowUp, AtSign, Brain, Database, Paperclip } from 'lucide-react'
+import { ArrowUp, Brain, Database, Paperclip } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useI18n } from '../i18n'
 import { composerGuideControls, type ComposerGuideControl } from '../productGuide'
@@ -12,7 +12,6 @@ interface Props {
 const controlIcons = {
   attachment: <Paperclip size={18} />,
   source: <Database size={18} />,
-  mention: <AtSign size={18} />,
   model: <Brain size={16} />,
   send: <ArrowUp size={19} />,
 } satisfies Record<ComposerGuideControl, ReactNode>
@@ -82,16 +81,10 @@ const chineseCopy = {
       steps: ['点击“附件”并选择一个或多个支持的文本类文件。', '确认文件标签出现在输入框上方，再随问题一起发送。'],
     },
     source: {
-      toolbar: '不关联资料',
+      toolbar: '关联资料',
       label: '选择聊天参考内容',
-      description: '让整次聊天都能参考一个资料集或你的笔记。',
-      steps: ['先准备好资料集或笔记。', '回到聊天，从这里选择需要的内容。'],
-    },
-    mention: {
-      toolbar: '@ 笔记',
-      label: '使用 @ 指定笔记',
-      description: '直接告诉助手这条消息要看哪篇笔记。',
-      steps: ['点击 @ 按钮并搜索笔记。', '选择目标后会出现引用标签，再输入具体要求并发送。'],
+      description: '让整次聊天同时参考多个资料集和你的笔记。',
+      steps: ['先准备好资料集或笔记。', '点击需要的内容即可选中，再点一次即可取消。'],
     },
     model: {
       toolbar: '选择模型',
@@ -103,7 +96,7 @@ const chineseCopy = {
       toolbar: '发送',
       label: '发送与停止',
       description: '点击箭头发送；回答时可在同一位置停止。',
-      steps: ['输入文字，或添加附件/@ 引用后点击箭头。', '生成过程中需要中止时，点击同一位置的停止按钮。'],
+      steps: ['输入文字，或添加附件后点击箭头。', '生成过程中需要中止时，点击同一位置的停止按钮。'],
     },
   },
 }
@@ -118,16 +111,10 @@ const englishCopy: typeof chineseCopy = {
       steps: ['Click Attachments and choose one or more supported text files.', 'Confirm their chips appear above the toolbar, then send them with your question.'],
     },
     source: {
-      toolbar: 'No sources',
+      toolbar: 'Sources',
       label: 'Choose conversation references',
-      description: 'Let the whole conversation reference one source collection or your notes.',
-      steps: ['Prepare a source collection or notes first.', 'Return to Chat and choose what you need here.'],
-    },
-    mention: {
-      toolbar: '@ Notes',
-      label: 'Choose a note with @',
-      description: 'Tell the Assistant exactly which note to read for this message.',
-      steps: ['Click @ Notes and search.', 'Select a target, confirm its chip appears, and add your instruction.'],
+      description: 'Let the whole conversation reference multiple source collections and your notes.',
+      steps: ['Prepare source collections or notes first.', 'Click an item to select it; click it again to remove it.'],
     },
     model: {
       toolbar: 'Select model',
@@ -139,7 +126,7 @@ const englishCopy: typeof chineseCopy = {
       toolbar: 'Send',
       label: 'Send and stop',
       description: 'Click the arrow to send. Use the same spot to stop an answer.',
-      steps: ['Enter text or add attachments/@ references, then click the arrow.', 'Click the stop control in the same location if the run should end early.'],
+      steps: ['Enter text or add attachments, then click the arrow.', 'Click the stop control in the same location if the run should end early.'],
     },
   },
 }

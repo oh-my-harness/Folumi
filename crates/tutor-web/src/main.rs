@@ -66,9 +66,6 @@ async fn main() -> anyhow::Result<()> {
             knowledge.clone(),
             notebook.clone(),
         ))
-        .merge(routes::notebook_mentions::notebook_mentions_router(
-            notebook.clone(),
-        ))
         .merge(routes::settings::settings_router(settings.clone()))
         .merge(routes::memory::memory_router(memory.clone(), pool.clone()))
         .merge(routes::sessions::sessions_router(

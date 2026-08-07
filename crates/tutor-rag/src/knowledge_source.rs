@@ -17,6 +17,7 @@ pub const COURSE_KNOWLEDGE_SOURCE_ID: &str = "course_knowledge";
 pub const AGENT_KNOWLEDGE_NAMESPACE: &str = "llm-tutor.agent-knowledge";
 pub const COURSE_KNOWLEDGE_NAMESPACE: &str = AGENT_KNOWLEDGE_NAMESPACE;
 pub const KNOWLEDGE_BASE_SCOPE_ATTRIBUTE: &str = "knowledge_base_id";
+pub const KNOWLEDGE_BASE_IDS_SCOPE_ATTRIBUTE: &str = "knowledge_base_ids";
 
 const MAX_SEARCH_LIMIT: usize = 50;
 const MAX_SNIPPET_BYTES: usize = 600;
@@ -214,6 +215,176 @@ impl KnowledgeSource for LanceDbKnowledgeSource {
     }
 }
 
+#[derive(Clone)]
+pub struct MultiLanceDbKnowledgeSource {
+    sources: Vec<LanceDbKnowledgeSource>,
+    descriptor: KnowledgeSourceDescriptor,
+}
+
+impl MultiLanceDbKnowledgeSource {
+    pub fn new(sources: Vec<(LanceDbRag, String)>) -> Self {
+        Self {
+            sources: sources
+                .into_iter()
+                .map(|(rag, knowledge_base_id)| LanceDbKnowledgeSource::new(rag, knowledge_base_id))
+                .collect(),
+            descriptor: KnowledgeSourceDescriptor {
+                id: COURSE_KNOWLEDGE_SOURCE_ID.into(),
+                name: "Selected sources".into(),
+                description: "The source collections selected for this conversation.".into(),
+                domains: vec!["course".into()],
+                capabilities: BTreeSet::from([
+                    KnowledgeCapability::Search,
+                    KnowledgeCapability::Read,
+                    KnowledgeCapability::Revisioned,
+                    KnowledgeCapability::ChunkRead,
+                ]),
+                freshness: FreshnessClass::NearRealTime,
+                filter_fields: vec![],
+            },
+        }
+    }
+
+    fn authorize(
+        &self,
+        ctx: KnowledgeRequestContext<'_>,
+        abort: &CancellationToken,
+    ) -> Result<(), KnowledgeError> {
+        if abort.is_cancelled() {
+            return Err(KnowledgeError::Aborted);
+        }
+        let scoped = ctx
+            .access
+            .scope
+            .attributes
+            .get(KNOWLEDGE_BASE_IDS_SCOPE_ATTRIBUTE)
+            .and_then(|value| serde_json::from_str::<Vec<String>>(value).ok())
+            .unwrap_or_default();
+        let expected = self
+            .sources
+            .iter()
+            .map(|source| source.knowledge_base_id().to_string())
+            .collect::<BTreeSet<_>>();
+        if ctx.access.scope.namespace != COURSE_KNOWLEDGE_NAMESPACE
+            || scoped.into_iter().collect::<BTreeSet<_>>() != expected
+        {
+            return Err(KnowledgeError::Unauthorized);
+        }
+        Ok(())
+    }
+
+    fn child_access(
+        &self,
+        access: &llm_harness_runtime_knowledge::KnowledgeAccessContext,
+        knowledge_base_id: &str,
+    ) -> llm_harness_runtime_knowledge::KnowledgeAccessContext {
+        let mut child = access.clone();
+        child.scope.attributes.insert(
+            KNOWLEDGE_BASE_SCOPE_ATTRIBUTE.into(),
+            knowledge_base_id.into(),
+        );
+        child
+    }
+}
+
+impl KnowledgeSource for MultiLanceDbKnowledgeSource {
+    fn descriptor(&self) -> &KnowledgeSourceDescriptor {
+        &self.descriptor
+    }
+
+    fn search<'a>(
+        &'a self,
+        ctx: KnowledgeRequestContext<'a>,
+        request: SourceSearchRequest,
+        abort: CancellationToken,
+    ) -> BoxFuture<'a, Result<SourceSearchPage, KnowledgeError>> {
+        Box::pin(async move {
+            self.authorize(ctx, &abort)?;
+            let limit = request.limit.min(MAX_SEARCH_LIMIT);
+            let mut hits = Vec::new();
+            for source in &self.sources {
+                let child_access = self.child_access(ctx.access, source.knowledge_base_id());
+                let child_context = KnowledgeRequestContext {
+                    run: ctx.run,
+                    access: &child_access,
+                };
+                let page = source
+                    .search(child_context, request.clone(), abort.clone())
+                    .await?;
+                hits.extend(page.hits.into_iter().map(|mut hit| {
+                    hit.reference.item_id =
+                        encode_scoped_item_id(source.knowledge_base_id(), &hit.reference.item_id);
+                    hit
+                }));
+            }
+            hits.sort_by(|left, right| {
+                right
+                    .score
+                    .partial_cmp(&left.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            hits.truncate(limit);
+            Ok(SourceSearchPage {
+                hits,
+                next_cursor: None,
+            })
+        })
+    }
+
+    fn read<'a>(
+        &'a self,
+        ctx: KnowledgeRequestContext<'a>,
+        request: KnowledgeReadRequest,
+        abort: CancellationToken,
+    ) -> BoxFuture<'a, Result<KnowledgeContent, KnowledgeError>> {
+        Box::pin(async move {
+            self.authorize(ctx, &abort)?;
+            let (knowledge_base_id, item_id) = decode_scoped_item_id(&request.reference.item_id)
+                .ok_or(KnowledgeError::NotFound)?;
+            let source = self
+                .sources
+                .iter()
+                .find(|source| source.knowledge_base_id() == knowledge_base_id)
+                .ok_or(KnowledgeError::NotFound)?;
+            let child_access = self.child_access(ctx.access, knowledge_base_id);
+            let child_context = KnowledgeRequestContext {
+                run: ctx.run,
+                access: &child_access,
+            };
+            let original_reference = request.reference.clone();
+            let mut content = source
+                .read(
+                    child_context,
+                    KnowledgeReadRequest {
+                        reference: KnowledgeRef {
+                            item_id: item_id.into(),
+                            ..request.reference
+                        },
+                        selector: request.selector,
+                        max_bytes: request.max_bytes,
+                    },
+                    abort,
+                )
+                .await?;
+            content.reference = original_reference;
+            Ok(content)
+        })
+    }
+}
+
+fn encode_scoped_item_id(knowledge_base_id: &str, item_id: &str) -> String {
+    format!("{}:{knowledge_base_id}{item_id}", knowledge_base_id.len())
+}
+
+fn decode_scoped_item_id(value: &str) -> Option<(&str, &str)> {
+    let (length, rest) = value.split_once(':')?;
+    let length = length.parse::<usize>().ok()?;
+    if rest.len() < length || !rest.is_char_boundary(length) {
+        return None;
+    }
+    Some(rest.split_at(length))
+}
+
 fn backend_error(error: anyhow::Error) -> KnowledgeError {
     KnowledgeError::Backend(format!("{error:#}"))
 }
@@ -263,6 +434,15 @@ mod tests {
         scope
             .attributes
             .insert(KNOWLEDGE_BASE_SCOPE_ATTRIBUTE.into(), kb.into());
+        KnowledgeAccessContext::new(scope, PrincipalRef::new("local-test-user", "test"))
+    }
+
+    fn multi_access(kbs: &[&str]) -> KnowledgeAccessContext {
+        let mut scope = KnowledgeScope::new(COURSE_KNOWLEDGE_NAMESPACE);
+        scope.attributes.insert(
+            KNOWLEDGE_BASE_IDS_SCOPE_ATTRIBUTE.into(),
+            serde_json::to_string(kbs).unwrap(),
+        );
         KnowledgeAccessContext::new(scope, PrincipalRef::new("local-test-user", "test"))
     }
 
@@ -403,6 +583,66 @@ mod tests {
         };
 
         verify_source_contract(&source, &run, &case).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn multi_source_searches_and_reads_across_selected_knowledge_bases() {
+        let temp = tempfile::tempdir().unwrap();
+        let rag = LanceDbRag::new(temp.path(), hash_config());
+        rag.ingest_text("kb-a", "doc-a::a.md", "alpha reference material")
+            .await
+            .unwrap();
+        rag.ingest_text("kb-b", "doc-b::b.md", "beta reference material")
+            .await
+            .unwrap();
+        let source = MultiLanceDbKnowledgeSource::new(vec![
+            (rag.clone(), "kb-a".into()),
+            (rag, "kb-b".into()),
+        ]);
+        let allowed = multi_access(&["kb-a", "kb-b"]);
+        let run = RunContext::new(RunRequest::from_text("reference material"));
+        let page = source
+            .search(
+                KnowledgeRequestContext {
+                    run: &run,
+                    access: &allowed,
+                },
+                SourceSearchRequest {
+                    query: "reference material".into(),
+                    filters: vec![],
+                    limit: 10,
+                    cursor: None,
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        let knowledge_base_ids = page
+            .hits
+            .iter()
+            .filter_map(|hit| hit.metadata.get("knowledge_base_id")?.as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(knowledge_base_ids, BTreeSet::from(["kb-a", "kb-b"]));
+
+        for hit in page.hits {
+            let content = source
+                .read(
+                    KnowledgeRequestContext {
+                        run: &run,
+                        access: &allowed,
+                    },
+                    KnowledgeReadRequest {
+                        reference: hit.reference,
+                        selector: ContentSelector::Document,
+                        max_bytes: 4096,
+                    },
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            assert!(!content.blocks.is_empty());
+        }
     }
 
     #[tokio::test]

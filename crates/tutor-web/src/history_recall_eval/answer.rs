@@ -255,7 +255,7 @@ async fn locomo_agent_answer_accuracy_benchmark() {
             let request = crate::routes::ws::agent_run_request(
                 answer_prompt(qa),
                 &answer_session_id,
-                None,
+                &[],
                 false,
                 true,
             )
