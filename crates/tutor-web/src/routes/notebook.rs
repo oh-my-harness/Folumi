@@ -15,10 +15,12 @@ use crate::notebook_store::{
     ExactNotebookMutationOutcome, NotebookEntryInput, NotebookEntryType, NotebookEntryUpdate,
     NotebookStore, notebook_entry_revision,
 };
+use crate::session::SessionPool;
 
 #[derive(Clone)]
 struct NotebookState {
     store: Arc<NotebookStore>,
+    sessions: Option<Arc<SessionPool>>,
 }
 
 #[derive(Deserialize)]
@@ -237,6 +239,9 @@ async fn delete_vault(
 ) -> impl IntoResponse {
     match state.store.remove_vault(&vault_id) {
         Ok(_) => {
+            if let Some(sessions) = &state.sessions {
+                sessions.clear_notebook_vault_bindings(&vault_id);
+            }
             let _ = state.store.start_watcher();
             (
                 StatusCode::OK,
@@ -654,7 +659,14 @@ async fn export_obsidian_vault_zip(
 }
 
 pub fn notebook_router(store: Arc<NotebookStore>) -> Router {
-    let state = NotebookState { store };
+    notebook_router_with_sessions(store, None)
+}
+
+pub fn notebook_router_with_sessions(
+    store: Arc<NotebookStore>,
+    sessions: Option<Arc<SessionPool>>,
+) -> Router {
+    let state = NotebookState { store, sessions };
     Router::new()
         .route("/api/notebook/entries", get(list_tree).post(create_entry))
         .route("/api/notebook/entries/full", get(list_entries))

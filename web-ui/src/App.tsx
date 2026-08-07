@@ -568,8 +568,10 @@ export default function App() {
     setNotebookEntryPaths(((data.entries ?? []) as Array<{ path?: string | null }>)
       .map((entry) => entry.path ?? '')
       .filter(Boolean))
+    const nextVaults = (data.vaults ?? []) as NotebookVaultInfo[]
     setNotebookVault((data.vault ?? null) as NotebookVaultInfo | null)
-    setNotebookVaults((data.vaults ?? []) as NotebookVaultInfo[])
+    setNotebookVaults(nextVaults)
+    setSelectedNotebookVaultId((current) => current && !nextVaults.some((vault) => vault.id === current) ? null : current)
   }, [])
 
   useEffect(() => {

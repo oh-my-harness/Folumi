@@ -1094,6 +1094,12 @@ export function SettingsPage({
                 </div>
 
                 <div className="space-y-2">
+                  {notebookVaults.length === 0 && (
+                    <div className="rounded-xl border border-dashed border-sky-200 bg-sky-50/40 px-4 py-5 text-center">
+                      <div className="text-sm font-medium text-slate-700">还没有笔记库</div>
+                      <div className="mt-1 text-xs text-slate-500">添加一个文件夹后即可开始使用笔记。</div>
+                    </div>
+                  )}
                   {notebookVaults.map((vault) => (
                     <div key={vault.id} className={`rounded-lg border p-3 ${vault.active ? 'border-blue-200 bg-blue-50/50' : 'border-gray-200'}`}>
                       <div className="flex items-start gap-3">
@@ -1131,7 +1137,7 @@ export function SettingsPage({
                             <button type="button" className="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-white" disabled={notebookLoading} onClick={() => void updateNotebookVault(vault.id, { active: true })}>切换</button>
                           )}
                           <button type="button" className="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-white" disabled={notebookLoading} onClick={() => setEditingVault({ id: vault.id, name: vault.name })}>重命名</button>
-                          <button type="button" className="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-40" disabled={notebookLoading || notebookVaults.length <= 1} onClick={() => setPendingVaultRemoval(vault.id)}>移除</button>
+                          <button type="button" className="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-40" disabled={notebookLoading} onClick={() => setPendingVaultRemoval(vault.id)}>移除</button>
                         </div>
                       </div>
                       {pendingVaultRemoval === vault.id && (
@@ -1162,7 +1168,7 @@ export function SettingsPage({
                   <button
                     type="button"
                     className="mt-4 inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400"
-                    disabled={notebookLoading}
+                    disabled={notebookLoading || notebookVaults.length === 0}
                     onClick={() => importInputRef.current?.click()}
                   >
                     <Upload size={15} />
@@ -1184,7 +1190,7 @@ export function SettingsPage({
                     <button
                       type="button"
                       className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={notebookLoading}
+                      disabled={notebookLoading || notebookVaults.length === 0}
                       onClick={() => void exportNotebookArchive('backup')}
                     >
                       <Download size={15} />
@@ -1193,7 +1199,7 @@ export function SettingsPage({
                     <button
                       type="button"
                       className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={notebookLoading}
+                      disabled={notebookLoading || notebookVaults.length === 0}
                       onClick={() => void exportNotebookArchive('vault')}
                     >
                       <BookMarked size={15} />

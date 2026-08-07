@@ -1149,6 +1149,27 @@ impl SessionPool {
         true
     }
 
+    pub fn clear_notebook_vault_bindings(&self, vault_id: &str) -> usize {
+        for entry in self.sessions.lock().unwrap().values_mut() {
+            if entry.notebook_vault_id.as_deref() == Some(vault_id) {
+                entry.notebook_enabled = false;
+                entry.notebook_vault_id = None;
+            }
+        }
+
+        let mut metadata = self.product_metadata.lock().unwrap();
+        let mut cleared = 0;
+        for entry in metadata.values_mut() {
+            if entry.notebook_vault_id.as_deref() == Some(vault_id) {
+                entry.notebook_enabled = false;
+                entry.notebook_vault_id = None;
+                cleared += 1;
+            }
+        }
+        let _ = persist_product_metadata(&self.product_metadata_path, &metadata);
+        cleared
+    }
+
     pub fn set_llm(&self, id: &str, llm: Option<LlmSessionConfig>) -> bool {
         let mut sessions = self.sessions.lock().unwrap();
         let Some(entry) = sessions.get_mut(id) else {
@@ -2285,6 +2306,25 @@ mod tests {
                 .as_deref(),
             Some("default")
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn removing_a_vault_clears_persisted_session_bindings() {
+        let root = std::env::temp_dir().join(format!("llm-tutor-test-{}", uuid::Uuid::new_v4()));
+        let pool = SessionPool::new_with_root(&root);
+        let id = pool
+            .create("chat", None, true, None, None, None)
+            .await
+            .unwrap();
+        assert!(pool.set_notebook_vault(&id, Some("vault-old".into())));
+        drop(pool);
+
+        let reopened = SessionPool::new_with_root(&root);
+        assert_eq!(reopened.clear_notebook_vault_bindings("vault-old"), 1);
+        let entry = reopened.ensure_entry(&id).await.unwrap();
+        assert!(!entry.notebook_enabled);
+        assert!(entry.notebook_vault_id.is_none());
         let _ = std::fs::remove_dir_all(root);
     }
 

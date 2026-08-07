@@ -507,7 +507,13 @@ async fn update_session(
             return session_not_found();
         };
         if notebook_enabled {
-            let active_vault_id = state.notebook.vault_info().id;
+            let Some(active_vault_id) = state.notebook.vault_info().map(|vault| vault.id) else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "no notebook vault is configured" })),
+                )
+                    .into_response();
+            };
             if !pool.set_notebook_vault(&id, Some(active_vault_id)) {
                 return (
                     StatusCode::NOT_FOUND,
@@ -873,7 +879,9 @@ fn notebook_vault_binding(
     if !enabled {
         return Ok(None);
     }
-    let id = requested.unwrap_or_else(|| notebook.vault_info().id);
+    let id = requested
+        .or_else(|| notebook.vault_info().map(|vault| vault.id))
+        .ok_or_else(|| anyhow::anyhow!("no notebook vault is configured"))?;
     notebook
         .list_vaults()
         .iter()

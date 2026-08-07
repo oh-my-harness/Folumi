@@ -658,6 +658,7 @@ export function NotesPage({ language, focusTarget, onManageVaults }: Props) {
   }, [english, expandFolderPath, recentlyDeleted])
 
   const openRootContextMenu = useCallback((event: MouseEvent) => {
+    if (vaults.length === 0) return
     const target = event.target
     if (target instanceof Element && target.closest('[data-notebook-tree-row="true"]')) return
     const opened = openDesktopContextMenu(event.clientX, event.clientY, [
@@ -669,7 +670,7 @@ export function NotesPage({ language, focusTarget, onManageVaults }: Props) {
       }] : []),
     ])
     if (opened) event.preventDefault()
-  }, [createEntry, english, startCreateFolder, watch?.root])
+  }, [createEntry, english, startCreateFolder, vaults.length, watch?.root])
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-white">
@@ -686,38 +687,46 @@ export function NotesPage({ language, focusTarget, onManageVaults }: Props) {
         <div ref={vaultMenuRef} className="relative">
           <button
             type="button"
-            className="inline-flex h-9 max-w-64 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+            className="group inline-flex h-9 max-w-64 items-center gap-2 rounded-full border border-sky-100 bg-gradient-to-r from-sky-50 to-indigo-50/70 px-2.5 pr-3 text-sm font-medium text-slate-700 transition hover:border-sky-200 hover:from-sky-100 hover:to-indigo-50 disabled:opacity-50"
             disabled={loading}
             aria-expanded={vaultMenuOpen}
-            onClick={() => setVaultMenuOpen((open) => !open)}
+            onClick={() => {
+              if (vaults.length === 0 && onManageVaults) {
+                onManageVaults()
+                return
+              }
+              setVaultMenuOpen((open) => !open)
+            }}
           >
-            <FolderOpen size={16} className="shrink-0 text-blue-600" />
-            <span className="truncate">{vaults.find((vault) => vault.active)?.name ?? (english ? 'Notes' : '笔记库')}</span>
-            <ChevronDown size={15} className="shrink-0 text-gray-400" />
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-sky-600 shadow-sm shadow-sky-100">
+              {vaults.length === 0 ? <Plus size={14} /> : <FolderOpen size={14} />}
+            </span>
+            <span className="truncate">{vaults.find((vault) => vault.active)?.name ?? (english ? 'Add note library' : '添加笔记库')}</span>
+            {vaults.length > 0 && <ChevronDown size={14} className="shrink-0 text-slate-400 transition group-hover:text-sky-600" />}
           </button>
           {vaultMenuOpen && (
-            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 overflow-hidden rounded-xl border border-gray-200 bg-white p-2 shadow-xl">
+            <div className="absolute right-0 top-[calc(100%+0.55rem)] z-50 w-64 overflow-hidden rounded-2xl border border-slate-100 bg-white/95 p-2 shadow-[0_16px_45px_-18px_rgba(30,64,175,0.3)] backdrop-blur">
               {vaults.map((vault) => (
                 <button
                   key={vault.id}
                   type="button"
                   disabled={!vault.available}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${vault.active ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${vault.active ? 'bg-sky-50 text-sky-800' : 'text-slate-700 hover:bg-slate-50'}`}
                   onClick={() => void switchVault(vault.id)}
                   title={vault.root}
                 >
-                  <Folder size={16} className="shrink-0" />
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${vault.active ? 'bg-white text-sky-600 shadow-sm' : 'bg-slate-50 text-slate-400'}`}><Folder size={15} /></span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{vault.name}</span>
-                    <span className="block truncate text-xs text-gray-400">{vault.available ? `${vault.entries} ${english ? 'notes' : '篇笔记'}` : (english ? 'Unavailable' : '无法访问')}</span>
+                    <span className="mt-0.5 block truncate text-xs text-slate-400">{vault.available ? `${vault.entries} ${english ? 'notes' : '篇笔记'}` : (english ? 'Unavailable' : '无法访问')}</span>
                   </span>
-                  {vault.active && <span className="h-2 w-2 rounded-full bg-blue-600" />}
+                  {vault.active && <span className="h-2 w-2 rounded-full bg-sky-500 ring-4 ring-sky-100" />}
                 </button>
               ))}
               {onManageVaults && (
                 <button
                   type="button"
-                  className="mt-1 flex w-full items-center gap-3 border-t border-gray-100 px-3 py-2.5 text-left text-sm text-gray-600 hover:bg-gray-50"
+                  className="mt-1 flex w-full items-center gap-3 border-t border-slate-100 px-3 py-2.5 text-left text-sm text-slate-500 transition hover:bg-slate-50 hover:text-sky-700"
                   onClick={() => {
                     setVaultMenuOpen(false)
                     onManageVaults()
@@ -744,10 +753,10 @@ export function NotesPage({ language, focusTarget, onManageVaults }: Props) {
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <button className={compactButtonClassName} type="button" disabled={loading} onClick={() => void createEntry()}>
+              <button className={compactButtonClassName} type="button" disabled={loading || vaults.length === 0} onClick={() => void createEntry()}>
                 <Plus size={14} />{english ? 'New note' : '新建笔记'}
               </button>
-              <button className={compactButtonClassName} type="button" disabled={loading} onClick={() => startCreateFolder()}>
+              <button className={compactButtonClassName} type="button" disabled={loading || vaults.length === 0} onClick={() => startCreateFolder()}>
                 <Folder size={14} />{english ? 'New folder' : '新建目录'}
               </button>
             </div>
@@ -830,6 +839,8 @@ export function NotesPage({ language, focusTarget, onManageVaults }: Props) {
           onCreateEntry={() => void createEntry()}
           onCreateLinkedEntry={(title) => void createEntry(undefined, title)}
           onSelectEntry={setActiveId}
+          hasVault={vaults.length > 0}
+          onManageVaults={onManageVaults}
           flushToken={editorFlushToken}
           onFlushComplete={(token, saved) => {
             if (token !== editorFlushToken) return
@@ -907,6 +918,8 @@ function NotebookEditor({
   onCreateEntry,
   onCreateLinkedEntry,
   onSelectEntry,
+  hasVault,
+  onManageVaults,
   flushToken,
   onFlushComplete,
 }: {
@@ -916,6 +929,8 @@ function NotebookEditor({
   onCreateEntry: () => void
   onCreateLinkedEntry: (title: string) => void
   onSelectEntry: (id: string) => void
+  hasVault: boolean
+  onManageVaults?: () => void
   flushToken: number
   onFlushComplete: (token: number, saved: boolean) => void
 }) {
@@ -931,6 +946,22 @@ function NotebookEditor({
   }, [entry])
 
   if (!entry) {
+    if (!hasVault) {
+      return (
+        <section className="flex min-w-0 flex-1 items-center justify-center bg-gradient-to-b from-sky-50/30 to-white px-6">
+          <div className="max-w-sm text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-sky-600"><FolderOpen size={26} /></div>
+            <h2 className="mt-5 text-xl font-semibold text-slate-900">{english ? 'Add a note library' : '添加一个笔记库'}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{english ? 'Choose a folder to start writing and organizing notes.' : '选择一个文件夹，就可以开始记录和整理笔记。'}</p>
+            {onManageVaults && (
+              <button className={`${primaryCompactButtonClassName} mx-auto mt-5 px-4`} type="button" onClick={onManageVaults}>
+                <Plus size={15} />{english ? 'Add note library' : '添加笔记库'}
+              </button>
+            )}
+          </div>
+        </section>
+      )
+    }
     return (
       <section className="flex min-w-0 flex-1 items-center justify-center px-6">
         <div className="max-w-md text-center">
