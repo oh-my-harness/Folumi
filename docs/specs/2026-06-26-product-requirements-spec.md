@@ -178,7 +178,7 @@ The retained Notebook workspace capabilities are recorded in
 ## 6. Settings, Privacy, and Portability
 
 - **REQ-600** Users shall configure LLM, embedding, search, appearance, Note
-  Vault, and tool governance through Settings; Assistant setup, Memory policy,
+  Vault through Settings; Assistant setup, Memory policy,
   and Personal information shall be managed from the standalone
   Personalization workspace.
 - **REQ-601** Product data shall remain local unless a configured provider or
@@ -189,6 +189,9 @@ The retained Notebook workspace capabilities are recorded in
   Knowledge Base or Memory as primary navigation labels.
 - **REQ-603** Sources, Notes, settings, sessions, and Memory shall have explicit
   preservation or export behavior.
+- **REQ-604** Settings shall not expose a standalone Permissions & Data page.
+  Runtime safety checks remain enforced internally, while the desktop app owns
+  its local data directory without requiring a dedicated settings shortcut.
 
 ## 7. Runtime Boundary
 

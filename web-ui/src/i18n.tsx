@@ -44,7 +44,6 @@ export type TranslationKey =
   | 'settings.tabs.llm'
   | 'settings.tabs.embedding'
   | 'settings.tabs.search'
-  | 'settings.tabs.governance'
   | 'settings.tabs.help'
   | 'settings.appearance.title'
   | 'settings.appearance.description'
@@ -57,7 +56,6 @@ export type TranslationKey =
   | 'settings.llm.description'
   | 'settings.embedding.description'
   | 'settings.search.description'
-  | 'settings.governance.description'
   | 'settings.help.description'
   | 'settings.language.title'
   | 'settings.language.description.zh'
@@ -108,7 +106,6 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.tabs.llm': 'LLM',
     'settings.tabs.embedding': '嵌入模型',
     'settings.tabs.search': '联网搜索',
-    'settings.tabs.governance': '权限与数据',
     'settings.tabs.help': '帮助',
     'settings.appearance.title': '界面外观',
     'settings.appearance.description': '调整语言和主题。',
@@ -121,7 +118,6 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.llm.description': '添加和选择回答问题的模型。',
     'settings.embedding.description': '设置资料查找所需的模型。',
     'settings.search.description': '设置助手使用的网页搜索服务。',
-    'settings.governance.description': '管理操作确认和本地数据。',
     'settings.help.description': '查看入门说明和常用操作。',
     'settings.language.title': '界面语言',
     'settings.language.description.zh': '当前使用中文界面。',
@@ -171,7 +167,6 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.tabs.llm': 'LLM',
     'settings.tabs.embedding': 'Embedding models',
     'settings.tabs.search': 'Web search',
-    'settings.tabs.governance': 'Permissions & data',
     'settings.tabs.help': 'Help',
     'settings.appearance.title': 'Appearance',
     'settings.appearance.description': 'Choose a language and theme.',
@@ -184,7 +179,6 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'settings.llm.description': 'Add and choose models for conversations.',
     'settings.embedding.description': 'Set up the model used to search sources.',
     'settings.search.description': 'Choose a service for searching the web.',
-    'settings.governance.description': 'Manage confirmations and local data.',
     'settings.help.description': 'View getting-started help and common tasks.',
     'settings.language.title': 'Interface language',
     'settings.language.description.zh': 'Chinese interface is active.',

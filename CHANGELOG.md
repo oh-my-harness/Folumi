@@ -11,6 +11,7 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ### Changed
 
+- Removed the standalone Permissions & Data settings tab and its local-data-directory shortcut.
 - Removed Notebook import, Markdown/ZIP export, and Obsidian Vault export. A
   Notebook library is now managed directly as a user-selected local folder.
 - Replaced the conversation’s single-source and per-message `@` controls with

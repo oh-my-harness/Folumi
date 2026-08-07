@@ -34,7 +34,7 @@
 | 资料（Sources） | 导入和管理只读参考资料，支持 RAG 检索、原文读取、证据引用和来源定位；内部沿用 Knowledge Base 领域模型。 |
 | 笔记（Notebook） | 用户拥有的本地 Markdown 内容，可记录、管理、查看和链接；助手产出只有经用户确认才写入。 |
 | 个性化（Personalization） | “关于我”管理个人信息与参考过往对话，“助手设定”管理助手名称和行为；内部沿用 Memory、Saved Memory 与 History Recall 契约。 |
-| Settings | 模型、embedding、搜索、数据目录、工具权限、外观和 Notebook 存储。 |
+| Settings | 模型、embedding、搜索、外观和 Notebook 存储。 |
 
 目标主导航包含 **助手、资料、笔记、个性化、设置**。资料只管理用于 RAG 的只读来源；笔记是记录、管理和查看 Markdown 内容的独立工作区；个性化统一承载个人信息、过往对话引用权限和助手设定。三个长期数据域保持清晰的数据边界。Quiz、Space、Student Profile、多 Tutor 和独立 Research 模式属于冻结范围。
 

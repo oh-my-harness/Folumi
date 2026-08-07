@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import {
-  Activity,
   BookMarked,
   Brain,
   Check,
@@ -11,7 +10,6 @@ import {
   Palette,
   Plus,
   Moon,
-  SlidersHorizontal,
   Sun,
   Trash2,
   type LucideIcon,
@@ -34,7 +32,7 @@ import type {
   SearchProvider,
   ThemeId,
 } from '../settings'
-import { chooseDesktopDirectory, getDesktopDataDir, openDesktopDataDir } from '../api'
+import { chooseDesktopDirectory } from '../api'
 import type { ProductGuideDestination } from '../productGuide'
 import { ProductGuide } from './ProductGuide'
 
@@ -61,7 +59,7 @@ const providerOptions: { value: LlmProvider; label: string; description: string 
   },
 ]
 
-export type SettingsTab = 'appearance' | 'llm' | 'embedding' | 'search' | 'notebook' | 'governance' | 'help'
+export type SettingsTab = 'appearance' | 'llm' | 'embedding' | 'search' | 'notebook' | 'help'
 type ConfigTestState = {
   status: 'running' | 'ok' | 'error'
   message: string
@@ -84,7 +82,6 @@ const settingsTabs: Array<{
     | 'settings.tabs.llm'
     | 'settings.tabs.embedding'
     | 'settings.tabs.search'
-    | 'settings.tabs.governance'
     | 'settings.tabs.help'
     | 'settings.tabs.notebook'
   icon: LucideIcon
@@ -94,7 +91,6 @@ const settingsTabs: Array<{
   { key: 'embedding', labelKey: 'settings.tabs.embedding', icon: Database },
   { key: 'search', labelKey: 'settings.tabs.search', icon: Globe2 },
   { key: 'notebook', labelKey: 'settings.tabs.notebook', icon: BookMarked },
-  { key: 'governance', labelKey: 'settings.tabs.governance', icon: SlidersHorizontal },
   { key: 'help', labelKey: 'settings.tabs.help', icon: CircleHelp },
 ]
 
@@ -109,27 +105,11 @@ export function SettingsPage({
 }: Props) {
   const { t } = useI18n()
   const [testState, setTestState] = useState<Record<string, ConfigTestState>>({})
-  const [dataDir, setDataDir] = useState<string | null>(null)
-  const [dataDirError, setDataDirError] = useState('')
   const [notebookVaults, setNotebookVaults] = useState<NotebookVault[]>([])
   const [editingVault, setEditingVault] = useState<{ id: string; name: string } | null>(null)
   const [pendingVaultRemoval, setPendingVaultRemoval] = useState<string | null>(null)
   const [notebookStatus, setNotebookStatus] = useState('笔记设置已就绪')
   const [notebookLoading, setNotebookLoading] = useState(false)
-
-  useEffect(() => {
-    let mounted = true
-    getDesktopDataDir()
-      .then((value) => {
-        if (mounted) setDataDir(value)
-      })
-      .catch((error) => {
-        if (mounted) setDataDirError(error instanceof Error ? error.message : 'Failed to load data directory')
-      })
-    return () => {
-      mounted = false
-    }
-  }, [])
 
   const refreshNotebookStatus = async () => {
     setNotebookLoading(true)
@@ -447,15 +427,6 @@ export function SettingsPage({
         status: 'error',
         message: error instanceof Error ? error.message : 'Embedding test failed',
       })
-    }
-  }
-
-  const handleOpenDataDir = async () => {
-    setDataDirError('')
-    try {
-      await openDesktopDataDir()
-    } catch (error) {
-      setDataDirError(error instanceof Error ? error.message : 'Failed to open data directory')
     }
   }
 
@@ -1036,44 +1007,6 @@ export function SettingsPage({
             </SettingsPanel>
           )}
 
-          {activeTab === 'governance' && (
-            <SettingsPanel icon={Activity} title="权限与数据" description="管理操作确认和本地数据。">
-              <label className="flex items-center gap-3 text-sm text-gray-800">
-                <input
-                  className="h-4 w-4"
-                  type="checkbox"
-                  checked={settings.requireApproval}
-                  onChange={(event) => update('requireApproval', event.target.checked)}
-                />
-                执行操作前先询问我
-              </label>
-
-              <div className="rounded-lg border border-gray-200 bg-white px-4 py-4">
-                <div className="flex flex-wrap items-start gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-50 text-blue-600">
-                    <FolderOpen size={18} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-gray-900">本地数据目录</div>
-                    <div className="mt-1 break-all font-mono text-xs text-gray-500">
-                      {dataDir ?? '仅桌面应用可用；浏览器开发模式使用仓库内 .llm-tutor。'}
-                    </div>
-                    {dataDirError && <div className="mt-2 text-xs text-red-600">{dataDirError}</div>}
-                  </div>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!dataDir}
-                    onClick={handleOpenDataDir}
-                  >
-                    <FolderOpen size={15} />
-                    打开
-                  </button>
-                </div>
-              </div>
-            </SettingsPanel>
-          )}
-
           {activeTab === 'help' && (
             <ProductGuide
               onNavigate={onGuideNavigate}
@@ -1145,7 +1078,6 @@ function tabDescription(tab: SettingsTab, t: (key: TranslationKey) => string) {
     embedding: 'settings.embedding.description',
     search: 'settings.search.description',
     notebook: 'settings.notebook.description',
-    governance: 'settings.governance.description',
     help: 'settings.help.description',
   }
   return t(keyByTab[tab])
