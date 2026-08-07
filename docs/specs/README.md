@@ -29,6 +29,8 @@ Current product and runtime-facing specs live here.
   普通用户文案，并明确用户词汇与内部技术词汇的边界。
 - `2026-08-07-conversation-source-selection-decision.md` 规定会话移除消息级
   `@` 功能，并通过统一的“关联资料”入口多选资料集和笔记。
+- `2026-08-08-multiple-notebook-vaults-decision.md` 规定设置可管理多个
+  “笔记库”、笔记页使用顶部切换器，并让会话绑定具体笔记库 ID。
 - `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
   design and remains only as historical context.
 - `2026-07-15-persistent-tutor-design.md` defines persistent tutor identity,

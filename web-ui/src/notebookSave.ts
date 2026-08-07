@@ -1,7 +1,11 @@
 export interface NotebookVaultInfo {
+  id: string
+  name: string
   root: string
   external: boolean
   entries: number
+  active: boolean
+  available: boolean
 }
 
 export interface SaveToNotebookResult {

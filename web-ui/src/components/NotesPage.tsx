@@ -3,7 +3,6 @@ import type { MouseEvent } from 'react'
 import {
   AlertTriangle,
   BookMarked,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -15,7 +14,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
-  RefreshCw,
+  Settings,
   Tags,
   Trash2,
   Undo2,
@@ -73,6 +72,16 @@ interface NotebookWatchInfo {
   last_error?: string | null
 }
 
+interface NotebookVaultInfo {
+  id: string
+  name: string
+  root: string
+  external: boolean
+  entries: number
+  active: boolean
+  available: boolean
+}
+
 interface NotebookRefreshResult {
   entries?: number
   folders?: number
@@ -93,19 +102,25 @@ interface Props {
   language: 'zh-CN' | 'en-US'
   focusTarget?: Extract<SourceTarget, { type: 'notebook' }> | null
   onSourceNavigate?: (target: SourceTarget, reference: SourceReference) => void
+  onManageVaults?: () => void
 }
 
-export function NotesPage({ language, focusTarget }: Props) {
+export function NotesPage({ language, focusTarget, onManageVaults }: Props) {
   const english = language === 'en-US'
   const [entries, setEntries] = useState<NotebookEntry[]>([])
   const [folders, setFolders] = useState<string[]>([])
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(loadExpandedNotebookFolders)
   const knownFolderPathsRef = useRef<Set<string> | null>(null)
+  const vaultMenuRef = useRef<HTMLDivElement | null>(null)
   const notebookRevisionsRef = useRef<Map<string, string>>(new Map())
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detail, setDetail] = useState<NotebookEntry | null>(null)
   const [recentlyDeleted, setRecentlyDeleted] = useState<NotebookEntry | null>(null)
   const [watch, setWatch] = useState<NotebookWatchInfo | null>(null)
+  const [vaults, setVaults] = useState<NotebookVaultInfo[]>([])
+  const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
+  const [editorFlushToken, setEditorFlushToken] = useState(0)
+  const editorFlushResolverRef = useRef<((saved: boolean) => void) | null>(null)
   const [query, setQuery] = useState('')
   const [folderDraft, setFolderDraft] = useState<{ parentPath: string; name: string } | null>(null)
   const [pendingFolderDelete, setPendingFolderDelete] = useState<NotebookFolderDeleteInfo | null>(null)
@@ -155,6 +170,7 @@ export function NotesPage({ language, focusTarget }: Props) {
       setEntries(nextEntries)
       setFolders(nextFolders)
       setWatch((data.watch ?? null) as NotebookWatchInfo | null)
+      setVaults((data.vaults ?? []) as NotebookVaultInfo[])
       // Force the active detail to reload so external Vault edits and rebuilt
       // link/backlink relations become visible immediately after refresh.
       setDetail(null)
@@ -176,6 +192,55 @@ export function NotesPage({ language, focusTarget }: Props) {
     }
   }, [english])
 
+  const switchVault = useCallback(async (vaultId: string) => {
+    if (loading || vaults.find((vault) => vault.id === vaultId)?.active) {
+      setVaultMenuOpen(false)
+      return
+    }
+    setLoading(true)
+    setVaultMenuOpen(false)
+    try {
+      if (activeEntry) {
+        const saved = await new Promise<boolean>((resolve) => {
+          const token = Date.now()
+          editorFlushResolverRef.current = resolve
+          setEditorFlushToken(token)
+          window.setTimeout(() => {
+            if (editorFlushResolverRef.current === resolve) {
+              editorFlushResolverRef.current = null
+              resolve(false)
+            }
+          }, 3000)
+        })
+        if (!saved) throw new Error(english ? 'Could not save the current note. The library was not switched.' : '当前笔记保存失败，未切换笔记库。')
+      }
+      const response = await fetch(`/api/notebook/vaults/${encodeURIComponent(vaultId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: true }),
+      })
+      const data = await safeJson(response)
+      if (!response.ok) throw new Error(errorMessage(data, response.status))
+      const nextEntries = (data.entries ?? []) as NotebookEntry[]
+      notebookRevisionsRef.current.clear()
+      knownFolderPathsRef.current = null
+      setEntries(nextEntries)
+      setFolders(((data.folders ?? []) as string[]).filter(Boolean))
+      setVaults((data.vaults ?? []) as NotebookVaultInfo[])
+      setWatch((data.watch ?? null) as NotebookWatchInfo | null)
+      setDetail(null)
+      setActiveId(nextEntries[0]?.id ?? null)
+      setRecentlyDeleted(null)
+      setRecentlyDeletedFolder(null)
+      setStatus('')
+      window.dispatchEvent(new Event('folumi:notebook-vaults-changed'))
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [activeEntry, loading, vaults])
+
   const loadDetail = useCallback(async (entryId: string) => {
     try {
       const response = await fetch(`/api/notebook/entries/${encodeURIComponent(entryId)}`)
@@ -191,6 +256,15 @@ export function NotesPage({ language, focusTarget }: Props) {
   }, [])
 
   useEffect(() => { void loadNotebook() }, [loadNotebook])
+
+  useEffect(() => {
+    if (!vaultMenuOpen) return
+    const close = (event: PointerEvent) => {
+      if (!vaultMenuRef.current?.contains(event.target as Node)) setVaultMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', close, true)
+    return () => document.removeEventListener('pointerdown', close, true)
+  }, [vaultMenuOpen])
 
   useEffect(() => {
     if (!activeId) {
@@ -589,14 +663,13 @@ export function NotesPage({ language, focusTarget }: Props) {
     const opened = openDesktopContextMenu(event.clientX, event.clientY, [
       { label: english ? 'New Note' : '新建笔记', run: () => { void createEntry() } },
       { label: english ? 'New Folder' : '新建目录', run: () => startCreateFolder() },
-      { label: english ? 'Refresh notes' : '刷新笔记', run: () => { void loadNotebook(true) } },
       ...(watch?.root ? [{
         label: english ? 'Copy folder path' : '复制文件夹路径',
         run: () => { void writeClipboardText(watch.root ?? '') },
       }] : []),
     ])
     if (opened) event.preventDefault()
-  }, [createEntry, english, loadNotebook, startCreateFolder, watch?.root])
+  }, [createEntry, english, startCreateFolder, watch?.root])
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-white">
@@ -610,17 +683,53 @@ export function NotesPage({ language, focusTarget }: Props) {
             {english ? 'Write, organize, and connect your ideas.' : '写下、整理并连接你的想法。'}
           </p>
         </div>
-        <VaultStatus watch={watch} language={language} />
-        <button
-          className={iconButtonClassName}
-          type="button"
-          disabled={loading}
-          title={english ? 'Refresh notes' : '刷新笔记'}
-          aria-label={english ? 'Refresh notes' : '刷新笔记'}
-          onClick={() => void loadNotebook(true)}
-        >
-          <RefreshCw size={17} className={loading ? 'animate-spin' : ''} />
-        </button>
+        <div ref={vaultMenuRef} className="relative">
+          <button
+            type="button"
+            className="inline-flex h-9 max-w-64 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+            disabled={loading}
+            aria-expanded={vaultMenuOpen}
+            onClick={() => setVaultMenuOpen((open) => !open)}
+          >
+            <FolderOpen size={16} className="shrink-0 text-blue-600" />
+            <span className="truncate">{vaults.find((vault) => vault.active)?.name ?? (english ? 'Notes' : '笔记库')}</span>
+            <ChevronDown size={15} className="shrink-0 text-gray-400" />
+          </button>
+          {vaultMenuOpen && (
+            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 overflow-hidden rounded-xl border border-gray-200 bg-white p-2 shadow-xl">
+              {vaults.map((vault) => (
+                <button
+                  key={vault.id}
+                  type="button"
+                  disabled={!vault.available}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${vault.active ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                  onClick={() => void switchVault(vault.id)}
+                  title={vault.root}
+                >
+                  <Folder size={16} className="shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{vault.name}</span>
+                    <span className="block truncate text-xs text-gray-400">{vault.available ? `${vault.entries} ${english ? 'notes' : '篇笔记'}` : (english ? 'Unavailable' : '无法访问')}</span>
+                  </span>
+                  {vault.active && <span className="h-2 w-2 rounded-full bg-blue-600" />}
+                </button>
+              ))}
+              {onManageVaults && (
+                <button
+                  type="button"
+                  className="mt-1 flex w-full items-center gap-3 border-t border-gray-100 px-3 py-2.5 text-left text-sm text-gray-600 hover:bg-gray-50"
+                  onClick={() => {
+                    setVaultMenuOpen(false)
+                    onManageVaults()
+                  }}
+                >
+                  <Settings size={16} />
+                  {english ? 'Manage note libraries' : '管理笔记库'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -721,6 +830,13 @@ export function NotesPage({ language, focusTarget }: Props) {
           onCreateEntry={() => void createEntry()}
           onCreateLinkedEntry={(title) => void createEntry(undefined, title)}
           onSelectEntry={setActiveId}
+          flushToken={editorFlushToken}
+          onFlushComplete={(token, saved) => {
+            if (token !== editorFlushToken) return
+            const resolve = editorFlushResolverRef.current
+            editorFlushResolverRef.current = null
+            resolve?.(saved)
+          }}
         />
       </div>
       {pendingFolderDelete && (
@@ -791,6 +907,8 @@ function NotebookEditor({
   onCreateEntry,
   onCreateLinkedEntry,
   onSelectEntry,
+  flushToken,
+  onFlushComplete,
 }: {
   entry: NotebookEntry | null
   language: 'zh-CN' | 'en-US'
@@ -798,6 +916,8 @@ function NotebookEditor({
   onCreateEntry: () => void
   onCreateLinkedEntry: (title: string) => void
   onSelectEntry: (id: string) => void
+  flushToken: number
+  onFlushComplete: (token: number, saved: boolean) => void
 }) {
   const english = language === 'en-US'
   const [relationsCollapsed, setRelationsCollapsed] = useState(true)
@@ -838,6 +958,8 @@ function NotebookEditor({
               markdown={entry.markdown || ''}
               language={language}
               onSave={onSave}
+              flushToken={flushToken}
+              onFlushComplete={onFlushComplete}
               onWikiLinkOpen={(target) => {
                 const link = resolveWikiLink(target)
                 if (link?.target_id) onSelectEntry(link.target_id)
@@ -983,18 +1105,6 @@ function NotebookLocalGraph({ entry, links, backlinks, collapsed, language, onCo
 function GraphColumn({ label, empty, children }: { label: string; empty: string; children: React.ReactNode }) {
   const items = Array.isArray(children) ? children : [children]
   return <div className="space-y-2"><div className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">{label}</div>{items.length === 0 ? <div className="text-xs text-gray-400">{empty}</div> : children}</div>
-}
-
-function VaultStatus({ watch, language }: { watch: NotebookWatchInfo | null; language: 'zh-CN' | 'en-US' }) {
-  const english = language === 'en-US'
-  if (!watch) return null
-  const healthy = watch.watching && !watch.last_error
-  return (
-    <div className={`hidden max-w-xs items-center gap-2 rounded-lg border px-3 py-2 text-xs lg:flex ${healthy ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-600'}`} title={watch.root ?? undefined}>
-      {healthy ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
-      <span className="truncate">{watch.last_error || (healthy ? (english ? 'Notes are syncing' : '笔记正在同步') : (english ? 'Sync is off' : '同步未开启'))}</span>
-    </div>
-  )
 }
 
 type NotebookTreeNode =

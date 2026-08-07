@@ -13,6 +13,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::knowledge_store::KnowledgeStore;
+use crate::notebook_store::NotebookStore;
 use crate::session::{
     AssistantSessionConfig, KnowledgeSessionBinding, LlmSessionConfig, SearchSessionConfig,
     SessionCreateConfig, SessionPool, message_role, message_text,
@@ -22,6 +23,7 @@ use crate::session::{
 pub struct SessionsState {
     pool: Arc<SessionPool>,
     knowledge: Arc<KnowledgeStore>,
+    notebook: Arc<NotebookStore>,
 }
 
 #[derive(Deserialize)]
@@ -30,6 +32,7 @@ struct CreateSessionRequest {
     kb: Option<String>,
     kbs: Option<Vec<String>>,
     notebook_enabled: Option<bool>,
+    notebook_vault_id: Option<String>,
     llm: Option<CreateLlmConfig>,
     search: Option<CreateSearchConfig>,
     assistant: Option<CreateAssistantConfig>,
@@ -75,6 +78,7 @@ struct UpdateSessionRequest {
     kb: Option<String>,
     kbs: Option<Vec<String>>,
     notebook_enabled: Option<bool>,
+    notebook_vault_id: Option<String>,
     llm: Option<CreateLlmConfig>,
     search: Option<CreateSearchConfig>,
 }
@@ -103,7 +107,25 @@ async fn create_session(
 ) -> impl IntoResponse {
     let pool = &state.pool;
     let search = req.search.and_then(search_config_from_request);
-    let notebook_enabled = req.notebook_enabled.unwrap_or(false);
+    let requested_notebook_vault_id = req
+        .notebook_vault_id
+        .filter(|value| !value.trim().is_empty());
+    let notebook_enabled =
+        req.notebook_enabled.unwrap_or(false) || requested_notebook_vault_id.is_some();
+    let notebook_vault_id = match notebook_vault_binding(
+        &state.notebook,
+        requested_notebook_vault_id,
+        notebook_enabled,
+    ) {
+        Ok(vault_id) => vault_id,
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": error.to_string() })),
+            )
+                .into_response();
+        }
+    };
     let capability = req
         .capability
         .filter(|value| !value.trim().is_empty())
@@ -140,6 +162,7 @@ async fn create_session(
             kb,
             knowledge_bases,
             notebook_enabled,
+            notebook_vault_id,
             llm,
             search,
             embedding,
@@ -331,6 +354,7 @@ async fn get_session(
             "kb": entry.kb,
             "kbs": entry.knowledge_bases.iter().map(|binding| binding.id.clone()).collect::<Vec<_>>(),
             "notebook_enabled": entry.notebook_enabled,
+            "notebook_vault_id": entry.notebook_vault_id,
             "assistant": entry.assistant,
             "temporary": entry.temporary,
             "history_len": history_len,
@@ -461,12 +485,30 @@ async fn update_session(
         }
     }
 
-    if let Some(notebook_enabled) = req.notebook_enabled {
+    if let Some(notebook_vault_id) = req
+        .notebook_vault_id
+        .filter(|value| !value.trim().is_empty())
+    {
+        if notebook_vault_binding(&state.notebook, Some(notebook_vault_id.clone()), true).is_err() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "notebook vault not found" })),
+            )
+                .into_response();
+        }
+        let Some(_entry) = pool.ensure_entry(&id).await else {
+            return session_not_found();
+        };
+        if !pool.set_notebook_vault(&id, Some(notebook_vault_id)) {
+            return session_not_found();
+        }
+    } else if let Some(notebook_enabled) = req.notebook_enabled {
         let Some(_entry) = pool.ensure_entry(&id).await else {
             return session_not_found();
         };
         if notebook_enabled {
-            if !pool.set_notebook_enabled(&id, true) {
+            let active_vault_id = state.notebook.vault_info().id;
+            if !pool.set_notebook_vault(&id, Some(active_vault_id)) {
                 return (
                     StatusCode::NOT_FOUND,
                     Json(serde_json::json!({ "error": "session not found" })),
@@ -793,8 +835,16 @@ async fn delete_session(
     }
 }
 
-pub fn sessions_router(pool: Arc<SessionPool>, knowledge: Arc<KnowledgeStore>) -> Router {
-    let state = Arc::new(SessionsState { pool, knowledge });
+pub fn sessions_router(
+    pool: Arc<SessionPool>,
+    knowledge: Arc<KnowledgeStore>,
+    notebook: Arc<NotebookStore>,
+) -> Router {
+    let state = Arc::new(SessionsState {
+        pool,
+        knowledge,
+        notebook,
+    });
     Router::new()
         .route("/api/sessions", get(list_sessions).post(create_session))
         .route(
@@ -813,6 +863,23 @@ pub fn sessions_router(pool: Arc<SessionPool>, knowledge: Arc<KnowledgeStore>) -
             post(append_message_citations),
         )
         .with_state(state)
+}
+
+fn notebook_vault_binding(
+    notebook: &NotebookStore,
+    requested: Option<String>,
+    enabled: bool,
+) -> Result<Option<String>, anyhow::Error> {
+    if !enabled {
+        return Ok(None);
+    }
+    let id = requested.unwrap_or_else(|| notebook.vault_info().id);
+    notebook
+        .list_vaults()
+        .iter()
+        .any(|vault| vault.id == id && vault.available)
+        .then_some(Some(id))
+        .ok_or_else(|| anyhow::anyhow!("notebook vault not found or unavailable"))
 }
 
 fn knowledge_bindings(
@@ -872,6 +939,7 @@ mod tests {
         sessions_router(
             SessionPool::new_with_root(root.join("sessions")),
             KnowledgeStore::new_with_path(root.join("knowledge.json")),
+            Arc::new(NotebookStore::new_with_path(root.join("notebook"))),
         )
     }
 
@@ -994,6 +1062,7 @@ mod tests {
         let app = sessions_router(
             SessionPool::new_with_root(dir.path().join("sessions")),
             knowledge,
+            Arc::new(NotebookStore::new_with_path(dir.path().join("notebook"))),
         );
         let created = app
             .clone()
@@ -1033,5 +1102,6 @@ mod tests {
         let detail: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(detail["kbs"].as_array().unwrap().len(), 2);
         assert_eq!(detail["notebook_enabled"], true);
+        assert_eq!(detail["notebook_vault_id"], "default");
     }
 }

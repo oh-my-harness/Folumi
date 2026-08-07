@@ -95,9 +95,13 @@ interface NotebookImportResult {
 }
 
 interface NotebookVault {
+  id: string
+  name: string
   root: string
   external: boolean
   entries: number
+  active: boolean
+  available: boolean
 }
 
 const settingsTabs: Array<{
@@ -134,7 +138,9 @@ export function SettingsPage({
   const [testState, setTestState] = useState<Record<string, ConfigTestState>>({})
   const [dataDir, setDataDir] = useState<string | null>(null)
   const [dataDirError, setDataDirError] = useState('')
-  const [notebookVault, setNotebookVault] = useState<NotebookVault | null>(null)
+  const [notebookVaults, setNotebookVaults] = useState<NotebookVault[]>([])
+  const [editingVault, setEditingVault] = useState<{ id: string; name: string } | null>(null)
+  const [pendingVaultRemoval, setPendingVaultRemoval] = useState<string | null>(null)
   const [notebookStatus, setNotebookStatus] = useState('笔记设置已就绪')
   const [notebookLoading, setNotebookLoading] = useState(false)
   const [pendingImportFiles, setPendingImportFiles] = useState<File[]>([])
@@ -162,7 +168,7 @@ export function SettingsPage({
       const res = await fetch('/api/notebook/entries?space_id=default')
       const data = await safeJson(res)
       if (!res.ok) throw new Error(errorMessage(data, res.status))
-      setNotebookVault((data.vault ?? null) as NotebookVault | null)
+      setNotebookVaults((data.vaults ?? []) as NotebookVault[])
       const entries = Array.isArray(data.entries) ? data.entries.length : 0
       setNotebookStatus(entries ? `已加载 ${entries} 篇笔记` : '还没有笔记')
     } catch (err) {
@@ -246,15 +252,54 @@ export function SettingsPage({
     setImportResult(null)
     setNotebookLoading(true)
     try {
-      const res = await fetch('/api/notebook/vault', {
-        method: 'PUT',
+      const res = await fetch('/api/notebook/vaults', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: folderPath }),
+        body: JSON.stringify({ path: folderPath, name: '' }),
       })
       const data = await safeJson(res)
       if (!res.ok) throw new Error(errorMessage(data, res.status))
-      setNotebookVault((data.vault ?? null) as NotebookVault | null)
-      setNotebookStatus(`笔记文件夹已更改：${(data.vault as NotebookVault | undefined)?.root ?? folderPath}`)
+      setNotebookVaults((data.vaults ?? []) as NotebookVault[])
+      setNotebookStatus(`已添加笔记库：${(data.vault as NotebookVault | undefined)?.name ?? folderPath}`)
+      window.dispatchEvent(new Event('folumi:notebook-vaults-changed'))
+    } catch (err) {
+      setNotebookStatus(err instanceof Error ? err.message : String(err))
+    } finally {
+      setNotebookLoading(false)
+    }
+  }
+
+  const updateNotebookVault = async (vaultId: string, update: { name?: string; active?: boolean }) => {
+    setNotebookLoading(true)
+    try {
+      const res = await fetch(`/api/notebook/vaults/${encodeURIComponent(vaultId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(update),
+      })
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error(errorMessage(data, res.status))
+      setNotebookVaults((data.vaults ?? []) as NotebookVault[])
+      setEditingVault(null)
+      setNotebookStatus(update.active ? '已切换笔记库' : '笔记库名称已更新')
+      window.dispatchEvent(new Event('folumi:notebook-vaults-changed'))
+    } catch (err) {
+      setNotebookStatus(err instanceof Error ? err.message : String(err))
+    } finally {
+      setNotebookLoading(false)
+    }
+  }
+
+  const removeNotebookVault = async (vaultId: string) => {
+    setNotebookLoading(true)
+    try {
+      const res = await fetch(`/api/notebook/vaults/${encodeURIComponent(vaultId)}`, { method: 'DELETE' })
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error(errorMessage(data, res.status))
+      setNotebookVaults((data.vaults ?? []) as NotebookVault[])
+      setPendingVaultRemoval(null)
+      setNotebookStatus('已从 Folumi 移除，磁盘文件未删除')
+      window.dispatchEvent(new Event('folumi:notebook-vaults-changed'))
     } catch (err) {
       setNotebookStatus(err instanceof Error ? err.message : String(err))
     } finally {
@@ -1031,42 +1076,75 @@ export function SettingsPage({
                 }}
               />
 
-              <div className="rounded-lg border border-gray-200 bg-white px-4 py-4">
-                <div className="flex flex-wrap items-start gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-50 text-blue-600">
-                    <FolderOpen size={18} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-gray-900">笔记保存位置</div>
-                    <div className="mt-1 break-all font-mono text-xs text-gray-500">
-                      {notebookVault?.root ?? '当前保存在应用内。'}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5">
-                        {notebookVault?.external ? '外部文件夹' : '应用内存储'}
-                      </span>
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5">
-                        {notebookVault?.entries ?? 0} 篇笔记
-                      </span>
-                    </div>
+              <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">笔记库</div>
+                    <div className="mt-1 text-xs text-gray-500">每个笔记库对应一个独立文件夹。</div>
                   </div>
                   <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={notebookLoading}
                     onClick={() => void chooseNotebookFolder()}
                   >
-                    <FolderOpen size={15} />
-                    选择文件夹
+                    <Plus size={15} />
+                    添加笔记库
                   </button>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={notebookLoading}
-                    onClick={() => void refreshNotebookStatus()}
-                  >
-                    刷新
-                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {notebookVaults.map((vault) => (
+                    <div key={vault.id} className={`rounded-lg border p-3 ${vault.active ? 'border-blue-200 bg-blue-50/50' : 'border-gray-200'}`}>
+                      <div className="flex items-start gap-3">
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${vault.active ? 'bg-white text-blue-600' : 'bg-gray-50 text-gray-500'}`}>
+                          <FolderOpen size={18} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          {editingVault?.id === vault.id ? (
+                            <div className="flex gap-2">
+                              <input
+                                className="h-8 min-w-0 flex-1 rounded-md border border-blue-300 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-blue-100"
+                                value={editingVault.name}
+                                maxLength={60}
+                                autoFocus
+                                onChange={(event) => setEditingVault({ id: vault.id, name: event.target.value })}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') void updateNotebookVault(vault.id, { name: editingVault.name })
+                                  if (event.key === 'Escape') setEditingVault(null)
+                                }}
+                              />
+                              <button type="button" className="rounded-md bg-blue-600 px-2 text-xs text-white" onClick={() => void updateNotebookVault(vault.id, { name: editingVault.name })}>保存</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                              <span className="truncate">{vault.name}</span>
+                              {vault.active && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] text-blue-700">当前</span>}
+                              {!vault.available && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] text-red-600">无法访问</span>}
+                            </div>
+                          )}
+                          <div className="mt-1 truncate font-mono text-xs text-gray-400" title={vault.root}>{vault.root}</div>
+                          <div className="mt-2 text-xs text-gray-500">{vault.entries} 篇笔记 · {vault.external ? '外部文件夹' : '应用内存储'}</div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {!vault.active && vault.available && (
+                            <button type="button" className="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-white" disabled={notebookLoading} onClick={() => void updateNotebookVault(vault.id, { active: true })}>切换</button>
+                          )}
+                          <button type="button" className="rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-white" disabled={notebookLoading} onClick={() => setEditingVault({ id: vault.id, name: vault.name })}>重命名</button>
+                          <button type="button" className="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-40" disabled={notebookLoading || notebookVaults.length <= 1} onClick={() => setPendingVaultRemoval(vault.id)}>移除</button>
+                        </div>
+                      </div>
+                      {pendingVaultRemoval === vault.id && (
+                        <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
+                          <span>只解除关联，不会删除文件夹中的任何文件。</span>
+                          <span className="flex shrink-0 gap-2">
+                            <button type="button" className="rounded px-2 py-1 hover:bg-white" onClick={() => setPendingVaultRemoval(null)}>取消</button>
+                            <button type="button" className="rounded bg-red-600 px-2 py-1 text-white" onClick={() => void removeNotebookVault(vault.id)}>确认移除</button>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
 

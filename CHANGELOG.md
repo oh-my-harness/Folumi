@@ -14,6 +14,9 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 - Replaced the conversation’s single-source and per-message `@` controls with
   one multi-select Sources menu. Multiple source collections and Notebook can
   now be enabled together, and clicking an item again removes it.
+- Replaced Notebook’s permanent refresh control with a named vault switcher.
+  Settings can now add, rename, switch, and safely detach multiple Notebook
+  folders, while conversations retain the exact vault they were associated with.
 - Rewrote high-frequency interface copy around Personalization, Sources,
   onboarding, help, and Settings in shorter everyday language, while keeping
   technical terms only where service configuration requires them.

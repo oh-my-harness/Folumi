@@ -117,6 +117,7 @@ interface SessionDetailResponse {
   kb?: string | null
   kbs?: string[]
   notebook_enabled?: boolean
+  notebook_vault_id?: string | null
   temporary?: boolean
   llm?: { model?: string | null } | null
   messages?: Array<{
@@ -196,8 +197,9 @@ export default function App() {
   const [notebookFolders, setNotebookFolders] = useState<string[]>([])
   const [notebookEntryPaths, setNotebookEntryPaths] = useState<string[]>([])
   const [notebookVault, setNotebookVault] = useState<NotebookVaultInfo | null>(null)
+  const [notebookVaults, setNotebookVaults] = useState<NotebookVaultInfo[]>([])
   const [selectedKnowledgeBaseIds, setSelectedKnowledgeBaseIds] = useState<string[]>([])
-  const [selectedNotebookEnabled, setSelectedNotebookEnabled] = useState(false)
+  const [selectedNotebookVaultId, setSelectedNotebookVaultId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [traceCollapsed, setTraceCollapsed] = useState(true)
   const [noteFocusTarget, setNoteFocusTarget] = useState<Extract<SourceTarget, { type: 'notebook' }> | null>(null)
@@ -313,7 +315,9 @@ export default function App() {
         }
       }
       setSelectedKnowledgeBaseIds(data.kbs ?? (data.kb ? [data.kb] : []))
-      setSelectedNotebookEnabled(Boolean(data.notebook_enabled))
+      setSelectedNotebookVaultId(data.notebook_enabled
+        ? (data.notebook_vault_id ?? notebookVaults.find((vault) => vault.active)?.id ?? null)
+        : null)
       setTemporaryConversation(Boolean(data.temporary))
       const title = data.metadata?.name || restored.find((message) => message.role === 'user')?.text
       if (title) {
@@ -327,7 +331,7 @@ export default function App() {
         live,
       ))
     }
-  }, [llmSettings, pushStatus])
+  }, [llmSettings, notebookVaults, pushStatus])
 
   const { send } = useWebSocket(sessionId, {
     onEvent: (event, sourceSessionId) => {
@@ -565,6 +569,7 @@ export default function App() {
       .map((entry) => entry.path ?? '')
       .filter(Boolean))
     setNotebookVault((data.vault ?? null) as NotebookVaultInfo | null)
+    setNotebookVaults((data.vaults ?? []) as NotebookVaultInfo[])
   }, [])
 
   useEffect(() => {
@@ -637,6 +642,17 @@ export default function App() {
     })
   }, [refreshSessions, refreshKnowledgeBases, refreshNotebookFolders, pushStatus])
 
+  useEffect(() => {
+    const refresh = () => {
+      void refreshNotebookFolders().catch((err) => {
+        const message = err instanceof Error ? err.message : String(err)
+        pushStatus({ kind: 'error', label: 'Error', detail: message })
+      })
+    }
+    window.addEventListener('folumi:notebook-vaults-changed', refresh)
+    return () => window.removeEventListener('folumi:notebook-vaults-changed', refresh)
+  }, [pushStatus, refreshNotebookFolders])
+
   const handleSend = useCallback(async (text: string, attachments: ChatAttachment[] = []) => {
     try {
       const content = buildMessageContentWithAttachments(text, attachments)
@@ -650,7 +666,8 @@ export default function App() {
           body: JSON.stringify({
             capability,
             kbs: selectedKnowledgeBaseIds,
-            notebook_enabled: selectedNotebookEnabled,
+            notebook_enabled: Boolean(selectedNotebookVaultId),
+            notebook_vault_id: selectedNotebookVaultId,
             temporary: temporaryConversation,
             assistant: {
               name: llmSettings.assistantName,
@@ -684,7 +701,7 @@ export default function App() {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [sessionId, capability, llmSettings, selectedLlmConfigId, selectedKnowledgeBaseIds, selectedNotebookEnabled, temporaryConversation, send, pushStatus, activateSession])
+  }, [sessionId, capability, llmSettings, selectedLlmConfigId, selectedKnowledgeBaseIds, selectedNotebookVaultId, temporaryConversation, send, pushStatus, activateSession])
 
   const handleStopGeneration = useCallback(() => {
     if (!running) return
@@ -735,7 +752,8 @@ export default function App() {
         body: JSON.stringify({
           capability,
           kbs: selectedKnowledgeBaseIds,
-          notebook_enabled: selectedNotebookEnabled,
+          notebook_enabled: Boolean(selectedNotebookVaultId),
+          notebook_vault_id: selectedNotebookVaultId,
           temporary: temporaryConversation,
           assistant: {
             name: llmSettings.assistantName,
@@ -771,7 +789,7 @@ export default function App() {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [capability, llmSettings, selectedLlmConfigId, messages, pushStatus, running, selectedKnowledgeBaseIds, selectedNotebookEnabled, temporaryConversation, send, sessionId, activateSession])
+  }, [capability, llmSettings, selectedLlmConfigId, messages, pushStatus, running, selectedKnowledgeBaseIds, selectedNotebookVaultId, temporaryConversation, send, sessionId, activateSession])
 
   const handleSaveToNotebook = useCallback(async (markdown: string, options: SaveToNotebookOptions = {}): Promise<SaveToNotebookResult> => {
     try {
@@ -950,7 +968,7 @@ export default function App() {
     startNewChat()
     setCapability('chat')
     setSelectedKnowledgeBaseIds([])
-    setSelectedNotebookEnabled(false)
+    setSelectedNotebookVaultId(null)
     setStarterDraft({ id: Date.now(), text: guideAssistantStarterPrompt(llmSettings.language) })
   }, [llmSettings.language, startNewChat])
 
@@ -994,16 +1012,19 @@ export default function App() {
     }
   }, [running, selectedKnowledgeBaseIds, sessionId])
 
-  const handleNotebookEnabledChange = useCallback(async (enabled: boolean) => {
+  const handleNotebookVaultToggle = useCallback(async (vaultId: string) => {
     if (running) return
-    setSelectedNotebookEnabled(enabled)
+    const nextVaultId = selectedNotebookVaultId === vaultId ? null : vaultId
+    setSelectedNotebookVaultId(nextVaultId)
     if (!sessionId) return
 
     try {
       const res = await fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notebook_enabled: enabled }),
+        body: JSON.stringify(nextVaultId
+          ? { notebook_enabled: true, notebook_vault_id: nextVaultId }
+          : { notebook_enabled: false }),
       })
       if (!res.ok) {
         throw new Error(`failed to update session source: HTTP ${res.status}`)
@@ -1012,7 +1033,7 @@ export default function App() {
       const message = err instanceof Error ? err.message : String(err)
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
     }
-  }, [running, sessionId])
+  }, [running, selectedNotebookVaultId, sessionId])
 
   const handleLlmConfigChange = useCallback(async (id: string) => {
     if (running) return
@@ -1242,14 +1263,15 @@ export default function App() {
                   activeLlmConfigId={selectedLlmConfigId}
                   knowledgeBases={knowledgeBases}
                   selectedKnowledgeBaseIds={selectedKnowledgeBaseIds}
-                  selectedNotebookEnabled={selectedNotebookEnabled}
+                  notebookVaults={notebookVaults}
+                  selectedNotebookVaultId={selectedNotebookVaultId}
                   initialDraft={starterDraft}
                   onSend={handleSend}
                   onStop={handleStopGeneration}
                   onEditUserMessage={handleEditUserMessage}
                   onAskDeepSolveStep={handleAskDeepSolveStep}
                   onKnowledgeBaseToggle={handleKnowledgeBaseToggle}
-                  onNotebookEnabledChange={handleNotebookEnabledChange}
+                  onNotebookVaultToggle={handleNotebookVaultToggle}
                   onLlmConfigChange={handleLlmConfigChange}
                   notebookFolders={notebookFolders}
                   notebookEntryPaths={notebookEntryPaths}
@@ -1295,6 +1317,10 @@ export default function App() {
             language={llmSettings.language}
             focusTarget={noteFocusTarget}
             onSourceNavigate={handleSourceNavigate}
+            onManageVaults={() => {
+              setSettingsTab('notebook')
+              setView('settings')
+            }}
           />
         )}
 

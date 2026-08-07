@@ -63,6 +63,13 @@ struct ImportFolderRequest {
 #[derive(Deserialize)]
 struct BindVaultRequest {
     path: String,
+    name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UpdateVaultRequest {
+    name: Option<String>,
+    active: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -99,6 +106,7 @@ async fn list_entries(
             "entries": state.store.list_summaries(space_id),
             "folders": state.store.list_folders(),
             "vault": state.store.vault_info(),
+            "vaults": state.store.list_vaults(),
             "watch": state.store.watch_info(),
         })),
     )
@@ -115,6 +123,7 @@ async fn list_tree(
             "entries": state.store.list_items(space_id),
             "folders": state.store.list_folders(),
             "vault": state.store.vault_info(),
+            "vaults": state.store.list_vaults(),
             "watch": state.store.watch_info(),
         })),
     )
@@ -129,6 +138,7 @@ async fn refresh_vault(State(state): State<NotebookState>) -> impl IntoResponse 
                 "entries": state.store.list_items(Some("default")),
                 "folders": state.store.list_folders(),
                 "vault": state.store.vault_info(),
+                "vaults": state.store.list_vaults(),
                 "watch": state.store.watch_info(),
             })),
         )
@@ -142,6 +152,7 @@ async fn get_vault(State(state): State<NotebookState>) -> impl IntoResponse {
         StatusCode::OK,
         Json(serde_json::json!({
             "vault": state.store.vault_info(),
+            "vaults": state.store.list_vaults(),
             "watch": state.store.watch_info(),
         })),
     )
@@ -151,16 +162,88 @@ async fn bind_vault(
     State(state): State<NotebookState>,
     Json(req): Json<BindVaultRequest>,
 ) -> impl IntoResponse {
-    match state.store.set_vault_root(PathBuf::from(req.path)) {
+    let result = if let Some(name) = req.name {
+        state
+            .store
+            .add_vault(name, PathBuf::from(req.path))
+            .and_then(|vault| state.store.switch_vault(&vault.id))
+    } else {
+        state.store.set_vault_root(PathBuf::from(req.path))
+    };
+    match result {
         Ok(mount) => {
             let watch = state.store.start_watcher().ok();
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
                     "vault": mount.vault,
+                    "vaults": state.store.list_vaults(),
                     "entries": mount.entries,
                     "folders": mount.folders,
                     "watch": watch.unwrap_or_else(|| state.store.watch_info()),
+                })),
+            )
+                .into_response()
+        }
+        Err(err) => error_response(StatusCode::BAD_REQUEST, err.to_string()),
+    }
+}
+
+async fn list_vaults(State(state): State<NotebookState>) -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "vault": state.store.vault_info(),
+            "vaults": state.store.list_vaults(),
+            "watch": state.store.watch_info(),
+        })),
+    )
+}
+
+async fn update_vault(
+    State(state): State<NotebookState>,
+    AxumPath(vault_id): AxumPath<String>,
+    Json(req): Json<UpdateVaultRequest>,
+) -> impl IntoResponse {
+    let result = (|| -> anyhow::Result<()> {
+        if let Some(name) = req.name {
+            state.store.rename_vault(&vault_id, name)?;
+        }
+        if req.active.unwrap_or(false) {
+            state.store.switch_vault(&vault_id)?;
+            state.store.start_watcher()?;
+        }
+        Ok(())
+    })();
+    match result {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "vault": state.store.vault_info(),
+                "vaults": state.store.list_vaults(),
+                "watch": state.store.watch_info(),
+                "entries": state.store.list_items(Some("default")),
+                "folders": state.store.list_folders(),
+            })),
+        )
+            .into_response(),
+        Err(err) => error_response(StatusCode::BAD_REQUEST, err.to_string()),
+    }
+}
+
+async fn delete_vault(
+    State(state): State<NotebookState>,
+    AxumPath(vault_id): AxumPath<String>,
+) -> impl IntoResponse {
+    match state.store.remove_vault(&vault_id) {
+        Ok(_) => {
+            let _ = state.store.start_watcher();
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "vault": state.store.vault_info(),
+                    "vaults": state.store.list_vaults(),
+                    "watch": state.store.watch_info(),
                 })),
             )
                 .into_response()
@@ -590,6 +673,11 @@ pub fn notebook_router(store: Arc<NotebookStore>) -> Router {
             get(export_obsidian_vault_zip),
         )
         .route("/api/notebook/vault", get(get_vault).put(bind_vault))
+        .route("/api/notebook/vaults", get(list_vaults).post(bind_vault))
+        .route(
+            "/api/notebook/vaults/{vault_id}",
+            axum::routing::patch(update_vault).delete(delete_vault),
+        )
         .route(
             "/api/notebook/import/preview",
             axum::routing::post(preview_import_entries),

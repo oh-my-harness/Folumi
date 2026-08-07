@@ -46,6 +46,8 @@ async fn main() -> anyhow::Result<()> {
         config.data_dir.join("sessions"),
         memory_settings.history_recall_enabled,
     );
+    pool.bind_unscoped_notebook_sessions(&notebook.vault_info().id)
+        .await?;
     pool.synchronize_history_recall(memory_settings.history_recall_enabled)
         .await?;
     let rag_root = config.data_dir.join("rag");
@@ -71,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(routes::sessions::sessions_router(
             pool.clone(),
             knowledge.clone(),
+            notebook.clone(),
         ))
         .merge(routes::ws::ws_router(
             pool.clone(),

@@ -112,14 +112,15 @@ interface Props {
   activeLlmConfigId: string | null
   knowledgeBases: Array<{ id: string; name: string }>
   selectedKnowledgeBaseIds: string[]
-  selectedNotebookEnabled: boolean
+  notebookVaults: NotebookVaultInfo[]
+  selectedNotebookVaultId: string | null
   initialDraft?: { id: number; text: string } | null
   onSend: (text: string, attachments?: ChatAttachment[]) => void
   onStop?: () => void
   onEditUserMessage?: (messageIndex: number, nextText: string) => void
   onAskDeepSolveStep?: (step: { id: string; title: string; summary?: string }) => void
   onKnowledgeBaseToggle: (id: string) => void
-  onNotebookEnabledChange: (enabled: boolean) => void
+  onNotebookVaultToggle: (id: string) => void
   onLlmConfigChange: (id: string) => void
   notebookFolders?: string[]
   notebookEntryPaths?: string[]
@@ -147,14 +148,15 @@ export function ChatBox({
   activeLlmConfigId,
   knowledgeBases,
   selectedKnowledgeBaseIds,
-  selectedNotebookEnabled,
+  notebookVaults,
+  selectedNotebookVaultId,
   initialDraft,
   onSend,
   onStop,
   onEditUserMessage,
   onAskDeepSolveStep,
   onKnowledgeBaseToggle,
-  onNotebookEnabledChange,
+  onNotebookVaultToggle,
   onLlmConfigChange,
   notebookFolders = [],
   notebookEntryPaths = [],
@@ -480,9 +482,10 @@ export function ChatBox({
               activeLlmConfigId={activeLlmConfigId}
               knowledgeBases={knowledgeBases}
               selectedKnowledgeBaseIds={selectedKnowledgeBaseIds}
-              selectedNotebookEnabled={selectedNotebookEnabled}
+              notebookVaults={notebookVaults}
+              selectedNotebookVaultId={selectedNotebookVaultId}
               onKnowledgeBaseToggle={onKnowledgeBaseToggle}
-              onNotebookEnabledChange={onNotebookEnabledChange}
+              onNotebookVaultToggle={onNotebookVaultToggle}
               onLlmConfigChange={onLlmConfigChange}
               onSend={handleSend}
               onStop={onStop}
@@ -628,9 +631,10 @@ export function ChatBox({
               activeLlmConfigId={activeLlmConfigId}
               knowledgeBases={knowledgeBases}
               selectedKnowledgeBaseIds={selectedKnowledgeBaseIds}
-              selectedNotebookEnabled={selectedNotebookEnabled}
+              notebookVaults={notebookVaults}
+              selectedNotebookVaultId={selectedNotebookVaultId}
               onKnowledgeBaseToggle={onKnowledgeBaseToggle}
-              onNotebookEnabledChange={onNotebookEnabledChange}
+              onNotebookVaultToggle={onNotebookVaultToggle}
               onLlmConfigChange={onLlmConfigChange}
               onSend={handleSend}
               onStop={onStop}
@@ -831,9 +835,10 @@ function Composer({
   activeLlmConfigId,
   knowledgeBases,
   selectedKnowledgeBaseIds,
-  selectedNotebookEnabled,
+  notebookVaults,
+  selectedNotebookVaultId,
   onKnowledgeBaseToggle,
-  onNotebookEnabledChange,
+  onNotebookVaultToggle,
   onLlmConfigChange,
   onSend,
   onStop,
@@ -851,9 +856,10 @@ function Composer({
   activeLlmConfigId: string | null
   knowledgeBases: Array<{ id: string; name: string }>
   selectedKnowledgeBaseIds: string[]
-  selectedNotebookEnabled: boolean
+  notebookVaults: NotebookVaultInfo[]
+  selectedNotebookVaultId: string | null
   onKnowledgeBaseToggle: (id: string) => void
-  onNotebookEnabledChange: (enabled: boolean) => void
+  onNotebookVaultToggle: (id: string) => void
   onLlmConfigChange: (id: string) => void
   onSend: () => void
   onStop?: () => void
@@ -870,21 +876,23 @@ function Composer({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
   const activeModel = llmConfigs.find((item) => item.id === activeLlmConfigId) ?? llmConfigs[0] ?? null
-  const selectedSourceCount = selectedKnowledgeBaseIds.length + (selectedNotebookEnabled ? 1 : 0)
+  const selectedSourceCount = selectedKnowledgeBaseIds.length + (selectedNotebookVaultId ? 1 : 0)
   const sourceOptions = [
-    {
-      id: '__notebook__',
+    ...notebookVaults.map((vault) => ({
+      id: vault.id,
       type: 'notebook' as const,
-      name: t('nav.notebook'),
+      name: `${t('nav.notebook')} · ${vault.name}`,
       description: t('chat.notebook.description'),
       icon: <FileText size={21} />,
-    },
+      disabled: !vault.available,
+    })),
     ...knowledgeBases.map((item) => ({
       id: item.id,
       type: 'knowledge_base' as const,
       name: item.name,
       description: t('chat.knowledge.use.description'),
       icon: <Database size={21} />,
+      disabled: false,
     })),
   ]
 
@@ -988,15 +996,16 @@ function Composer({
                     key={item.id}
                     selected={
                       item.type === 'notebook'
-                        ? selectedNotebookEnabled
+                        ? selectedNotebookVaultId === item.id
                         : selectedKnowledgeBaseIds.includes(item.id)
                     }
                     icon={item.icon}
                     title={item.name}
                     description={item.description}
+                    disabled={item.disabled}
                     onClick={() => {
                       if (item.type === 'notebook') {
-                        onNotebookEnabledChange(!selectedNotebookEnabled)
+                        onNotebookVaultToggle(item.id)
                       } else {
                         onKnowledgeBaseToggle(item.id)
                       }
@@ -1290,22 +1299,25 @@ function DropdownOption({
   icon,
   title,
   description,
+  disabled = false,
   onClick,
 }: {
   selected: boolean
   icon: ReactNode
   title: string
   description: string
+  disabled?: boolean
   onClick: () => void
 }) {
   return (
     <button
-      className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+      className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
         selected
           ? 'border-blue-200 bg-blue-50/80 shadow-sm'
           : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
       }`}
       type="button"
+      disabled={disabled}
       onClick={onClick}
     >
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${

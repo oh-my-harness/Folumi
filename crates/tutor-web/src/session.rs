@@ -73,6 +73,7 @@ pub struct SessionCreateConfig {
     pub kb: Option<String>,
     pub knowledge_bases: Vec<KnowledgeSessionBinding>,
     pub notebook_enabled: bool,
+    pub notebook_vault_id: Option<String>,
     pub llm: Option<LlmSessionConfig>,
     pub search: Option<SearchSessionConfig>,
     pub embedding: Option<tutor_rag::EmbeddingConfig>,
@@ -88,6 +89,7 @@ pub struct SessionEntry {
     pub kb: Option<String>,
     pub knowledge_bases: Vec<KnowledgeSessionBinding>,
     pub notebook_enabled: bool,
+    pub notebook_vault_id: Option<String>,
     pub llm: Option<LlmSessionConfig>,
     pub search: Option<SearchSessionConfig>,
     pub embedding: Option<tutor_rag::EmbeddingConfig>,
@@ -174,6 +176,8 @@ struct ProductSessionMetadata {
     knowledge_bases: Vec<KnowledgeSessionBinding>,
     #[serde(default)]
     notebook_enabled: bool,
+    #[serde(default)]
+    notebook_vault_id: Option<String>,
     #[serde(default)]
     llm: Option<LlmSessionConfig>,
     #[serde(default)]
@@ -340,6 +344,7 @@ impl SessionPool {
             kb,
             knowledge_bases: vec![],
             notebook_enabled,
+            notebook_vault_id: None,
             llm,
             search,
             embedding,
@@ -359,6 +364,7 @@ impl SessionPool {
             kb,
             mut knowledge_bases,
             notebook_enabled,
+            notebook_vault_id,
             llm,
             search,
             embedding,
@@ -402,6 +408,7 @@ impl SessionPool {
             kb: kb.clone(),
             knowledge_bases: knowledge_bases.clone(),
             notebook_enabled,
+            notebook_vault_id: notebook_vault_id.clone(),
             llm: llm.clone(),
             search: search.clone(),
             embedding: embedding.clone(),
@@ -417,6 +424,7 @@ impl SessionPool {
                 kb,
                 knowledge_bases,
                 notebook_enabled,
+                notebook_vault_id,
                 llm,
                 search,
                 embedding,
@@ -471,6 +479,9 @@ impl SessionPool {
                 .as_ref()
                 .map(|value| value.notebook_enabled)
                 .unwrap_or(false),
+            notebook_vault_id: product
+                .as_ref()
+                .and_then(|value| value.notebook_vault_id.clone()),
             llm: product.as_ref().and_then(|value| value.llm.clone()),
             search: product.as_ref().and_then(|value| value.search.clone()),
             embedding: product.as_ref().and_then(|value| value.embedding.clone()),
@@ -1014,6 +1025,25 @@ impl SessionPool {
             .collect())
     }
 
+    pub async fn bind_unscoped_notebook_sessions(
+        &self,
+        vault_id: &str,
+    ) -> Result<usize, llm_harness_types::SessionError> {
+        let mut migrated = 0;
+        for summary in self.list(None).await? {
+            let Some(entry) = self.ensure_entry(&summary.id).await else {
+                continue;
+            };
+            if entry.notebook_enabled
+                && entry.notebook_vault_id.is_none()
+                && self.set_notebook_vault(&summary.id, Some(vault_id.to_string()))
+            {
+                migrated += 1;
+            }
+        }
+        Ok(migrated)
+    }
+
     pub fn set_capability(&self, id: &str, capability: &str) -> bool {
         let mut sessions = self.sessions.lock().unwrap();
         let Some(entry) = sessions.get_mut(id) else {
@@ -1092,9 +1122,29 @@ impl SessionPool {
         };
 
         entry.notebook_enabled = notebook_enabled;
+        if !notebook_enabled {
+            entry.notebook_vault_id = None;
+        }
+        let notebook_vault_id = entry.notebook_vault_id.clone();
         drop(sessions);
         self.update_product_metadata(id, |metadata| {
             metadata.notebook_enabled = notebook_enabled;
+            metadata.notebook_vault_id = notebook_vault_id;
+        });
+        true
+    }
+
+    pub fn set_notebook_vault(&self, id: &str, notebook_vault_id: Option<String>) -> bool {
+        let mut sessions = self.sessions.lock().unwrap();
+        let Some(entry) = sessions.get_mut(id) else {
+            return false;
+        };
+        entry.notebook_enabled = notebook_vault_id.is_some();
+        entry.notebook_vault_id = notebook_vault_id.clone();
+        drop(sessions);
+        self.update_product_metadata(id, |metadata| {
+            metadata.notebook_enabled = notebook_vault_id.is_some();
+            metadata.notebook_vault_id = notebook_vault_id;
         });
         true
     }
@@ -1164,6 +1214,7 @@ impl SessionPool {
                 kb: None,
                 knowledge_bases: vec![],
                 notebook_enabled: false,
+                notebook_vault_id: None,
                 llm: None,
                 search: None,
                 embedding: None,
@@ -1487,6 +1538,7 @@ mod tests {
                 kb: None,
                 knowledge_bases: vec![],
                 notebook_enabled: false,
+                notebook_vault_id: None,
                 llm: None,
                 search: None,
                 embedding: None,
@@ -2150,6 +2202,7 @@ mod tests {
                 kb: None,
                 knowledge_bases: vec![],
                 notebook_enabled: false,
+                notebook_vault_id: None,
                 llm: None,
                 search: None,
                 embedding: None,
@@ -2182,6 +2235,7 @@ mod tests {
             .create("organize", None, true, None, None, None)
             .await
             .unwrap();
+        assert!(pool.set_notebook_vault(&id, Some("vault-work".into())));
 
         drop(pool);
         let reopened = SessionPool::new_with_root(&root);
@@ -2189,7 +2243,48 @@ mod tests {
 
         assert_eq!(entry.capability, "organize");
         assert!(entry.notebook_enabled);
+        assert_eq!(entry.notebook_vault_id.as_deref(), Some("vault-work"));
         assert!(entry.kb.is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn unscoped_notebook_binding_is_fixed_to_the_upgrade_vault() {
+        let root = std::env::temp_dir().join(format!("llm-tutor-test-{}", uuid::Uuid::new_v4()));
+        let pool = SessionPool::new_with_root(&root);
+        let id = pool
+            .create("chat", None, true, None, None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            pool.bind_unscoped_notebook_sessions("default")
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            pool.bind_unscoped_notebook_sessions("another")
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            pool.get(&id).unwrap().notebook_vault_id.as_deref(),
+            Some("default")
+        );
+
+        drop(pool);
+        let reopened = SessionPool::new_with_root(&root);
+        assert_eq!(
+            reopened
+                .ensure_entry(&id)
+                .await
+                .unwrap()
+                .notebook_vault_id
+                .as_deref(),
+            Some("default")
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

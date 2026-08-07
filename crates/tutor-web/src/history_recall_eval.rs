@@ -687,6 +687,7 @@ async fn create_session(pool: &Arc<SessionPool>, temporary: bool) -> String {
         kb: None,
         knowledge_bases: vec![],
         notebook_enabled: false,
+        notebook_vault_id: None,
         llm: None,
         search: None,
         embedding: None,

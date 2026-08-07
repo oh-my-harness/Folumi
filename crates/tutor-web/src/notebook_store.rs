@@ -134,8 +134,10 @@ pub enum ExactNotebookMutationOutcome {
 }
 
 pub struct NotebookStore {
-    index_path: PathBuf,
+    notebook_root: PathBuf,
+    index_path: Mutex<PathBuf>,
     config_path: PathBuf,
+    active_vault: Mutex<NotebookVaultConfig>,
     vault_root: Mutex<PathBuf>,
     items: Mutex<Vec<NotebookEntry>>,
     folders: Mutex<HashSet<String>>,
@@ -146,7 +148,21 @@ pub struct NotebookStore {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct NotebookConfig {
+    #[serde(default)]
     vault_root: Option<PathBuf>,
+    #[serde(default)]
+    vaults: Vec<NotebookVaultConfig>,
+    #[serde(default)]
+    active_vault_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct NotebookVaultConfig {
+    id: String,
+    name: String,
+    root: PathBuf,
+    #[serde(default)]
+    internal: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,16 +196,23 @@ impl NotebookStore {
     }
 
     pub fn new_with_path(path: PathBuf) -> Self {
-        let index_path = path.join("index.json");
+        let legacy_index_path = path.join("index.json");
         let config_path = path.join("config.json");
-        let configured_vault_root = load_config(&config_path).and_then(|config| config.vault_root);
-        let vault_root = configured_vault_root.unwrap_or_else(|| path.join("vault"));
+        let mut config = normalized_config(&path, load_config(&config_path));
+        let active = active_vault_config(&config).clone();
+        let vault_root = active.root.clone();
+        let index_path = vault_index_path(&path, &active.id, &legacy_index_path);
         fs::create_dir_all(&vault_root).expect("failed to create notebook vault directory");
         let (items, folders) =
             load_file_backed_entries(&index_path, &vault_root).unwrap_or_default();
+        config.vault_root = Some(vault_root.clone());
+        config.active_vault_id = Some(active.id.clone());
+        let _ = save_config(&config_path, &config);
         Self {
-            index_path,
+            notebook_root: path,
+            index_path: Mutex::new(index_path),
             config_path,
+            active_vault: Mutex::new(active),
             vault_root: Mutex::new(vault_root),
             items: Mutex::new(items),
             folders: Mutex::new(folders.into_iter().collect()),
@@ -200,51 +223,214 @@ impl NotebookStore {
     }
 
     pub fn vault_info(&self) -> NotebookVaultInfo {
+        let active = self.active_vault.lock().unwrap().clone();
         let root = self.vault_root.lock().unwrap().clone();
         NotebookVaultInfo {
+            id: active.id,
+            name: active.name,
             root: root.to_string_lossy().to_string(),
-            external: load_config(&self.config_path)
-                .and_then(|config| config.vault_root)
-                .is_some(),
+            external: !active.internal,
             entries: self.items.lock().unwrap().len(),
+            active: true,
+            available: root.is_dir(),
         }
     }
 
     pub fn set_vault_root(&self, path: PathBuf) -> Result<NotebookVaultMount> {
-        if !path.is_dir() {
-            return Err(anyhow!(
-                "notebook vault folder does not exist or is not a directory"
-            ));
+        let root = canonical_vault_root(path)?;
+        let config = normalized_config(&self.notebook_root, load_config(&self.config_path));
+        if let Some(existing) = config.vaults.iter().find(|vault| vault.root == root) {
+            return self.activate_vault(&existing.id);
         }
-        let root = path.canonicalize()?;
-        let previous_items = self.items.lock().unwrap().clone();
-        let scan = scan_vault_root(&root, &previous_items)?;
+        let name = default_vault_name(&root);
+        let vault = self.add_vault(name, root)?;
+        self.activate_vault(&vault.id)
+    }
+
+    pub fn list_vaults(&self) -> Vec<NotebookVaultInfo> {
+        let config = normalized_config(&self.notebook_root, load_config(&self.config_path));
+        let active_id = config.active_vault_id.as_deref();
+        config
+            .vaults
+            .iter()
+            .map(|vault| {
+                let active = active_id == Some(vault.id.as_str());
+                let entries = if active {
+                    self.items.lock().unwrap().len()
+                } else {
+                    load_file_backed_entries(
+                        &vault_index_path(
+                            &self.notebook_root,
+                            &vault.id,
+                            &self.notebook_root.join("index.json"),
+                        ),
+                        &vault.root,
+                    )
+                    .map(|(entries, _)| entries.len())
+                    .unwrap_or_default()
+                };
+                NotebookVaultInfo {
+                    id: vault.id.clone(),
+                    name: vault.name.clone(),
+                    root: vault.root.to_string_lossy().to_string(),
+                    external: !vault.internal,
+                    entries,
+                    active,
+                    available: vault.root.is_dir(),
+                }
+            })
+            .collect()
+    }
+
+    pub fn add_vault(&self, name: String, path: PathBuf) -> Result<NotebookVaultInfo> {
+        let root = canonical_vault_root(path)?;
+        let mut config = normalized_config(&self.notebook_root, load_config(&self.config_path));
+        validate_new_vault_root(&config.vaults, &root)?;
+        let vault = NotebookVaultConfig {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: normalized_vault_name(&name, &root),
+            root: root.clone(),
+            internal: false,
+        };
+        config.vaults.push(vault.clone());
+        save_config(&self.config_path, &config)?;
+        let scan = scan_vault_root(&root, &[])?;
+        let folders = scan.folders.into_iter().collect::<HashSet<_>>();
+        save_notebook_index(
+            &vault_index_path(
+                &self.notebook_root,
+                &vault.id,
+                &self.notebook_root.join("index.json"),
+            ),
+            &scan.entries,
+            &folders,
+        )?;
+        Ok(NotebookVaultInfo {
+            id: vault.id,
+            name: vault.name,
+            root: root.to_string_lossy().to_string(),
+            external: true,
+            entries: scan.entries.len(),
+            active: false,
+            available: true,
+        })
+    }
+
+    pub fn switch_vault(&self, id: &str) -> Result<NotebookVaultMount> {
+        self.activate_vault(id)
+    }
+
+    pub fn rename_vault(&self, id: &str, name: String) -> Result<NotebookVaultInfo> {
+        let mut config = normalized_config(&self.notebook_root, load_config(&self.config_path));
+        let vault = config
+            .vaults
+            .iter_mut()
+            .find(|vault| vault.id == id)
+            .ok_or_else(|| anyhow!("notebook vault not found"))?;
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(anyhow!("notebook vault name is empty"));
+        }
+        vault.name = trimmed.chars().take(60).collect();
+        let updated = vault.clone();
+        save_config(&self.config_path, &config)?;
+        if self.active_vault.lock().unwrap().id == id {
+            *self.active_vault.lock().unwrap() = updated.clone();
+        }
+        Ok(self
+            .list_vaults()
+            .into_iter()
+            .find(|vault| vault.id == id)
+            .expect("renamed vault remains configured"))
+    }
+
+    pub fn remove_vault(&self, id: &str) -> Result<NotebookVaultMount> {
+        let mut config = normalized_config(&self.notebook_root, load_config(&self.config_path));
+        if config.vaults.len() <= 1 {
+            return Err(anyhow!("at least one notebook vault is required"));
+        }
+        let original_len = config.vaults.len();
+        config.vaults.retain(|vault| vault.id != id);
+        if config.vaults.len() == original_len {
+            return Err(anyhow!("notebook vault not found"));
+        }
+        if config.active_vault_id.as_deref() == Some(id) {
+            config.active_vault_id = config.vaults.first().map(|vault| vault.id.clone());
+        }
+        config.vault_root = active_vault_config(&config).root.clone().into();
+        save_config(&self.config_path, &config)?;
+        self.activate_vault(
+            config
+                .active_vault_id
+                .as_deref()
+                .expect("non-empty vault list has an active id"),
+        )
+    }
+
+    pub fn open_vault(&self, id: &str) -> Result<Arc<NotebookStore>> {
+        let config = normalized_config(&self.notebook_root, load_config(&self.config_path));
+        let vault = config
+            .vaults
+            .iter()
+            .find(|vault| vault.id == id)
+            .cloned()
+            .ok_or_else(|| anyhow!("notebook vault not found"))?;
+        if !vault.root.is_dir() {
+            return Err(anyhow!("notebook vault folder is unavailable"));
+        }
+        let index_path = vault_index_path(
+            &self.notebook_root,
+            &vault.id,
+            &self.notebook_root.join("index.json"),
+        );
+        let (items, folders) = load_file_backed_entries(&index_path, &vault.root)?;
+        let store = Arc::new(Self {
+            notebook_root: self.notebook_root.clone(),
+            index_path: Mutex::new(index_path),
+            config_path: self.config_path.clone(),
+            active_vault: Mutex::new(vault.clone()),
+            vault_root: Mutex::new(vault.root),
+            items: Mutex::new(items),
+            folders: Mutex::new(folders.into_iter().collect()),
+            watcher: Mutex::new(None),
+            watcher_generation: AtomicU64::new(0),
+            watch_status: Mutex::new(NotebookWatchStatus::default()),
+        });
+        store.refresh_from_vault()?;
+        Ok(store)
+    }
+
+    fn activate_vault(&self, id: &str) -> Result<NotebookVaultMount> {
+        let mut config = normalized_config(&self.notebook_root, load_config(&self.config_path));
+        let vault = config
+            .vaults
+            .iter()
+            .find(|vault| vault.id == id)
+            .cloned()
+            .ok_or_else(|| anyhow!("notebook vault not found"))?;
+        let root = canonical_vault_root(vault.root.clone())?;
+        let index_path = vault_index_path(
+            &self.notebook_root,
+            &vault.id,
+            &self.notebook_root.join("index.json"),
+        );
+        let previous = load_file_backed_entries(&index_path, &root)
+            .map(|(entries, _)| entries)
+            .unwrap_or_default();
+        let scan = scan_vault_root(&root, &previous)?;
         let entries = scan.entries;
         let folders = scan.folders;
-        fs::create_dir_all(
-            self.config_path
-                .parent()
-                .ok_or_else(|| anyhow!("notebook config path has no parent"))?,
-        )?;
-        fs::write(
-            &self.config_path,
-            serde_json::to_string_pretty(&NotebookConfig {
-                vault_root: Some(root.clone()),
-            })?,
-        )?;
-        {
-            let mut vault_root = self.vault_root.lock().unwrap();
-            *vault_root = root;
-        }
-        {
-            let mut items = self.items.lock().unwrap();
-            *items = entries.clone();
-        }
-        {
-            let mut stored_folders = self.folders.lock().unwrap();
-            *stored_folders = folders.iter().cloned().collect();
-            self.save_index_locked(&entries, &stored_folders)?;
-        }
+        config.active_vault_id = Some(vault.id.clone());
+        config.vault_root = Some(root.clone());
+        save_config(&self.config_path, &config)?;
+        *self.active_vault.lock().unwrap() = vault;
+        *self.vault_root.lock().unwrap() = root;
+        *self.index_path.lock().unwrap() = index_path;
+        *self.items.lock().unwrap() = entries.clone();
+        let mut stored_folders = self.folders.lock().unwrap();
+        *stored_folders = folders.iter().cloned().collect();
+        self.save_index_locked(&entries, &stored_folders)?;
+        *self.watch_status.lock().unwrap() = NotebookWatchStatus::default();
         Ok(NotebookVaultMount {
             vault: self.vault_info(),
             entries,
@@ -954,28 +1140,37 @@ impl NotebookStore {
     }
 
     fn save_index_locked(&self, items: &[NotebookEntry], folders: &HashSet<String>) -> Result<()> {
-        if let Some(parent) = self.index_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut index = Vec::with_capacity(items.len());
-        for entry in items {
-            let path = entry
-                .path
-                .clone()
-                .unwrap_or_else(|| safe_markdown_file_name(&entry.title));
-            index.push(NotebookIndexEntry::from_entry(entry, path));
-        }
-        let mut folders = folders.iter().cloned().collect::<Vec<_>>();
-        folders.sort_by_key(|folder| folder.to_lowercase());
-        fs::write(
-            &self.index_path,
-            serde_json::to_string_pretty(&NotebookIndex {
-                entries: index,
-                folders,
-            })?,
-        )?;
-        Ok(())
+        let index_path = self.index_path.lock().unwrap().clone();
+        save_notebook_index(&index_path, items, folders)
     }
+}
+
+fn save_notebook_index(
+    index_path: &Path,
+    items: &[NotebookEntry],
+    folders: &HashSet<String>,
+) -> Result<()> {
+    if let Some(parent) = index_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut index = Vec::with_capacity(items.len());
+    for entry in items {
+        let path = entry
+            .path
+            .clone()
+            .unwrap_or_else(|| safe_markdown_file_name(&entry.title));
+        index.push(NotebookIndexEntry::from_entry(entry, path));
+    }
+    let mut folders = folders.iter().cloned().collect::<Vec<_>>();
+    folders.sort_by_key(|folder| folder.to_lowercase());
+    fs::write(
+        index_path,
+        serde_json::to_string_pretty(&NotebookIndex {
+            entries: index,
+            folders,
+        })?,
+    )?;
+    Ok(())
 }
 
 fn apply_notebook_entry_update(
@@ -1018,9 +1213,13 @@ pub fn notebook_entry_revision(entry: &NotebookEntry) -> String {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NotebookVaultInfo {
+    pub id: String,
+    pub name: String,
     pub root: String,
     pub external: bool,
     pub entries: usize,
+    pub active: bool,
+    pub available: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1163,6 +1362,110 @@ fn load_config(config_path: &Path) -> Option<NotebookConfig> {
     fs::read_to_string(config_path)
         .ok()
         .and_then(|text| serde_json::from_str::<NotebookConfig>(&text).ok())
+}
+
+fn save_config(config_path: &Path, config: &NotebookConfig) -> Result<()> {
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(config_path, serde_json::to_string_pretty(config)?)?;
+    Ok(())
+}
+
+fn normalized_config(notebook_root: &Path, config: Option<NotebookConfig>) -> NotebookConfig {
+    let internal_root = notebook_root.join("vault");
+    let mut config = config.unwrap_or_default();
+    if config.vaults.is_empty() {
+        let root = config
+            .vault_root
+            .clone()
+            .unwrap_or_else(|| internal_root.clone());
+        let internal = paths_equal(&root, &internal_root);
+        config.vaults.push(NotebookVaultConfig {
+            id: "default".into(),
+            name: if internal {
+                "Folumi 笔记".into()
+            } else {
+                default_vault_name(&root)
+            },
+            root,
+            internal,
+        });
+    }
+    let active_valid = config
+        .active_vault_id
+        .as_ref()
+        .is_some_and(|id| config.vaults.iter().any(|vault| &vault.id == id));
+    if !active_valid {
+        config.active_vault_id = config.vaults.first().map(|vault| vault.id.clone());
+    }
+    config.vault_root = Some(active_vault_config(&config).root.clone());
+    config
+}
+
+fn active_vault_config(config: &NotebookConfig) -> &NotebookVaultConfig {
+    let active_id = config.active_vault_id.as_deref();
+    config
+        .vaults
+        .iter()
+        .find(|vault| Some(vault.id.as_str()) == active_id)
+        .or_else(|| config.vaults.first())
+        .expect("normalized notebook config always has a vault")
+}
+
+fn vault_index_path(notebook_root: &Path, id: &str, legacy_index_path: &Path) -> PathBuf {
+    if id == "default" {
+        legacy_index_path.to_path_buf()
+    } else {
+        notebook_root.join("indexes").join(format!("{id}.json"))
+    }
+}
+
+fn canonical_vault_root(path: PathBuf) -> Result<PathBuf> {
+    if !path.is_dir() {
+        return Err(anyhow!(
+            "notebook vault folder does not exist or is not a directory"
+        ));
+    }
+    Ok(path.canonicalize()?)
+}
+
+fn validate_new_vault_root(vaults: &[NotebookVaultConfig], root: &Path) -> Result<()> {
+    for vault in vaults {
+        let existing = vault
+            .root
+            .canonicalize()
+            .unwrap_or_else(|_| vault.root.clone());
+        if paths_equal(&existing, root) {
+            return Err(anyhow!("notebook vault folder is already configured"));
+        }
+        if root.starts_with(&existing) || existing.starts_with(root) {
+            return Err(anyhow!("nested notebook vault folders are not supported"));
+        }
+    }
+    Ok(())
+}
+
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    left.to_string_lossy()
+        .eq_ignore_ascii_case(&right.to_string_lossy())
+}
+
+fn normalized_vault_name(name: &str, root: &Path) -> String {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        default_vault_name(root)
+    } else {
+        trimmed.chars().take(60).collect()
+    }
+}
+
+fn default_vault_name(root: &Path) -> String {
+    root.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("笔记库")
+        .to_string()
 }
 
 struct VaultScan {
@@ -2242,6 +2545,64 @@ mod tests {
         let refreshed = store.refresh_from_vault().unwrap();
         assert_eq!(refreshed.entries, 2);
         assert_eq!(refreshed.removed, 1);
+    }
+
+    #[test]
+    fn notebook_store_manages_and_switches_multiple_vaults_without_deleting_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let first_root = dir.path().join("first-vault");
+        let second_root = dir.path().join("second-vault");
+        std::fs::create_dir_all(&first_root).unwrap();
+        std::fs::create_dir_all(&second_root).unwrap();
+        std::fs::write(first_root.join("First.md"), "# First").unwrap();
+        std::fs::write(second_root.join("Second.md"), "# Second").unwrap();
+        let store = NotebookStore::new_with_path(dir.path().join("notebook"));
+
+        let first = store
+            .add_vault("个人笔记".into(), first_root.clone())
+            .unwrap();
+        let second = store
+            .add_vault("工作记录".into(), second_root.clone())
+            .unwrap();
+        assert_eq!(store.list_vaults().len(), 3);
+
+        store.switch_vault(&first.id).unwrap();
+        assert_eq!(store.vault_info().name, "个人笔记");
+        assert!(store.list(None).iter().any(|entry| entry.title == "First"));
+        let scoped = store.open_vault(&second.id).unwrap();
+        assert!(
+            scoped
+                .list(None)
+                .iter()
+                .any(|entry| entry.title == "Second")
+        );
+
+        store.rename_vault(&second.id, "项目资料".into()).unwrap();
+        assert_eq!(
+            store
+                .list_vaults()
+                .into_iter()
+                .find(|vault| vault.id == second.id)
+                .unwrap()
+                .name,
+            "项目资料"
+        );
+        store.remove_vault(&first.id).unwrap();
+        assert!(first_root.join("First.md").is_file());
+        assert_eq!(store.list_vaults().len(), 2);
+    }
+
+    #[test]
+    fn notebook_store_rejects_duplicate_and_nested_vault_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("vault");
+        let nested = root.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        let store = NotebookStore::new_with_path(dir.path().join("notebook"));
+        store.add_vault("Main".into(), root.clone()).unwrap();
+
+        assert!(store.add_vault("Duplicate".into(), root).is_err());
+        assert!(store.add_vault("Nested".into(), nested).is_err());
     }
 
     #[test]

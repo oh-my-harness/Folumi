@@ -519,20 +519,36 @@ async fn run_tutor_message(state: WsState, input: TutorMessageInput) -> &'static
             run_id: run_id.clone(),
             pending_events: pending_events.clone(),
         });
+        let session_notebook = match entry.notebook_vault_id.as_deref() {
+            Some(vault_id) => notebook
+                .open_vault(vault_id)
+                .map_err(|error| tutor_agent::TutorError::Internal(error.to_string()))?,
+            None => notebook.clone(),
+        };
         let mut router = CapabilityRouter::new(env, llm, governance)
             .with_event_sink(sink)
-            .with_product_tool(Arc::new(ReadNotebookItemTool::new(notebook.clone())));
+            .with_product_tool(Arc::new(ReadNotebookItemTool::new(
+                session_notebook.clone(),
+            )));
         if entry.notebook_enabled {
             router = router
-                .with_product_tool(Arc::new(ListNotebookTreeTool::new(notebook.clone())))
-                .with_product_tool(Arc::new(SearchNotebookTool::new(notebook.clone())))
-                .with_product_tool(Arc::new(CreateNotebookItemTool::new(notebook.clone())))
-                .with_product_tool(Arc::new(UpdateNotebookItemTool::new(notebook.clone())))
-                .with_product_tool(Arc::new(MoveNotebookItemTool::new(notebook.clone())));
+                .with_product_tool(Arc::new(ListNotebookTreeTool::new(
+                    session_notebook.clone(),
+                )))
+                .with_product_tool(Arc::new(SearchNotebookTool::new(session_notebook.clone())))
+                .with_product_tool(Arc::new(CreateNotebookItemTool::new(
+                    session_notebook.clone(),
+                )))
+                .with_product_tool(Arc::new(UpdateNotebookItemTool::new(
+                    session_notebook.clone(),
+                )))
+                .with_product_tool(Arc::new(MoveNotebookItemTool::new(
+                    session_notebook.clone(),
+                )));
         }
         if entry.capability == "organize" {
             router =
-                router.with_product_tool(Arc::new(ProposeNotebookEditTool::new(notebook.clone())));
+                router.with_product_tool(Arc::new(ProposeNotebookEditTool::new(session_notebook)));
         }
         if let Some(search) = web_search_config_for_session(entry.search.clone()) {
             router = router.with_web_search(search);

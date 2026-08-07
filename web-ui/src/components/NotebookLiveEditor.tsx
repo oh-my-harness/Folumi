@@ -13,23 +13,27 @@ interface Props {
   language: 'zh-CN' | 'en-US'
   onSave: (entryId: string, markdown: string) => Promise<boolean>
   onWikiLinkOpen: (target: string) => void
+  flushToken?: number
+  onFlushComplete?: (token: number, saved: boolean) => void
 }
 
-export function NotebookLiveEditor({ entryId, markdown, language, onSave, onWikiLinkOpen }: Props) {
+export function NotebookLiveEditor({ entryId, markdown, language, onSave, onWikiLinkOpen, flushToken = 0, onFlushComplete }: Props) {
   const english = language === 'en-US'
   const rootRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<Vditor | null>(null)
   const onSaveRef = useRef(onSave)
+  const onFlushCompleteRef = useRef(onFlushComplete)
   const frontMatterRef = useRef(splitNotebookEditorDocument(markdown).frontMatter)
   const latestDraftRef = useRef(markdown)
   const savedDraftRef = useRef(markdown)
-  const saveQueueRef = useRef(Promise.resolve())
+  const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true))
   const saveTimerRef = useRef<number | null>(null)
   const applyingExternalValueRef = useRef(false)
   const mountedRef = useRef(true)
   const [saveState, setSaveState] = useState<SaveState>('saved')
 
   onSaveRef.current = onSave
+  onFlushCompleteRef.current = onFlushComplete
 
   const clearSaveTimer = useCallback(() => {
     if (saveTimerRef.current === null) return
@@ -40,23 +44,24 @@ export function NotebookLiveEditor({ entryId, markdown, language, onSave, onWiki
   const enqueueSave = useCallback((showState = true) => {
     clearSaveTimer()
     saveQueueRef.current = saveQueueRef.current
-      .catch(() => undefined)
+      .catch(() => false)
       .then(async () => {
         const next = latestDraftRef.current
         if (next === savedDraftRef.current) {
           if (showState && mountedRef.current) setSaveState('saved')
-          return
+          return true
         }
         if (showState && mountedRef.current) setSaveState('saving')
         const saved = await onSaveRef.current(entryId, next)
         if (!saved) {
           if (showState && mountedRef.current) setSaveState('error')
-          return
+          return false
         }
         savedDraftRef.current = next
         if (showState && mountedRef.current) {
           setSaveState(latestDraftRef.current === next ? 'saved' : 'dirty')
         }
+        return true
       })
     return saveQueueRef.current
   }, [clearSaveTimer, entryId])
@@ -167,6 +172,11 @@ export function NotebookLiveEditor({ entryId, markdown, language, onSave, onWiki
     applyingExternalValueRef.current = false
     setSaveState('saved')
   }, [markdown])
+
+  useEffect(() => {
+    if (!flushToken) return
+    void enqueueSave(false).then((saved) => onFlushCompleteRef.current?.(flushToken, saved))
+  }, [enqueueSave, flushToken])
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if (!(event.ctrlKey || event.metaKey) || event.key.toLocaleLowerCase() !== 's') return
