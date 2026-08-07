@@ -14,9 +14,7 @@ Function('module', 'exports', compiled)(module, module.exports)
 
 const {
   findNotebookWikiLinks,
-  notebookWikiTargetFromHref,
-  prepareNotebookMarkdownForEditor,
-  restoreNotebookMarkdownFromEditor,
+  notebookWikiTargetAtOffset,
 } = module.exports
 
 test('finds Wiki links and keeps aliases out of their navigation target', () => {
@@ -30,24 +28,8 @@ test('does not turn embedded assets or empty targets into note links', () => {
   assert.deepEqual(findNotebookWikiLinks('![[image.png]] [[]] [[  ]]'), [])
 })
 
-test('round trips Wiki links and embedded assets through editor-safe links', () => {
-  const markdown = 'See [[Breakfast]] and [[person/name|Name]].\n\n![[image.png]]\n'
-  const prepared = prepareNotebookMarkdownForEditor(markdown)
-  assert.match(prepared, /#folumi-wiki-/)
-  assert.match(prepared, /#folumi-embed-/)
-  assert.equal(restoreNotebookMarkdownFromEditor(prepared), markdown)
-})
-
-test('does not transform Wiki-like examples inside code', () => {
-  const markdown = '`[[inline]]`\n\n```md\n[[fenced]]\n```\n\n[[real]]'
-  const prepared = prepareNotebookMarkdownForEditor(markdown)
-  assert.match(prepared, /`\[\[inline\]\]`/)
-  assert.match(prepared, /\n\[\[fenced\]\]\n/)
-  assert.match(prepared, /#folumi-wiki-real/)
-  assert.equal(restoreNotebookMarkdownFromEditor(prepared), markdown)
-})
-
-test('gets the navigation target without exposing the alias', () => {
-  assert.equal(notebookWikiTargetFromHref('#folumi-wiki-person%2Fname%7CName'), 'person/name')
-  assert.equal(notebookWikiTargetFromHref('https://example.com'), undefined)
+test('gets the raw Wiki target at the clicked source offset', () => {
+  const text = 'See [[person/name|Name]] and ![[asset.png]].'
+  assert.equal(notebookWikiTargetAtOffset(text, text.indexOf('Name')), 'person/name')
+  assert.equal(notebookWikiTargetAtOffset(text, text.indexOf('asset')), undefined)
 })

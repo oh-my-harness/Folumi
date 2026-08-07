@@ -20,8 +20,8 @@ Current product and runtime-facing specs live here.
   and context usage for diagnostics and benchmarks.
 - `2026-08-06-notebook-file-naming-decision.md` 以 Markdown 文件名作为
   Notebook 唯一命名来源，并统一文件树重命名交互。
-- `2026-08-06-notebook-live-preview-decision.md` 规定 Notebook 使用基于
-  Milkdown Crepe 的正文内直接编辑、自动保存和 Markdown 文件持久化，
+- `2026-08-06-notebook-live-preview-decision.md` 规定 Notebook 使用 Vditor
+  即时渲染编辑、自动保存和 Markdown 文件持久化，
   并明确替代早期的块级 textarea Live Preview 实现。
 - `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
   design and remains only as historical context.

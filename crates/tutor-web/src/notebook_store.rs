@@ -794,6 +794,7 @@ impl NotebookStore {
         let Some(entry_index) = items.iter().position(|item| item.id == id) else {
             return Ok(ExactNotebookMutationOutcome::NotFound);
         };
+        items[entry_index].markdown = self.hydrate_entry(items[entry_index].clone()).markdown;
         let latest_revision = notebook_entry_revision(&items[entry_index]);
         if latest_revision != expected_revision {
             return Ok(ExactNotebookMutationOutcome::Stale { latest_revision });
@@ -815,6 +816,7 @@ impl NotebookStore {
         let Some(entry_index) = items.iter().position(|item| item.id == id) else {
             return Ok(ExactNotebookMutationOutcome::NotFound);
         };
+        items[entry_index].markdown = self.hydrate_entry(items[entry_index].clone()).markdown;
         let latest_revision = notebook_entry_revision(&items[entry_index]);
         if latest_revision != expected_revision {
             return Ok(ExactNotebookMutationOutcome::Stale { latest_revision });
@@ -875,6 +877,7 @@ impl NotebookStore {
         let Some(entry_index) = items.iter().position(|item| item.id == id) else {
             return Ok(ExactNotebookMutationOutcome::NotFound);
         };
+        items[entry_index].markdown = self.hydrate_entry(items[entry_index].clone()).markdown;
         let latest_revision = notebook_entry_revision(&items[entry_index]);
         if latest_revision != expected_revision {
             return Ok(ExactNotebookMutationOutcome::Stale { latest_revision });
@@ -2140,6 +2143,51 @@ mod tests {
 
         assert!(reloaded.delete(&entry.id));
         assert!(!note_path.exists());
+    }
+
+    #[test]
+    fn exact_update_uses_the_revision_returned_for_hydrated_vault_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = NotebookStore::new_with_path(dir.path().join("notebook"));
+        let entry = store
+            .create(NotebookEntryInput {
+                space_id: None,
+                entry_type: NotebookEntryType::Note,
+                path: Some("notes/live.md".into()),
+                title: "Live".into(),
+                markdown: "# Indexed".into(),
+                metadata: None,
+                source_session_id: None,
+                source_message_id: None,
+            })
+            .unwrap();
+        let note_path = dir
+            .path()
+            .join("notebook")
+            .join("vault")
+            .join("notes")
+            .join("live.md");
+        std::fs::write(&note_path, "# Changed in Vault").unwrap();
+
+        let hydrated = store.get_view(&entry.id).unwrap().entry;
+        let outcome = store
+            .update_exact(
+                &entry.id,
+                &notebook_entry_revision(&hydrated),
+                NotebookEntryUpdate {
+                    markdown: Some("# Saved from editor".into()),
+                    metadata: None,
+                    source_session_id: None,
+                    source_message_id: None,
+                },
+            )
+            .unwrap();
+
+        assert!(matches!(outcome, ExactNotebookMutationOutcome::Updated(_)));
+        assert_eq!(
+            std::fs::read_to_string(note_path).unwrap(),
+            "# Saved from editor"
+        );
     }
 
     #[test]

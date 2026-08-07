@@ -10,18 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@codemirror/lang-css": "^6.3.1",
-    "@codemirror/lang-html": "^6.4.12",
-    "@codemirror/lang-javascript": "^6.2.5",
-    "@codemirror/lang-json": "^6.0.2",
-    "@codemirror/lang-markdown": "^6.5.2",
-    "@codemirror/lang-python": "^6.2.1",
-    "@codemirror/lang-rust": "^6.0.2",
-    "@codemirror/lang-sql": "^6.10.0",
-    "@codemirror/lang-yaml": "^6.1.3",
-    "@codemirror/language": "^6.12.4",
-    "@milkdown/crepe": "^7.22.0",
-    "@milkdown/kit": "^7.22.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "katex": "^0.16.47",
@@ -35,7 +23,8 @@
     "rehype-slug": "^6.0.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "vditor": "^3.11.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
@@ -44,6 +33,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.7.0",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vite-plugin-static-copy": "^4.1.1"
   }
 }
