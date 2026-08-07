@@ -660,9 +660,9 @@ export function SettingsPage({
           )}
 
           {activeTab === 'llm' && (
-            <SettingsPanel icon={Brain} title="对话模型" description="选择用来回答问题的模型。">
+            <SettingsPanel icon={Brain} title="LLM" description="选择用来回答问题的模型。">
               {settings.llmConfigs.length === 0 ? (
-                <EmptyConfig onAdd={addLlmConfig} label="还没有对话模型" />
+                <EmptyConfig onAdd={addLlmConfig} label="还没有 LLM 配置" />
               ) : (
                 <div className="grid gap-5 lg:grid-cols-[230px_1fr]">
                   <ConfigList
@@ -767,9 +767,9 @@ export function SettingsPage({
           )}
 
           {activeTab === 'embedding' && (
-            <SettingsPanel icon={Database} title="资料查找" description="让助手能够从资料中找到相关内容。">
+            <SettingsPanel icon={Database} title="嵌入模型" description="用于从资料中找到相关内容。">
               {settings.embeddingConfigs.length === 0 ? (
-                <EmptyConfig onAdd={addEmbeddingConfig} label="资料查找尚未配置" />
+                <EmptyConfig onAdd={addEmbeddingConfig} label="还没有嵌入模型配置" />
               ) : (
                 <div className="grid gap-5 lg:grid-cols-[230px_1fr]">
                   <ConfigList
@@ -787,7 +787,7 @@ export function SettingsPage({
                   {activeEmbeddingConfig && (
                     <div className="space-y-5 rounded-lg border border-gray-200 p-4">
                       <ConfigHeader
-                        title="检索模型接口"
+                        title="嵌入模型接口"
                         description="填写模型服务商提供的连接信息。"
                         onDelete={() => deleteEmbeddingConfig(activeEmbeddingConfig.id)}
                       />

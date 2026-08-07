@@ -703,7 +703,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                   <div className="max-w-2xl">
                     <h3 className="text-lg font-semibold text-gray-950">设置</h3>
                     <dl className="mt-5 divide-y divide-gray-200 rounded-lg border border-gray-200">
-                      <InfoRow label="资料查找模型" value={activeKb.embedding.model} />
+                      <InfoRow label="嵌入模型" value={activeKb.embedding.model} />
                       <InfoRow label="Base URL" value={activeKb.embedding.base_url ?? '-'} />
                       <InfoRow label="端点" value={activeKb.embedding.embeddings_path ?? '-'} />
                       <InfoRow label="维度" value={String(activeKb.embedding.dimensions ?? '-')} />
@@ -995,14 +995,14 @@ function CreateKnowledgeBaseDialog({
                 disabled={busy}
               />
             </Field>
-            <Field label="资料查找模型">
+            <Field label="嵌入模型">
               <select
                 className={inputClassName}
                 value={embeddingId}
                 onChange={(event) => onEmbeddingChange(event.target.value)}
                 disabled={busy}
               >
-                <option value="">选择资料查找模型</option>
+                <option value="">选择嵌入模型</option>
                 {settings.embeddingConfigs.map((config) => (
                   <option key={config.id} value={config.id}>
                     {config.name} · {config.model} · {config.dimensions}维

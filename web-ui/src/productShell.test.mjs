@@ -236,8 +236,8 @@ test('onboarding teaches model, sources, and asking without legacy hierarchy', (
 test('high-frequency interface copy uses short everyday language', () => {
   assert.match(memory, /在新对话中使用已保存的个人信息/)
   assert.match(memory, /自动记住你明确说过的重要信息/)
-  assert.match(i18n, /'settings\.tabs\.llm': '对话模型'/)
-  assert.match(i18n, /'settings\.tabs\.embedding': '资料查找'/)
+  assert.match(i18n, /'settings\.tabs\.llm': 'LLM'/)
+  assert.match(i18n, /'settings\.tabs\.embedding': '嵌入模型'/)
   assert.match(i18n, /'settings\.tabs\.search': '联网搜索'/)
   assert.match(i18n, /'settings\.tabs\.governance': '权限与数据'/)
   assert.match(knowledgePage, />\s*添加文档\s*</)
