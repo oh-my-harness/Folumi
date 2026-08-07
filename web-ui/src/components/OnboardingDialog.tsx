@@ -155,13 +155,13 @@ function StepHeading({ icon, title, description }: { icon: ReactNode; title: str
 const chineseCopy = {
   title: '开始使用 Folumi', subtitle: '准备好模型和资料，就可以开始提问', steps: ['准备模型', '加入资料', '开始提问'], dismiss: '关闭使用引导', later: '稍后再说', back: '上一步', continue: '继续', done: '完成',
   model: { title: '准备对话模型', description: '选择一个模型来回答问题。', missing: '尚未配置模型', missingDescription: '浏览不受影响，提问前再配置即可。', configure: '配置模型', manage: '管理', test: '测试连接', testing: '正在测试…', testOk: '模型连接正常。', testError: '模型连接失败。' },
-  knowledge: { title: '加入资料与笔记', description: '资料用来参考，笔记用来记录想法。', instructions: ['在“资料”中导入需要参考的文件。', '在“笔记”中写下自己的内容。', '聊天时选择需要使用的资料或笔记。'], embeddingReady: '资料查找已就绪', embeddingMissing: '资料查找尚未配置', ready: '已有 {count} 个资料集', empty: '还没有资料', embedding: '资料查找设置', open: '打开资料', openNotebook: '打开笔记' },
+  knowledge: { title: '加入资料与笔记', description: '资料用来参考，笔记用来记录想法。', instructions: ['在“资料”中导入需要参考的文件。', '在“笔记”中写下自己的内容。', '聊天时选择需要使用的资料或笔记。'], embeddingReady: '嵌入模型已配置', embeddingMissing: '嵌入模型尚未配置', ready: '已有 {count} 个资料集', empty: '还没有资料', embedding: '嵌入模型设置', open: '打开资料', openNotebook: '打开笔记' },
   start: { title: '开始第一次提问', description: '直接说出你想了解或完成的事。', example: '例如：“总结项目资料中的三个关键结论，并标明出处。”', action: '去问助手' },
 }
 
 const englishCopy: typeof chineseCopy = {
   title: 'Get started with Folumi', subtitle: 'Prepare a model and sources, then start asking', steps: ['Model', 'Sources', 'Ask'], dismiss: 'Close onboarding', later: 'Maybe later', back: 'Back', continue: 'Continue', done: 'Complete',
   model: { title: 'Prepare a chat model', description: 'Choose a model to answer questions.', missing: 'No model configured', missingDescription: 'You can keep browsing and configure it before asking.', configure: 'Configure', manage: 'Manage', test: 'Test connection', testing: 'Testing…', testOk: 'Model connection works.', testError: 'Model connection failed.' },
-  knowledge: { title: 'Add sources and notes', description: 'Use sources for reference and notes for your own ideas.', instructions: ['Import files you want to reference under Sources.', 'Write your own content in Notebook.', 'Choose the sources or notes you need while chatting.'], embeddingReady: 'Source search is ready', embeddingMissing: 'Source search is not set up', ready: '{count} source collection(s)', empty: 'No sources yet', embedding: 'Source search settings', open: 'Open Sources', openNotebook: 'Open Notebook' },
+  knowledge: { title: 'Add sources and notes', description: 'Use sources for reference and notes for your own ideas.', instructions: ['Import files you want to reference under Sources.', 'Write your own content in Notebook.', 'Choose the sources or notes you need while chatting.'], embeddingReady: 'Embedding model configured', embeddingMissing: 'No embedding model configured', ready: '{count} source collection(s)', empty: 'No sources yet', embedding: 'Embedding model settings', open: 'Open Sources', openNotebook: 'Open Notebook' },
   start: { title: 'Ask your first question', description: 'Describe what you want to know or accomplish.', example: 'For example: “Summarize three key conclusions from my project sources and cite them.”', action: 'Ask Assistant' },
 }

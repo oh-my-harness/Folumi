@@ -227,8 +227,8 @@ const chineseCopy = {
   knowledge: {
     title: '配置并使用资料',
     description: '把需要参考的文件整理在一起，聊天时可以随时使用。',
-    steps: ['在“设置 > 资料查找”完成配置。', '进入“资料”创建资料集并添加文件。', '回到聊天，从输入框中选择资料集。', '提问后可以打开回答中的出处。'],
-    embedding: '配置资料查找',
+    steps: ['在“设置 > 嵌入模型”完成配置。', '进入“资料”创建资料集并添加文件。', '回到聊天，从输入框中选择资料集。', '提问后可以打开回答中的出处。'],
+    embedding: '配置嵌入模型',
     open: '打开资料',
   },
   notebook: {
@@ -280,8 +280,8 @@ const englishCopy: typeof chineseCopy = {
   knowledge: {
     title: 'Configure and use Sources',
     description: 'Keep reference files together and use them while chatting.',
-    steps: ['Complete Settings > Source search.', 'Create a collection under Sources and add files.', 'Return to Chat and choose that collection.', 'Open citations in an answer to see where it came from.'],
-    embedding: 'Configure source search',
+    steps: ['Complete Settings > Embedding models.', 'Create a collection under Sources and add files.', 'Return to Chat and choose that collection.', 'Open citations in an answer to see where it came from.'],
+    embedding: 'Configure embedding model',
     open: 'Open Sources',
   },
   notebook: {

@@ -888,7 +888,7 @@ function EmptyKnowledgeState({
         <p className="mt-2 text-sm leading-6 text-gray-500">
           {canCreate
             ? '新建资料集，把需要参考的文件放在一起。'
-            : '请先在设置中完成“资料查找”，再新建资料集。'}
+            : '请先在设置中配置“嵌入模型”，再新建资料集。'}
         </p>
         <button
           className={`${primaryButtonClassName} mt-5`}

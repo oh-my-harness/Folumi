@@ -230,7 +230,7 @@ test('retired Research mode is absent while normal Chat keeps source tools', () 
 test('onboarding teaches model, sources, and asking without legacy hierarchy', () => {
   assert.match(onboarding, /steps: \['准备模型', '加入资料', '开始提问'\]/)
   assert.doesNotMatch(onboarding, /onManageTutors|onOpenMemory|OnboardingModeGuide/)
-  assert.doesNotMatch(onboarding, /RAG|嵌入|向量|Agent|runtime|上下文/)
+  assert.doesNotMatch(onboarding, /RAG|向量|Agent|runtime|上下文/)
 })
 
 test('high-frequency interface copy uses short everyday language', () => {
@@ -243,6 +243,8 @@ test('high-frequency interface copy uses short everyday language', () => {
   assert.match(knowledgePage, />\s*添加文档\s*</)
   assert.match(knowledgePage, />\s*查找\s*</)
   assert.match(knowledgePage, />\s*重新整理\s*</)
+  assert.match(knowledgePage, /请先在设置中配置“嵌入模型”/)
+  assert.doesNotMatch(knowledgePage, /设置中完成“资料查找”/)
 })
 
 test('note references use the notes-only API and no Space picker contract', () => {
