@@ -932,7 +932,7 @@ function Composer({
     {
       id: '__notebook__',
       type: 'notebook' as const,
-      name: 'Notebook',
+      name: t('nav.notebook'),
       description: t('chat.notebook.description'),
       icon: <FileText size={21} />,
     },
@@ -1042,7 +1042,7 @@ function Composer({
       <div className="relative flex flex-wrap items-center gap-2 border-t border-blue-50 px-4 py-2">
 
         <button
-          className="inline-flex h-9 items-center gap-2 rounded-full px-3 text-sm text-gray-600 hover:bg-blue-50 disabled:text-gray-400"
+          className="inline-flex h-9 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 disabled:border-gray-100 disabled:bg-gray-50 disabled:text-gray-400"
           type="button"
           disabled={disabled || running || readingAttachments}
           onClick={() => fileInputRef.current?.click()}
@@ -1066,30 +1066,36 @@ function Composer({
             onClick={() => toggleMenu('knowledge')}
           />
           {openMenu === 'knowledge' && (
-            <DropdownPanel widthClassName="w-[17rem] max-w-[calc(100vw-1.5rem)]">
-              {sourceOptions.map((item) => (
-                <DropdownOption
-                  key={item.id || 'none'}
-                  selected={
-                    item.type === 'notebook'
-                      ? selectedNotebookEnabled
-                      : item.type === 'none'
-                        ? !selectedNotebookEnabled && !selectedKnowledgeBaseId
-                        : !selectedNotebookEnabled && item.id === selectedKnowledgeBaseId
-                  }
-                  icon={item.icon}
-                  title={item.name}
-                  description={item.description}
-                  onClick={() => {
-                    if (item.type === 'notebook') {
-                      onNotebookEnabledChange(true)
-                    } else {
-                      onKnowledgeBaseChange(item.id)
+            <DropdownPanel
+              widthClassName="w-[21rem] max-w-[calc(100vw-1.5rem)]"
+              title={t('chat.source.menu.title')}
+              description={t('chat.source.menu.description')}
+            >
+              <div className="space-y-1 p-2">
+                {sourceOptions.map((item) => (
+                  <DropdownOption
+                    key={item.id || 'none'}
+                    selected={
+                      item.type === 'notebook'
+                        ? selectedNotebookEnabled
+                        : item.type === 'none'
+                          ? !selectedNotebookEnabled && !selectedKnowledgeBaseId
+                          : !selectedNotebookEnabled && item.id === selectedKnowledgeBaseId
                     }
-                    setOpenMenu(null)
-                  }}
-                />
-              ))}
+                    icon={item.icon}
+                    title={item.name}
+                    description={item.description}
+                    onClick={() => {
+                      if (item.type === 'notebook') {
+                        onNotebookEnabledChange(true)
+                      } else {
+                        onKnowledgeBaseChange(item.id)
+                      }
+                      setOpenMenu(null)
+                    }}
+                  />
+                ))}
+              </div>
             </DropdownPanel>
           )}
         </div>
@@ -1098,29 +1104,31 @@ function Composer({
           <ToolbarButton
             active={openMenu === 'notes'}
             icon={<AtSign size={18} />}
-            label={mentions.length > 0 ? `${t('nav.knowledge')} ${mentions.length}` : t('nav.knowledge')}
+            label={mentions.length > 0 ? `${t('nav.notebook')} ${mentions.length}` : t('nav.notebook')}
             onClick={() => toggleMenu('notes')}
           />
           {openMenu === 'notes' && (
             <DropdownPanel
-              widthClassName="w-[18rem] max-w-[calc(100vw-1.5rem)]"
+              widthClassName="w-[21rem] max-w-[calc(100vw-1.5rem)]"
               className="flex max-h-[min(19rem,calc(100vh-7rem))] flex-col"
+              title={t('chat.notes.menu.title')}
+              description={t('chat.notes.menu.description')}
             >
-              <div className="shrink-0 space-y-1.5 border-b border-blue-50 bg-white px-3 pb-1.5 pt-1">
+              <div className="shrink-0 space-y-1.5 border-b border-gray-100 bg-white px-3 py-2.5">
                 <input
-                  className="h-6 w-full rounded-lg border border-blue-100 px-2 text-xs outline-none focus:border-blue-300"
+                  className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm outline-none transition placeholder:text-gray-400 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-50"
                   value={noteQuery}
                   onChange={(event) => setNoteQuery(event.target.value)}
                   placeholder={t('chat.notes.searchPlaceholder')}
                   autoFocus
                 />
                 {loadingNoteMentions && (
-                  <div className="px-1 text-[11px] text-blue-500">{t('chat.notes.updating')}</div>
+                  <div className="px-1 text-xs text-blue-600">{t('chat.notes.updating')}</div>
                 )}
               </div>
-              <div className="min-h-0 overflow-y-auto py-1">
+              <div className="min-h-0 space-y-1 overflow-y-auto p-2">
                 {noteMentions.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-gray-500">
+                  <div className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
                     {t('chat.notes.noMatching')}
                   </div>
                 ) : (
@@ -1151,30 +1159,36 @@ function Composer({
             onClick={() => toggleMenu('model')}
           />
           {openMenu === 'model' && (
-            <DropdownPanel widthClassName="right-0 left-auto w-[18rem] max-w-[calc(100vw-1.5rem)]">
-              {llmConfigs.length === 0 ? (
-                <DropdownOption
-                  selected
-                  icon={<Brain size={21} />}
-                  title={t('chat.model.none')}
-                  description={t('chat.model.configureFirst')}
-                  onClick={() => setOpenMenu(null)}
-                />
-              ) : (
-                llmConfigs.map((config) => (
+            <DropdownPanel
+              widthClassName="right-0 left-auto w-[21rem] max-w-[calc(100vw-1.5rem)]"
+              title={t('chat.model.menu.title')}
+              description={t('chat.model.menu.description')}
+            >
+              <div className="space-y-1 p-2">
+                {llmConfigs.length === 0 ? (
                   <DropdownOption
-                    key={config.id}
-                    selected={config.id === activeModel?.id}
+                    selected={false}
                     icon={<Brain size={21} />}
-                    title={config.name || config.model}
-                    description={`${llmApiModeLabel(config.provider)} / ${config.model}`}
-                    onClick={() => {
-                      onLlmConfigChange(config.id)
-                      setOpenMenu(null)
-                    }}
+                    title={t('chat.model.none')}
+                    description={t('chat.model.configureFirst')}
+                    onClick={() => setOpenMenu(null)}
                   />
-                ))
-              )}
+                ) : (
+                  llmConfigs.map((config) => (
+                    <DropdownOption
+                      key={config.id}
+                      selected={config.id === activeModel?.id}
+                      icon={<Brain size={21} />}
+                      title={config.name || config.model}
+                      description={`${llmApiModeLabel(config.provider)} / ${config.model}`}
+                      onClick={() => {
+                        onLlmConfigChange(config.id)
+                        setOpenMenu(null)
+                      }}
+                    />
+                  ))
+                )}
+              </div>
             </DropdownPanel>
           )}
         </div>
@@ -1422,10 +1436,10 @@ function ToolbarButton({
 }) {
   return (
     <button
-      className={`inline-flex h-9 max-w-56 items-center gap-2 rounded-full border px-3 text-sm transition ${
+      className={`inline-flex h-9 max-w-56 items-center gap-2 rounded-xl border px-3 text-sm transition ${
         active
-          ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
-          : 'border-transparent text-gray-700 hover:bg-blue-50'
+          ? 'border-blue-300 bg-blue-50 text-blue-700 shadow-sm ring-2 ring-blue-100/70'
+          : 'border-gray-200 bg-gray-50/80 text-gray-700 hover:border-blue-200 hover:bg-blue-50'
       }`}
       type="button"
       onClick={onClick}
@@ -1441,15 +1455,24 @@ function DropdownPanel({
   children,
   widthClassName,
   className = '',
+  title,
+  description,
 }: {
   children: ReactNode
   widthClassName: string
   className?: string
+  title: string
+  description: string
 }) {
   return (
     <div
-      className={`absolute bottom-12 left-0 z-30 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl shadow-blue-950/10 ${widthClassName} ${className || 'py-1'}`}
+      className={`absolute bottom-[calc(100%+0.75rem)] left-0 z-40 overflow-hidden rounded-2xl border border-gray-200/90 bg-white shadow-[0_20px_55px_-20px_rgba(15,23,42,0.35)] ring-1 ring-gray-950/5 ${widthClassName} ${className}`}
+      data-composer-dropdown="true"
     >
+      <div className="shrink-0 border-b border-gray-100 bg-gray-50/80 px-4 py-3">
+        <div className="text-sm font-semibold text-gray-950">{title}</div>
+        <div className="mt-0.5 text-xs leading-5 text-gray-500">{description}</div>
+      </div>
       {children}
     </div>
   )
@@ -1470,21 +1493,27 @@ function DropdownOption({
 }) {
   return (
     <button
-      className={`flex w-full items-center gap-2 px-2 py-2 text-left transition ${
-        selected ? 'bg-blue-50' : 'hover:bg-gray-50'
+      className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+        selected
+          ? 'border-blue-200 bg-blue-50/80 shadow-sm'
+          : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
       }`}
       type="button"
       onClick={onClick}
     >
-      <span className={`flex h-7 w-7 shrink-0 items-center justify-center ${
-        selected ? 'text-blue-700' : 'text-gray-500'
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+        selected
+          ? 'border-blue-200 bg-white text-blue-700'
+          : 'border-gray-200 bg-white text-gray-500 group-hover:text-gray-700'
       }`}>{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-gray-950">{title}</span>
-        <span className="mt-0.5 block truncate text-xs text-gray-500">{description}</span>
+        <span className="block truncate text-sm font-medium text-gray-950">{title}</span>
+        <span className="mt-0.5 block line-clamp-2 text-xs leading-4 text-gray-500">{description}</span>
       </span>
       {selected ? (
-        <Check size={14} className="shrink-0 text-blue-600" />
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+          <Check size={12} />
+        </span>
       ) : (
         <span className="h-2 w-2 shrink-0 rounded-full bg-transparent" />
       )}

@@ -27,6 +27,12 @@ export type TranslationKey =
   | 'chat.knowledge.none.description'
   | 'chat.knowledge.use.description'
   | 'chat.notebook.description'
+  | 'chat.source.menu.title'
+  | 'chat.source.menu.description'
+  | 'chat.notes.menu.title'
+  | 'chat.notes.menu.description'
+  | 'chat.model.menu.title'
+  | 'chat.model.menu.description'
   | 'chat.notes.searchPlaceholder'
   | 'chat.notes.updating'
   | 'chat.notes.noMatching'
@@ -89,7 +95,13 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.knowledge.none': '不关联资料',
     'chat.knowledge.none.description': '仅使用当前对话上下文',
     'chat.knowledge.use.description': '关联此资料集进行检索',
-    'chat.notebook.description': '以纯 Markdown 文本搜索 Notebook',
+    'chat.notebook.description': '搜索你创建和管理的 Markdown 笔记',
+    'chat.source.menu.title': '选择资料范围',
+    'chat.source.menu.description': '用于整个会话，可随时切换',
+    'chat.notes.menu.title': '引用笔记',
+    'chat.notes.menu.description': '精确指定本次消息需要读取的内容',
+    'chat.model.menu.title': '选择模型',
+    'chat.model.menu.description': '决定新消息使用哪个模型服务',
     'chat.notes.searchPlaceholder': '搜索笔记...',
     'chat.notes.updating': '更新中...',
     'chat.notes.noMatching': '没有匹配内容。',
@@ -151,7 +163,13 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.knowledge.none': 'No sources',
     'chat.knowledge.none.description': 'Use only the current conversation context',
     'chat.knowledge.use.description': 'Search this source collection for context',
-    'chat.notebook.description': 'Search Notebook as plain Markdown text',
+    'chat.notebook.description': 'Search the Markdown notes you create and manage',
+    'chat.source.menu.title': 'Choose a source',
+    'chat.source.menu.description': 'Applies to the conversation and can be changed anytime',
+    'chat.notes.menu.title': 'Reference a note',
+    'chat.notes.menu.description': 'Choose exact content for this message',
+    'chat.model.menu.title': 'Choose a model',
+    'chat.model.menu.description': 'Select the model service for new messages',
     'chat.notes.searchPlaceholder': 'Search notes...',
     'chat.notes.updating': 'Updating...',
     'chat.notes.noMatching': 'No matching content.',

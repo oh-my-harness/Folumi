@@ -9,6 +9,12 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ## Unreleased
 
+### Changed
+
+- Unified the Assistant composer’s source, Note, and model selectors with
+  clearer headers, roomier option cards, consistent selected states, and a
+  more usable Note search and empty state.
+
 ## 0.4.2 - 2026-08-07
 
 ### Added

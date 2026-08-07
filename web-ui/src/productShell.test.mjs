@@ -235,3 +235,14 @@ test('note references use the notes-only API and no Space picker contract', () =
   assert.match(composer, /\/api\/notebook\/mentions/)
   assert.doesNotMatch(composer, /\/api\/space\/mentions|Space picker|spaceMention/)
 })
+
+test('composer selectors share one polished dropdown surface', () => {
+  assert.equal(composer.match(/<DropdownPanel/g)?.length, 3)
+  assert.match(composer, /data-composer-dropdown="true"/)
+  assert.match(composer, /rounded-2xl border border-gray-200\/90/)
+  assert.match(composer, /title=\{t\('chat\.source\.menu\.title'\)\}/)
+  assert.match(composer, /title=\{t\('chat\.notes\.menu\.title'\)\}/)
+  assert.match(composer, /title=\{t\('chat\.model\.menu\.title'\)\}/)
+  assert.match(composer, /label=\{mentions\.length > 0 \? `\$\{t\('nav\.notebook'\)\}/)
+  assert.match(composer, /line-clamp-2/)
+})
