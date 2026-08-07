@@ -135,7 +135,7 @@ export function SettingsPage({
   const [dataDir, setDataDir] = useState<string | null>(null)
   const [dataDirError, setDataDirError] = useState('')
   const [notebookVault, setNotebookVault] = useState<NotebookVault | null>(null)
-  const [notebookStatus, setNotebookStatus] = useState('Notebook settings ready')
+  const [notebookStatus, setNotebookStatus] = useState('笔记设置已就绪')
   const [notebookLoading, setNotebookLoading] = useState(false)
   const [pendingImportFiles, setPendingImportFiles] = useState<File[]>([])
   const [importPreview, setImportPreview] = useState<NotebookImportPreview | null>(null)
@@ -164,7 +164,7 @@ export function SettingsPage({
       if (!res.ok) throw new Error(errorMessage(data, res.status))
       setNotebookVault((data.vault ?? null) as NotebookVault | null)
       const entries = Array.isArray(data.entries) ? data.entries.length : 0
-      setNotebookStatus(entries ? `${entries} notes loaded` : 'No notebook notes yet')
+      setNotebookStatus(entries ? `已加载 ${entries} 篇笔记` : '还没有笔记')
     } catch (err) {
       setNotebookStatus(err instanceof Error ? err.message : String(err))
     } finally {
@@ -203,7 +203,7 @@ export function SettingsPage({
       if (!res.ok) throw new Error(errorMessage(data, res.status))
       const preview = data as unknown as NotebookImportPreview
       setImportPreview(preview)
-      setNotebookStatus(`Previewed ${preview.items.length} note${preview.items.length === 1 ? '' : 's'}`)
+      setNotebookStatus(`找到 ${preview.items.length} 篇可导入笔记`)
     } catch (err) {
       setPendingImportFiles([])
       setNotebookStatus(err instanceof Error ? err.message : String(err))
@@ -230,7 +230,7 @@ export function SettingsPage({
       setImportResult({ imported_count: imported, skipped: skippedItems })
       setPendingImportFiles([])
       setImportPreview(null)
-      setNotebookStatus(`Imported ${imported} note${imported === 1 ? '' : 's'}${skippedItems.length ? `, skipped ${skippedItems.length}` : ''}`)
+      setNotebookStatus(`已导入 ${imported} 篇${skippedItems.length ? `，跳过 ${skippedItems.length} 篇` : ''}`)
       await refreshNotebookStatus()
     } catch (err) {
       setNotebookStatus(err instanceof Error ? err.message : String(err))
@@ -254,7 +254,7 @@ export function SettingsPage({
       const data = await safeJson(res)
       if (!res.ok) throw new Error(errorMessage(data, res.status))
       setNotebookVault((data.vault ?? null) as NotebookVault | null)
-      setNotebookStatus(`Bound notebook vault: ${(data.vault as NotebookVault | undefined)?.root ?? folderPath}`)
+      setNotebookStatus(`笔记文件夹已更改：${(data.vault as NotebookVault | undefined)?.root ?? folderPath}`)
     } catch (err) {
       setNotebookStatus(err instanceof Error ? err.message : String(err))
     } finally {
@@ -263,24 +263,24 @@ export function SettingsPage({
   }
 
   const chooseNotebookFolder = async () => {
-    setNotebookStatus('Opening folder picker...')
+    setNotebookStatus('正在打开文件夹选择器...')
     try {
-      const selected = await chooseDesktopDirectory('Bind Notebook Vault folder')
+      const selected = await chooseDesktopDirectory('选择笔记文件夹')
       if (selected) {
         await bindNotebookVault(selected)
       } else {
-        setNotebookStatus('Folder selection cancelled')
+        setNotebookStatus('已取消选择')
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      setNotebookStatus(`Folder picker failed: ${message}`)
+      setNotebookStatus(`无法选择文件夹：${message}`)
     }
   }
 
   const cancelNotebookImport = () => {
     setPendingImportFiles([])
     setImportPreview(null)
-    setNotebookStatus('Import cancelled')
+    setNotebookStatus('已取消导入')
   }
 
   const exportNotebookArchive = async (kind: 'backup' | 'vault') => {
@@ -296,7 +296,7 @@ export function SettingsPage({
       }
       const blob = await res.blob()
       downloadBlob(blob, kind === 'backup' ? 'notebook-export.zip' : 'notebook-vault.zip')
-      setNotebookStatus(kind === 'backup' ? 'Exported notebook backup' : 'Exported Obsidian vault')
+      setNotebookStatus(kind === 'backup' ? '笔记备份已导出' : 'Obsidian 文件已导出')
     } catch (err) {
       setNotebookStatus(err instanceof Error ? err.message : String(err))
     } finally {
@@ -660,9 +660,9 @@ export function SettingsPage({
           )}
 
           {activeTab === 'llm' && (
-            <SettingsPanel icon={Brain} title="LLM" description="新会话会使用当前选中的对话模型服务。">
+            <SettingsPanel icon={Brain} title="对话模型" description="选择用来回答问题的模型。">
               {settings.llmConfigs.length === 0 ? (
-                <EmptyConfig onAdd={addLlmConfig} label="暂无 LLM 配置" />
+                <EmptyConfig onAdd={addLlmConfig} label="还没有对话模型" />
               ) : (
                 <div className="grid gap-5 lg:grid-cols-[230px_1fr]">
                   <ConfigList
@@ -681,7 +681,7 @@ export function SettingsPage({
                     <div className="space-y-5 rounded-lg border border-gray-200 p-4">
                       <ConfigHeader
                         title="模型接口"
-                        description="选择接口模式，并填写端点、Key 和模型 ID。"
+                        description="填写服务商提供的连接信息。"
                         onDelete={() => deleteLlmConfig(activeLlmConfig.id)}
                       />
                       <ConfigTestBar
@@ -747,7 +747,7 @@ export function SettingsPage({
                           />
                         </Field>
 
-                        <Field label="上下文窗口 tokens">
+                        <Field label="上下文长度（tokens）">
                           <TextInput
                             type="number"
                             min="1024"
@@ -767,9 +767,9 @@ export function SettingsPage({
           )}
 
           {activeTab === 'embedding' && (
-            <SettingsPanel icon={Database} title="嵌入模型" description="资料入库和检索会使用这里的向量模型配置。">
+            <SettingsPanel icon={Database} title="资料查找" description="让助手能够从资料中找到相关内容。">
               {settings.embeddingConfigs.length === 0 ? (
-                <EmptyConfig onAdd={addEmbeddingConfig} label="暂无嵌入模型配置" />
+                <EmptyConfig onAdd={addEmbeddingConfig} label="资料查找尚未配置" />
               ) : (
                 <div className="grid gap-5 lg:grid-cols-[230px_1fr]">
                   <ConfigList
@@ -787,8 +787,8 @@ export function SettingsPage({
                   {activeEmbeddingConfig && (
                     <div className="space-y-5 rounded-lg border border-gray-200 p-4">
                       <ConfigHeader
-                        title="嵌入接口"
-                        description="配置 OpenAI-compatible embeddings 接口。"
+                        title="检索模型接口"
+                        description="填写模型服务商提供的连接信息。"
                         onDelete={() => deleteEmbeddingConfig(activeEmbeddingConfig.id)}
                       />
                       <ConfigTestBar
@@ -892,19 +892,19 @@ export function SettingsPage({
           )}
 
           {activeTab === 'search' && (
-            <SettingsPanel icon={Globe2} title="Search" description="Configure web search used by agent tools.">
+            <SettingsPanel icon={Globe2} title="联网搜索" description="让助手需要时查找网页。">
               {settings.searchConfigs.length === 0 ? (
-                <EmptyConfig onAdd={addSearchConfig} label="No search config" />
+                <EmptyConfig onAdd={addSearchConfig} label="还没有搜索服务" />
               ) : (
                 <div className="grid gap-5 lg:grid-cols-[230px_1fr]">
                   <ConfigList
                     items={settings.searchConfigs.map((config) => ({
                       id: config.id,
                       title: config.name || 'DuckDuckGo',
-                      subtitle: `${config.provider} · ${config.maxResults} results`,
+                      subtitle: `${config.provider} · 最多 ${config.maxResults} 条`,
                     }))}
                     activeId={settings.activeSearchConfigId}
-                    addLabel="Add config"
+                    addLabel="添加配置"
                     onAdd={addSearchConfig}
                     onSelect={(id) => update('activeSearchConfigId', id)}
                   />
@@ -912,12 +912,12 @@ export function SettingsPage({
                   {activeSearchConfig && (
                     <div className="space-y-5 rounded-lg border border-gray-200 p-4">
                       <ConfigHeader
-                        title="Web search provider"
-                        description="Use free HTML providers for fallback, or configure paid search APIs for more reliable web answers."
+                        title="搜索服务"
+                        description="选择免费服务，或填写付费服务的 API。"
                         onDelete={() => deleteSearchConfig(activeSearchConfig.id)}
                       />
                       <div className="grid gap-4 md:grid-cols-2">
-                        <Field label="Config name">
+                        <Field label="配置名称">
                           <TextInput
                             value={activeSearchConfig.name}
                             onChange={(value) =>
@@ -926,7 +926,7 @@ export function SettingsPage({
                           />
                         </Field>
 
-                        <Field label="Provider">
+                        <Field label="服务商">
                           <select
                             className={inputClassName}
                             value={activeSearchConfig.provider}
@@ -964,8 +964,8 @@ export function SettingsPage({
                             placeholder={
                               activeSearchConfig.provider === 'duckduckgo' ||
                               activeSearchConfig.provider === 'bing'
-                                ? 'optional'
-                                : 'required'
+                                ? '可选'
+                                : '必填'
                             }
                             onChange={(value) =>
                               updateSearchConfig(activeSearchConfig.id, 'apiKey', value)
@@ -973,7 +973,7 @@ export function SettingsPage({
                           />
                         </Field>
 
-                        <Field label="Max results">
+                        <Field label="最多结果数">
                           <TextInput
                             type="number"
                             min="1"
@@ -985,7 +985,7 @@ export function SettingsPage({
                           />
                         </Field>
 
-                        <Field label="Fetch timeout seconds">
+                        <Field label="网页读取超时（秒）">
                           <TextInput
                             type="number"
                             min="3"
@@ -997,7 +997,7 @@ export function SettingsPage({
                           />
                         </Field>
 
-                        <Field label="Max fetched characters">
+                        <Field label="网页最大读取字数">
                           <TextInput
                             type="number"
                             min="1000"
@@ -1018,7 +1018,7 @@ export function SettingsPage({
           )}
 
           {activeTab === 'notebook' && (
-            <SettingsPanel icon={BookMarked} title="笔记本" description="管理 Notebook 根目录、导入、导出和备份。">
+            <SettingsPanel icon={BookMarked} title="笔记存储" description="管理笔记位置、导入和备份。">
               <input
                 ref={importInputRef}
                 className="hidden"
@@ -1037,16 +1037,16 @@ export function SettingsPage({
                     <FolderOpen size={18} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-gray-900">笔记本根目录</div>
+                    <div className="text-sm font-medium text-gray-900">笔记保存位置</div>
                     <div className="mt-1 break-all font-mono text-xs text-gray-500">
-                      {notebookVault?.root ?? '未绑定外部 Vault，使用应用本地 Notebook 存储。'}
+                      {notebookVault?.root ?? '当前保存在应用内。'}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
                       <span className="rounded-full bg-gray-100 px-2 py-0.5">
-                        {notebookVault?.external ? 'Bound vault' : 'Local vault'}
+                        {notebookVault?.external ? '外部文件夹' : '应用内存储'}
                       </span>
                       <span className="rounded-full bg-gray-100 px-2 py-0.5">
-                        {notebookVault?.entries ?? 0} notes
+                        {notebookVault?.entries ?? 0} 篇笔记
                       </span>
                     </div>
                   </div>
@@ -1077,8 +1077,8 @@ export function SettingsPage({
                       <Upload size={18} />
                     </div>
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900">导入 Notebook</h4>
-                      <p className="mt-1 text-sm text-gray-500">导入 Markdown 文件或 zip。桌面端推荐直接绑定 Vault 文件夹。</p>
+                      <h4 className="text-sm font-semibold text-gray-900">导入笔记</h4>
+                      <p className="mt-1 text-sm text-gray-500">从 Markdown 文件或 zip 中导入。</p>
                     </div>
                   </div>
                   <button
@@ -1098,8 +1098,8 @@ export function SettingsPage({
                       <Download size={18} />
                     </div>
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900">导出 Notebook</h4>
-                      <p className="mt-1 text-sm text-gray-500">导出备份包，或导出 Obsidian 风格 Vault zip。</p>
+                      <h4 className="text-sm font-semibold text-gray-900">导出笔记</h4>
+                      <p className="mt-1 text-sm text-gray-500">下载备份，或导出到 Obsidian。</p>
                     </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
@@ -1129,11 +1129,11 @@ export function SettingsPage({
                 <div className="space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-4 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <span className="font-medium text-gray-900">
-                      Import preview · {importPreview.items.length} note{importPreview.items.length === 1 ? '' : 's'}
+                      导入预览 · {importPreview.items.length} 篇笔记
                     </span>
                     {importPreview.conflict_count > 0 && (
                       <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
-                        {importPreview.conflict_count} conflict{importPreview.conflict_count === 1 ? '' : 's'}
+                        {importPreview.conflict_count} 个重名项
                       </span>
                     )}
                   </div>
@@ -1143,7 +1143,7 @@ export function SettingsPage({
                         <div className="truncate font-medium text-gray-800">{item.title}</div>
                         <div className="mt-0.5 truncate text-xs text-gray-500">{item.source_path} · {item.markdown_chars} chars</div>
                         {item.duplicate_title_entry_id && (
-                          <div className="mt-1 text-xs text-red-600">Same title as "{item.duplicate_title}"</div>
+                          <div className="mt-1 text-xs text-red-600">与“{item.duplicate_title}”重名</div>
                         )}
                       </div>
                     ))}
@@ -1177,7 +1177,7 @@ export function SettingsPage({
               {importResult && importResult.skipped.length > 0 && (
                 <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                   <div className="font-medium">
-                    Imported {importResult.imported_count} note{importResult.imported_count === 1 ? '' : 's'}, skipped {importResult.skipped.length}
+                    已导入 {importResult.imported_count} 篇，跳过 {importResult.skipped.length} 篇
                   </div>
                   <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
                     {importResult.skipped.map((item, index) => (
@@ -1201,7 +1201,7 @@ export function SettingsPage({
           )}
 
           {activeTab === 'governance' && (
-            <SettingsPanel icon={Activity} title="能力" description="配置工具执行审批与本地运行选项。">
+            <SettingsPanel icon={Activity} title="权限与数据" description="管理操作确认和本地数据。">
               <label className="flex items-center gap-3 text-sm text-gray-800">
                 <input
                   className="h-4 w-4"
@@ -1209,7 +1209,7 @@ export function SettingsPage({
                   checked={settings.requireApproval}
                   onChange={(event) => update('requireApproval', event.target.checked)}
                 />
-                Require approval before tool execution
+                执行操作前先询问我
               </label>
 
               <div className="rounded-lg border border-gray-200 bg-white px-4 py-4">

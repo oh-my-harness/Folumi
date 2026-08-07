@@ -25,6 +25,8 @@ Current product and runtime-facing specs live here.
 - `2026-08-06-notebook-live-preview-decision.md` 规定 Notebook 使用 Vditor
   即时渲染编辑、自动保存和 Markdown 文件持久化，
   并明确替代早期的块级 textarea Live Preview 实现。
+- `2026-08-07-plain-language-ui-copy.md` 规定主界面采用简短、结果导向的
+  普通用户文案，并明确用户词汇与内部技术词汇的边界。
 - `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
   design and remains only as historical context.
 - `2026-07-15-persistent-tutor-design.md` defines persistent tutor identity,

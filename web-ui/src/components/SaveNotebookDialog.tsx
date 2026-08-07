@@ -75,13 +75,13 @@ export function SaveNotebookDialog({
           </div>
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-gray-950">保存到笔记</h3>
-            <p className="mt-1 text-xs text-gray-500">选择 Notebook 文件夹并确认最终文件名。</p>
+            <p className="mt-1 text-xs text-gray-500">选择保存文件夹并确认文件名。</p>
           </div>
         </div>
         <div className="space-y-4 px-5 py-4">
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-600">Notebook 文件夹</span>
+              <span className="text-xs font-medium text-gray-600">保存文件夹</span>
               <button
                 className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
                 type="button"
@@ -286,7 +286,7 @@ export function SaveNotebookOutcomeDialog({
             {result ? <CheckCircle2 size={20} /> : error ? <AlertCircle size={20} /> : <Folder size={20} />}
           </div>
           <h3 className="text-sm font-semibold text-gray-950">
-            {result ? '已保存到 Notebook' : error ? '无法保存到该位置' : '选择 Vault 保存位置'}
+            {result ? '已保存到笔记' : error ? '无法保存到该位置' : '选择保存位置'}
           </h3>
           <p className={`mt-2 break-all text-sm ${error ? 'text-red-600' : 'text-gray-600'}`}>
             {result?.path ?? error ?? (busy ? '正在保存...' : '请在系统保存窗口中选择 Markdown 文件。')}

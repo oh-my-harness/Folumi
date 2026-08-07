@@ -86,7 +86,7 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.match(notebook, /onWikiLinkOpen/)
   assert.match(notebook, /backlinks/)
   assert.match(notebook, /局部关系图/)
-  assert.match(notebook, /Vault 正在监听/)
+  assert.match(notebook, /笔记正在同步/)
   assert.doesNotMatch(notebook, /window\.prompt/)
   assert.match(notebook, /aria-label=\{english \? 'New folder name' : '新目录名称'\}/)
   assert.match(notebook, /data-notebook-tree-row="true"/)
@@ -94,7 +94,7 @@ test('Notebook keeps its IDE-like workspace instead of regressing to a flat note
   assert.doesNotMatch(notebook, /node\.name\.replace\(\/\\\.md\$\/i, ''\)/)
   assert.match(notebook, /mx-1 mb-1 flex h-7 w-auto/)
   assert.match(notebook, /ring-inset ring-blue-100/)
-  assert.match(notebook, /Copy Vault Path|复制 Vault 路径/)
+  assert.match(notebook, /Copy folder path|复制文件夹路径/)
   assert.match(notebook, /onContextMenu=\{openRootContextMenu\}/)
   assert.match(notebook, /className=\{compactButtonClassName\}[\s\S]*?onClick=\{\(\) => void createEntry\(\)\}/)
   assert.match(notebook, /className=\{compactButtonClassName\}[\s\S]*?onClick=\{\(\) => startCreateFolder\(\)\}/)
@@ -145,8 +145,9 @@ test('assistant setup is managed from Personalization instead of Settings', () =
   assert.match(memory, /id="assistant-profile"/)
   assert.match(memory, /id=\{`\$\{id\}-tab`\}/)
   assert.match(memory, /onSessionNavigate/)
-  assert.match(memory, /留空时，运行时会使用输入框占位内容所示的默认 Folumi 身份与行为说明/)
-  assert.match(memory, /已有会话继续使用创建时保存的设定/)
+  assert.match(memory, /留空则使用默认 Folumi 设定/)
+  assert.match(memory, /自动保存，仅影响新对话/)
+  assert.match(memory, /查看默认设定/)
   assert.match(memory, /customNameWithDefaultIdentity/)
   assert.doesNotMatch(settings, /Assistant setup|助手设定|assistantName|assistantInstructions/)
   assert.match(app, /onAssistantProfileChange/)
@@ -173,7 +174,7 @@ test('retired layered memory is presented as revisioned personal information', (
 
 test('past conversation reference is visible tool search without hidden pre-run injection', () => {
   assert.match(memory, /Reference past conversations|参考过往对话/)
-  assert.match(memory, /不会在每次回答前偷偷读取/)
+  assert.match(memory, /需要时查找你以前聊过的内容/)
   assert.doesNotMatch(memory, /由 runtime 提供|Runtime powered/)
   assert.match(websocketRoutes, /source_id exactly `session_recall`/)
   assert.match(websocketRoutes, /tool trace and source link/)
@@ -229,6 +230,19 @@ test('retired Research mode is absent while normal Chat keeps source tools', () 
 test('onboarding teaches model, sources, and asking without legacy hierarchy', () => {
   assert.match(onboarding, /steps: \['准备模型', '加入资料', '开始提问'\]/)
   assert.doesNotMatch(onboarding, /onManageTutors|onOpenMemory|OnboardingModeGuide/)
+  assert.doesNotMatch(onboarding, /RAG|嵌入|向量|Agent|runtime|上下文/)
+})
+
+test('high-frequency interface copy uses short everyday language', () => {
+  assert.match(memory, /在新对话中使用已保存的个人信息/)
+  assert.match(memory, /自动记住你明确说过的重要信息/)
+  assert.match(i18n, /'settings\.tabs\.llm': '对话模型'/)
+  assert.match(i18n, /'settings\.tabs\.embedding': '资料查找'/)
+  assert.match(i18n, /'settings\.tabs\.search': '联网搜索'/)
+  assert.match(i18n, /'settings\.tabs\.governance': '权限与数据'/)
+  assert.match(knowledgePage, />\s*添加文档\s*</)
+  assert.match(knowledgePage, />\s*查找\s*</)
+  assert.match(knowledgePage, />\s*重新整理\s*</)
 })
 
 test('note references use the notes-only API and no Space picker contract', () => {

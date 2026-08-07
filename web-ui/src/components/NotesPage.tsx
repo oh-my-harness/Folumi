@@ -164,8 +164,8 @@ export function NotesPage({ language, focusTarget }: Props) {
       if (forceVaultRefresh) {
         const refresh = (data.refresh ?? {}) as NotebookRefreshResult
         setStatus(english
-          ? `Vault refreshed: ${refresh.entries ?? nextEntries.length} notes, ${refresh.added ?? 0} added, ${refresh.changed ?? 0} changed, ${refresh.removed ?? 0} removed`
-          : `Vault 已刷新：${refresh.entries ?? nextEntries.length} 篇笔记，新增 ${refresh.added ?? 0}，更新 ${refresh.changed ?? 0}，移除 ${refresh.removed ?? 0}`)
+          ? `Notes refreshed: ${refresh.entries ?? nextEntries.length} total, ${refresh.added ?? 0} added, ${refresh.changed ?? 0} changed, ${refresh.removed ?? 0} removed`
+          : `笔记已刷新：共 ${refresh.entries ?? nextEntries.length} 篇，新增 ${refresh.added ?? 0}，更新 ${refresh.changed ?? 0}，移除 ${refresh.removed ?? 0}`)
       } else {
         setStatus('')
       }
@@ -589,9 +589,9 @@ export function NotesPage({ language, focusTarget }: Props) {
     const opened = openDesktopContextMenu(event.clientX, event.clientY, [
       { label: english ? 'New Note' : '新建笔记', run: () => { void createEntry() } },
       { label: english ? 'New Folder' : '新建目录', run: () => startCreateFolder() },
-      { label: english ? 'Refresh Vault' : '刷新 Vault', run: () => { void loadNotebook(true) } },
+      { label: english ? 'Refresh notes' : '刷新笔记', run: () => { void loadNotebook(true) } },
       ...(watch?.root ? [{
-        label: english ? 'Copy Vault Path' : '复制 Vault 路径',
+        label: english ? 'Copy folder path' : '复制文件夹路径',
         run: () => { void writeClipboardText(watch.root ?? '') },
       }] : []),
     ])
@@ -607,7 +607,7 @@ export function NotesPage({ language, focusTarget }: Props) {
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold text-gray-950">{english ? 'Notebook' : '笔记'}</h1>
           <p className="mt-0.5 truncate text-sm text-gray-500">
-            {english ? 'Your Markdown workspace for writing, organizing, and connecting ideas.' : '用于书写、整理和连接想法的 Markdown 工作区。'}
+            {english ? 'Write, organize, and connect your ideas.' : '写下、整理并连接你的想法。'}
           </p>
         </div>
         <VaultStatus watch={watch} language={language} />
@@ -615,8 +615,8 @@ export function NotesPage({ language, focusTarget }: Props) {
           className={iconButtonClassName}
           type="button"
           disabled={loading}
-          title={english ? 'Refresh Vault' : '刷新 Vault'}
-          aria-label={english ? 'Refresh Vault' : '刷新 Vault'}
+          title={english ? 'Refresh notes' : '刷新笔记'}
+          aria-label={english ? 'Refresh notes' : '刷新笔记'}
           onClick={() => void loadNotebook(true)}
         >
           <RefreshCw size={17} className={loading ? 'animate-spin' : ''} />
@@ -992,7 +992,7 @@ function VaultStatus({ watch, language }: { watch: NotebookWatchInfo | null; lan
   return (
     <div className={`hidden max-w-xs items-center gap-2 rounded-lg border px-3 py-2 text-xs lg:flex ${healthy ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-600'}`} title={watch.root ?? undefined}>
       {healthy ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
-      <span className="truncate">{watch.last_error || (healthy ? (english ? 'Vault watching' : 'Vault 正在监听') : (english ? 'Vault watcher off' : 'Vault 监听未开启'))}</span>
+      <span className="truncate">{watch.last_error || (healthy ? (english ? 'Notes are syncing' : '笔记正在同步') : (english ? 'Sync is off' : '同步未开启'))}</span>
     </div>
   )
 }

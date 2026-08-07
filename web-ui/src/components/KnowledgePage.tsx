@@ -253,7 +253,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
   const ingest = async () => {
     if (!activeKb || !text.trim() || busy) return
     setBusy(true)
-    setStatus('正在创建入库任务...')
+    setStatus('正在添加文档...')
     try {
       const res = await fetch(`/api/knowledge-bases/${encodeURIComponent(activeKb.id)}/documents`, {
         method: 'POST',
@@ -275,7 +275,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
       }
       setTab('files')
       setText('')
-      setStatus(`已入库 ${job.chunks ?? 0} 个片段`)
+      setStatus(`已处理 ${job.chunks ?? 0} 段内容`)
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
     } finally {
@@ -327,7 +327,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
         setUploadProgress((prev) =>
           prev.map((item) =>
             item.id === uploadId
-              ? { ...item, progress: 100, status: 'done', message: `已入库 ${data.chunks ?? 0} 个片段` }
+              ? { ...item, progress: 100, status: 'done', message: `已处理 ${data.chunks ?? 0} 段内容` }
               : item,
           ),
         )
@@ -344,10 +344,10 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
         setSelectedFiles([])
         if (fileInputRef.current) fileInputRef.current.value = ''
         setTab('files')
-        setStatus('附件已入库')
+        setStatus('文档已添加')
       } else {
         setSelectedFiles(failedFiles)
-        setStatus(`${filesToUpload.length - failedFiles.length} 个附件已入库，${failedFiles.length} 个失败，可直接重试`)
+        setStatus(`已添加 ${filesToUpload.length - failedFiles.length} 个文档，${failedFiles.length} 个失败，可直接重试`)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -367,7 +367,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
   const search = async () => {
     if (!activeKb || !query.trim() || busy) return
     setBusy(true)
-    setStatus('正在检索...')
+    setStatus('正在查找...')
     try {
       const res = await fetch(`/api/knowledge-bases/${encodeURIComponent(activeKb.id)}/search`, {
         method: 'POST',
@@ -542,8 +542,8 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
               </div>
               <p className="mt-1.5 text-xs text-gray-600">
                 {activeKb
-                  ? `${activeKb.embedding.model} · ${activeKb.embedding.dimensions ?? '未知'}维 · 最近更新 ${formatTime(activeKb.updated_at)}`
-                  : '创建资料集后，即可添加外部材料并进行语义检索。'}
+                  ? `${activeKb.documents.length} 份文档 · 最近更新 ${formatTime(activeKb.updated_at)}`
+                  : '创建资料集，把需要参考的文件放在一起。'}
               </p>
             </div>
             <div className="text-xs text-gray-500">{status}</div>
@@ -558,7 +558,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                 添加文档
               </TabButton>
               <TabButton active={tab === 'indexes'} icon={<Layers size={17} />} onClick={() => setTab('indexes')}>
-                索引版本
+                查找测试
               </TabButton>
               <TabButton active={tab === 'settings'} icon={<Settings size={17} />} onClick={() => setTab('settings')}>
                 设置
@@ -587,9 +587,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                 <Panel>
                   <div className="max-w-3xl">
                     <h3 className="text-lg font-semibold text-gray-950">添加文档</h3>
-                    <p className="mt-1 text-sm text-gray-600">
-                      将使用 {activeKb.embedding.model} 为文档生成向量。
-                    </p>
+                    <p className="mt-1 text-sm text-gray-600">添加后，助手就能从这些文档中查找内容。</p>
                     <div className="mt-5 grid gap-4">
                       <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/40 p-4">
                         <input
@@ -630,7 +628,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                               disabled={busy || selectedFiles.length === 0}
                             >
                               <Database size={17} />
-                              {uploadProgress.some((item) => item.status === 'error') ? '重试失败项' : '上传并入库'}
+                              {uploadProgress.some((item) => item.status === 'error') ? '重试失败项' : '添加文档'}
                             </button>
                           </div>
                         )}
@@ -652,7 +650,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                       </Field>
                       <button className={primaryButtonClassName} type="button" onClick={ingest} disabled={!text.trim() || busy}>
                         <Database size={17} />
-                        写入索引
+                        添加内容
                       </button>
                     </div>
                   </div>
@@ -662,17 +660,15 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
               {tab === 'indexes' && (
                 <Panel>
                   <div className="max-w-3xl">
-                    <h3 className="text-lg font-semibold text-gray-950">索引版本</h3>
-                    <p className="mt-1 text-sm text-gray-600">
-                      当前版本绑定 {activeKb.embedding.model}。索引是可丢弃的派生数据，可随时从保存的原始文档重建。
-                    </p>
+                    <h3 className="text-lg font-semibold text-gray-950">查找测试</h3>
+                    <p className="mt-1 text-sm text-gray-600">输入一个问题，看看能否找到相关内容。</p>
                     <div className="mt-4 flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3">
                       <div className="min-w-0 flex-1 text-sm text-gray-600">
-                        原始文档是权威数据；此操作会重建当前资料集的全部向量片段，不会修改原文。
+                        如果查找结果不完整，可以重新整理全部文档。原文件不会改变。
                       </div>
                       <button className={secondaryButtonClassName} type="button" onClick={reindexKnowledgeBase} disabled={busy || activeKb.documents.length === 0}>
                         <RefreshCw size={16} className={busy ? 'animate-spin' : ''} />
-                        重建全部索引
+                        重新整理
                       </button>
                     </div>
                     <div className="mt-5 flex gap-3">
@@ -680,11 +676,11 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                         className={inputClassName}
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
-                        placeholder="输入检索问题..."
+                        placeholder="输入想查找的内容..."
                       />
                       <button className={primaryButtonClassName} type="button" onClick={search} disabled={!query.trim() || busy}>
                         <Search size={17} />
-                        检索
+                        查找
                       </button>
                     </div>
                     <div className="mt-5 space-y-3">
@@ -707,7 +703,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
                   <div className="max-w-2xl">
                     <h3 className="text-lg font-semibold text-gray-950">设置</h3>
                     <dl className="mt-5 divide-y divide-gray-200 rounded-lg border border-gray-200">
-                      <InfoRow label="嵌入模型" value={activeKb.embedding.model} />
+                      <InfoRow label="资料查找模型" value={activeKb.embedding.model} />
                       <InfoRow label="Base URL" value={activeKb.embedding.base_url ?? '-'} />
                       <InfoRow label="端点" value={activeKb.embedding.embeddings_path ?? '-'} />
                       <InfoRow label="维度" value={String(activeKb.embedding.dimensions ?? '-')} />
@@ -891,8 +887,8 @@ function EmptyKnowledgeState({
         <h2 className="mt-4 text-base font-semibold text-gray-950">暂无资料</h2>
         <p className="mt-2 text-sm leading-6 text-gray-500">
           {canCreate
-            ? '新建资料集并选择嵌入模型，然后添加需要参考的外部材料。'
-            : '请先在设置中配置嵌入模型，再新建资料集。'}
+            ? '新建资料集，把需要参考的文件放在一起。'
+            : '请先在设置中完成“资料查找”，再新建资料集。'}
         </p>
         <button
           className={`${primaryButtonClassName} mt-5`}
@@ -966,7 +962,7 @@ function CreateKnowledgeBaseDialog({
                 新建资料集
               </h2>
               <p className="mt-1 text-xs leading-5 text-gray-500">
-                嵌入模型创建后不可更换，后续入库和检索将固定使用该配置。
+                资料集创建后，所用的检索模型不能更换。
               </p>
             </div>
           </div>
@@ -999,14 +995,14 @@ function CreateKnowledgeBaseDialog({
                 disabled={busy}
               />
             </Field>
-            <Field label="嵌入模型">
+            <Field label="资料查找模型">
               <select
                 className={inputClassName}
                 value={embeddingId}
                 onChange={(event) => onEmbeddingChange(event.target.value)}
                 disabled={busy}
               >
-                <option value="">选择嵌入模型</option>
+                <option value="">选择资料查找模型</option>
                 {settings.embeddingConfigs.map((config) => (
                   <option key={config.id} value={config.id}>
                     {config.name} · {config.model} · {config.dimensions}维
@@ -1016,7 +1012,7 @@ function CreateKnowledgeBaseDialog({
             </Field>
             {selectedEmbedding && (
               <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5 text-sm text-blue-800">
-                创建后将固定使用 {selectedEmbedding.model}，维度 {selectedEmbedding.dimensions}。
+                将使用 {selectedEmbedding.model} 处理这个资料集。
               </div>
             )}
             {error && (
@@ -1251,7 +1247,7 @@ function FilePreview({
           </pre>
         ) : (
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-            该文档已入库。当前版本只保存文档元数据和向量索引，刷新后不保留原文预览。
+            文档已添加。刷新后暂时无法查看完整原文，但仍可查看下方内容片段。
           </div>
         )}
       </div>
@@ -1392,7 +1388,7 @@ function uploadKnowledgeFile(
     xhr.onerror = () => {
       reject(new Error('上传请求失败：网络连接中断或后端服务未响应，请检查 tutor-web 是否仍在运行，并查看服务端日志。'))
     }
-    xhr.ontimeout = () => reject(new Error('上传请求超时：后端在 120 秒内没有返回入库任务。'))
+    xhr.ontimeout = () => reject(new Error('上传超时：120 秒内没有开始处理文档。'))
     xhr.onabort = () => reject(new Error('上传已取消。'))
     xhr.open('POST', `/api/knowledge-bases/${encodeURIComponent(kbId)}/documents/upload`)
     xhr.send(form)
@@ -1444,11 +1440,11 @@ function delay(ms: number) {
 
 function stageLabel(stage: string) {
   const labels: Record<string, string> = {
-    queued: '排队',
-    parse: '解析',
-    chunk: '分片',
-    embed: '嵌入',
-    index: '写入索引',
+    queued: '等待中',
+    parse: '读取文件',
+    chunk: '整理内容',
+    embed: '理解内容',
+    index: '准备查找',
     store: '保存',
     delete: '清理',
     done: '完成',

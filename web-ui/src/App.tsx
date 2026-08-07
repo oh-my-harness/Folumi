@@ -1221,8 +1221,8 @@ export default function App() {
                     temporaryConversation ? 'text-amber-800' : 'text-gray-600'
                   } ${sessionId || running ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
                   title={llmSettings.language === 'en-US'
-                    ? 'Do not use personal information or reference past conversations; this chat will not be searchable from future conversations.'
-                    : '不使用个人信息，也不参考过往对话；本会话同样不会被未来对话检索。'}
+                    ? 'Does not use personal information or past conversations, and cannot be found again later.'
+                    : '不使用个人信息或过往对话，结束后也不会被再次查找。'}
                 >
                   <span>{llmSettings.language === 'en-US' ? 'Temporary chat' : '临时对话'}</span>
                   <input

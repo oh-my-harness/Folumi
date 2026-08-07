@@ -261,7 +261,7 @@ export function UserMemoryPage({
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><Brain size={21} /></span>
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold text-gray-950">{english ? 'Personalization' : '个性化'}</h1>
-          <p className="mt-1 text-sm text-gray-500">{english ? 'Decide how the Assistant knows you, references past conversations, and presents itself.' : '决定助手如何认识你、参考过往对话并表现自己。'}</p>
+          <p className="mt-1 text-sm text-gray-500">{english ? 'Help the Assistant understand you and respond your way.' : '让助手更了解你，并按你的方式回应。'}</p>
         </div>
       </div>
 
@@ -280,8 +280,8 @@ export function UserMemoryPage({
             <div>
               <h2 className="font-semibold text-gray-950">{english ? 'Personal context' : '个人信息与对话'}</h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500">{english
-                ? 'Control personal information, assistant updates, and on-demand access to past conversations in one place.'
-                : '集中管理个人信息、助手自动补充和按需参考过往对话。'}</p>
+                ? 'Choose what the Assistant may remember and look up.'
+                : '选择助手可以记住和查找的内容。'}</p>
             </div>
 
             <div className="mt-4 divide-y divide-gray-100 rounded-lg border border-gray-100 bg-gray-50/50 px-4">
@@ -290,8 +290,8 @@ export function UserMemoryPage({
                 iconClass="bg-blue-100 text-blue-700"
                 title={english ? 'Use personal information' : '使用个人信息'}
                 description={english
-                  ? 'Use active personal details across conversations. Turning this off keeps existing items but stops new conversations from accessing them.'
-                  : '让助手在不同会话中使用有效的个人信息。关闭后仍保留已有内容，但新对话不再访问。'}
+                  ? 'Use saved personal information in new conversations.'
+                  : '在新对话中使用已保存的个人信息。'}
                 state={settings.enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}
                 checked={settings.enabled}
                 disabled={busy || loading}
@@ -302,8 +302,8 @@ export function UserMemoryPage({
                 iconClass="bg-violet-100 text-violet-700"
                 title={english ? 'Allow assistant updates' : '允许助手自动补充'}
                 description={english
-                  ? 'Allow the Assistant to save clearly durable details you directly share without asking each time. Sensitive, inferred, and transient details remain excluded; permanent removal still requires approval.'
-                  : '允许助手直接保存你明确透露的姓名、稳定偏好或长期目标等持久信息。敏感、推断和临时信息仍不得主动保存；永久移除仍需审批。'}
+                  ? 'Remember important details you clearly share. Sensitive information still needs your approval.'
+                  : '自动记住你明确说过的重要信息。敏感内容仍会询问你。'}
                 state={settings.assistant_write_without_approval ? (english ? 'Allowed' : '已授权') : (english ? 'Approval required' : '需要审批')}
                 checked={settings.assistant_write_without_approval}
                 disabled={busy || loading || !settings.enabled}
@@ -315,8 +315,8 @@ export function UserMemoryPage({
                 iconClass="bg-cyan-100 text-cyan-700"
                 title={english ? 'Reference past conversations' : '参考过往对话'}
                 description={english
-                  ? 'Search eligible conversations only when earlier context is needed. Conversations are not read secretly before every answer, and results do not become personal information automatically.'
-                  : '仅在需要过往上下文时按需搜索符合权限的会话；不会在每次回答前偷偷读取，找到的内容也不会自动变成个人信息。'}
+                  ? 'Look through earlier conversations when they can help.'
+                  : '需要时查找你以前聊过的内容。'}
                 state={settings.history_recall_enabled ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '已关闭')}
                 checked={settings.history_recall_enabled}
                 disabled={busy || loading || !settings.enabled}
@@ -343,7 +343,7 @@ export function UserMemoryPage({
               <div className="mt-4 grid gap-3 rounded-lg border border-blue-200 bg-blue-50/60 p-4">
                 <div className="grid gap-3 md:grid-cols-[160px_1fr]">
                   <Field label={english ? 'Type' : '类型'}><KindSelect value={createKind} onChange={setCreateKind} english={english} /></Field>
-                  <Field label={english ? 'Topic key (optional)' : '主题键（可选）'}><input className="input" value={createTopic} onChange={(event) => setCreateTopic(normalizeTopicInput(event.target.value))} placeholder="preferred_response_language" /></Field>
+                  <Field label={english ? 'Label (optional)' : '标签（可选）'}><input className="input" value={createTopic} onChange={(event) => setCreateTopic(normalizeTopicInput(event.target.value))} placeholder={english ? 'response_language' : '例如：回答语言'} /></Field>
                 </div>
                 <Field label={english ? 'Content' : '内容'}><textarea className="min-h-24 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" maxLength={1200} value={createContent} onChange={(event) => setCreateContent(event.target.value)} /></Field>
                 <Field label={english ? 'Valid until (optional)' : '有效期至（可选）'}><input className="input max-w-56" type="date" value={createValidUntil} onChange={(event) => setCreateValidUntil(event.target.value)} /></Field>
@@ -367,7 +367,7 @@ export function UserMemoryPage({
                 <article key={item.id} className={`rounded-lg border p-4 ${item.status === 'active' && !item.expired ? 'border-gray-200' : 'border-gray-200 bg-gray-50/70'}`}>
                   {editingId === item.id ? (
                     <div className="grid gap-3">
-                      <div className="grid gap-3 md:grid-cols-[160px_1fr]"><KindSelect value={editKind} onChange={setEditKind} english={english} /><input className="input" value={editTopic} onChange={(event) => setEditTopic(normalizeTopicInput(event.target.value))} placeholder={english ? 'Topic key (optional)' : '主题键（可选）'} /></div>
+                      <div className="grid gap-3 md:grid-cols-[160px_1fr]"><KindSelect value={editKind} onChange={setEditKind} english={english} /><input className="input" value={editTopic} onChange={(event) => setEditTopic(normalizeTopicInput(event.target.value))} placeholder={english ? 'Label (optional)' : '标签（可选）'} /></div>
                       <textarea className="min-h-24 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6" maxLength={1200} value={editContent} onChange={(event) => setEditContent(event.target.value)} />
                       <Field label={english ? 'Valid until (optional)' : '有效期至（可选）'}><input className="input max-w-56" type="date" value={editValidUntil} onChange={(event) => setEditValidUntil(event.target.value)} /></Field>
                       {item.expired && <p className="text-xs text-amber-700">{english ? 'Choose a future date, or clear the date, to renew this expired information.' : '请选择新的未来日期，或清空日期，以重新确认这条过期信息。'}</p>}
@@ -400,33 +400,36 @@ export function UserMemoryPage({
         </div>
       ) : (
         <section id="assistant-profile-panel" role="tabpanel" aria-labelledby="assistant-profile-tab" className="mt-6 max-w-3xl rounded-lg border border-gray-200 bg-white p-5">
-          <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><Bot size={19} /></span><div><h2 className="font-semibold text-gray-950">{english ? 'Assistant setup' : '助手设定'}</h2><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'Define the identity and behavior shared by new conversations.' : '定义所有新会话共用的助手身份与行为偏好。'}</p></div></div>
+          <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><Bot size={19} /></span><div><h2 className="font-semibold text-gray-950">{english ? 'Assistant setup' : '助手设定'}</h2><p className="mt-1 text-sm leading-6 text-gray-500">{english ? 'Choose the Assistant’s name and response style.' : '设置助手的名字和回答方式。'}</p></div></div>
           <div className="mt-4 grid gap-4">
             <Field label={english ? 'Assistant name' : '助手名称'}>
               <input className="input" value={assistantName} onChange={(event) => onAssistantProfileChange({ name: event.target.value, instructions: assistantInstructions })} />
-              <span className="text-xs font-normal leading-5 text-gray-500">{english ? 'The name and the instructions below are applied together. If they conflict, the instructions may determine how the Assistant identifies itself.' : '助手名称会与下方说明一起生效；如果两者冲突，助手可能优先按照说明介绍自己的身份。'}</span>
+              <span className="text-xs font-normal leading-5 text-gray-500">{english ? 'Used when the Assistant introduces itself in new conversations.' : '用于助手在新对话中的自我介绍。'}</span>
             </Field>
-            <Field label={english ? 'Identity and behavior instructions' : '身份与行为说明'}>
+            <Field label={english ? 'How should the Assistant respond?' : '希望助手如何回答'}>
               <textarea
                 className="min-h-28 resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 value={assistantInstructions}
                 placeholder={defaultLlmSettings.assistantInstructions}
                 onChange={(event) => onAssistantProfileChange({ name: assistantName, instructions: event.target.value })}
               />
-              <span className="text-xs font-normal leading-5 text-gray-500">{english ? 'Leave this empty to use the default Folumi identity and behavior shown in the placeholder.' : '留空时，运行时会使用输入框占位内容所示的默认 Folumi 身份与行为说明。'}</span>
+              <span className="text-xs font-normal leading-5 text-gray-500">{english ? 'Leave blank to use the default Folumi setup.' : '留空则使用默认 Folumi 设定。'}</span>
             </Field>
             {usesDefaultAssistantInstructions && (
               <div className={`flex items-start gap-2 rounded-lg border px-3 py-3 text-sm ${customNameWithDefaultIdentity ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`} role="status">
                 <AlertCircle className="mt-0.5 shrink-0" size={17} />
                 <div className="min-w-0">
                   <p className="font-medium">{customNameWithDefaultIdentity
-                    ? english ? `The name is “${assistantName.trim()}”, but the empty instructions will use the default Folumi identity.` : `当前名称是“${assistantName.trim()}”，但说明为空，实际运行时仍会使用默认 Folumi 身份。`
-                    : english ? 'Default Folumi instructions are currently in effect.' : '当前实际生效的是默认 Folumi 身份说明。'}</p>
-                  <p className="mt-1 whitespace-pre-wrap text-xs font-normal leading-5 opacity-80">{defaultLlmSettings.assistantInstructions}</p>
+                    ? english ? `You entered “${assistantName.trim()}”, but the default setup still identifies the Assistant as Folumi.` : `你填写了“${assistantName.trim()}”，但默认设定仍会让助手自称 Folumi。`
+                    : english ? 'The default Folumi setup is active.' : '正在使用默认 Folumi 设定。'}</p>
+                  <details className="mt-1 text-xs font-normal opacity-80">
+                    <summary className="cursor-pointer">{english ? 'View default setup' : '查看默认设定'}</summary>
+                    <p className="mt-2 whitespace-pre-wrap leading-5">{defaultLlmSettings.assistantInstructions}</p>
+                  </details>
                 </div>
               </div>
             )}
-            <p className="text-xs text-gray-400">{english ? 'Changes are saved automatically and apply to new conversations only. Existing conversations keep the setup captured when they were created. Personal information controls do not disable this setup.' : '更改会自动保存，但只应用于新会话；已有会话继续使用创建时保存的设定。“关于我”中的开关不会禁用助手设定。'}</p>
+            <p className="text-xs text-gray-400">{english ? 'Saved automatically. Changes apply to new conversations.' : '自动保存，仅影响新对话。'}</p>
           </div>
         </section>
       )}

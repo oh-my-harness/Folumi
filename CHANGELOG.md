@@ -14,6 +14,9 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 - Unified the Assistant composer’s source, Note, and model selectors with
   clearer headers, roomier option cards, consistent selected states, and a
   more usable Note search and empty state.
+- Rewrote high-frequency interface copy around Personalization, Sources,
+  onboarding, help, and Settings in shorter everyday language, while keeping
+  technical terms only where service configuration requires them.
 
 ## 0.4.2 - 2026-08-07
 

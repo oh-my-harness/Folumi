@@ -326,7 +326,7 @@ export function ChatBox({
     setSaveNotebookMarkdown(markdown)
     try {
       const selectedPath = await chooseDesktopSavePath(
-        '保存到 Notebook Vault',
+        '保存到笔记',
         desktopDefaultSavePath(notebookVault.root, folderPath, fileName),
       )
       if (!selectedPath) {
