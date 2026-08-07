@@ -266,7 +266,7 @@ test('Notebook supports named vault switching instead of a permanent refresh but
   assert.match(notebook, /vaults\.find\(\(vault\) => vault\.active\)\?\.name/)
   assert.match(notebook, /\/api\/notebook\/vaults\//)
   assert.match(notebook, /管理笔记库/)
-  assert.match(notebook, /rounded-full border border-sky-100/)
+  assert.match(notebook, /rounded-xl border border-gray-200 bg-gray-50\/80/)
   assert.match(notebook, /添加一个笔记库/)
   assert.doesNotMatch(notebook, /RefreshCw|刷新笔记/)
   assert.match(settings, /添加笔记库/)

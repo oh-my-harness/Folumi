@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react'
 import {
   AlertTriangle,
   BookMarked,
+  Check,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -687,7 +688,7 @@ export function NotesPage({ language, focusTarget, onManageVaults }: Props) {
         <div ref={vaultMenuRef} className="relative">
           <button
             type="button"
-            className="group inline-flex h-9 max-w-64 items-center gap-2 rounded-full border border-sky-100 bg-gradient-to-r from-sky-50 to-indigo-50/70 px-2.5 pr-3 text-sm font-medium text-slate-700 transition hover:border-sky-200 hover:from-sky-100 hover:to-indigo-50 disabled:opacity-50"
+            className="inline-flex h-9 max-w-64 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-700 transition hover:border-blue-200 hover:bg-blue-50 disabled:opacity-50"
             disabled={loading}
             aria-expanded={vaultMenuOpen}
             onClick={() => {
@@ -698,35 +699,33 @@ export function NotesPage({ language, focusTarget, onManageVaults }: Props) {
               setVaultMenuOpen((open) => !open)
             }}
           >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-sky-600 shadow-sm shadow-sky-100">
-              {vaults.length === 0 ? <Plus size={14} /> : <FolderOpen size={14} />}
-            </span>
+            <span className="shrink-0 text-gray-500">{vaults.length === 0 ? <Plus size={15} /> : <FolderOpen size={15} />}</span>
             <span className="truncate">{vaults.find((vault) => vault.active)?.name ?? (english ? 'Add note library' : '添加笔记库')}</span>
-            {vaults.length > 0 && <ChevronDown size={14} className="shrink-0 text-slate-400 transition group-hover:text-sky-600" />}
+            {vaults.length > 0 && <ChevronDown size={14} className={`shrink-0 text-gray-400 transition-transform ${vaultMenuOpen ? 'rotate-180' : ''}`} />}
           </button>
           {vaultMenuOpen && (
-            <div className="absolute right-0 top-[calc(100%+0.55rem)] z-50 w-64 overflow-hidden rounded-2xl border border-slate-100 bg-white/95 p-2 shadow-[0_16px_45px_-18px_rgba(30,64,175,0.3)] backdrop-blur">
+            <div className="absolute right-0 top-[calc(100%+0.55rem)] z-50 w-72 overflow-hidden rounded-2xl border border-gray-200/90 bg-white p-2 shadow-[0_20px_55px_-20px_rgba(15,23,42,0.35)] ring-1 ring-gray-950/5">
               {vaults.map((vault) => (
                 <button
                   key={vault.id}
                   type="button"
                   disabled={!vault.available}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${vault.active ? 'bg-sky-50 text-sky-800' : 'text-slate-700 hover:bg-slate-50'}`}
+                  className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${vault.active ? 'border-blue-200 bg-blue-50/80 shadow-sm' : 'border-transparent hover:border-gray-200 hover:bg-gray-50'}`}
                   onClick={() => void switchVault(vault.id)}
                   title={vault.root}
                 >
-                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${vault.active ? 'bg-white text-sky-600 shadow-sm' : 'bg-slate-50 text-slate-400'}`}><Folder size={15} /></span>
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${vault.active ? 'border-blue-200 bg-white text-blue-700' : 'border-gray-200 bg-white text-gray-500 group-hover:text-gray-700'}`}><Folder size={16} /></span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{vault.name}</span>
-                    <span className="mt-0.5 block truncate text-xs text-slate-400">{vault.available ? `${vault.entries} ${english ? 'notes' : '篇笔记'}` : (english ? 'Unavailable' : '无法访问')}</span>
+                    <span className="block truncate font-medium text-gray-950">{vault.name}</span>
+                    <span className="mt-0.5 block truncate text-xs text-gray-500">{vault.available ? `${vault.entries} ${english ? 'notes' : '篇笔记'}` : (english ? 'Unavailable' : '无法访问')}</span>
                   </span>
-                  {vault.active && <span className="h-2 w-2 rounded-full bg-sky-500 ring-4 ring-sky-100" />}
+                  {vault.active && <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"><Check size={12} /></span>}
                 </button>
               ))}
               {onManageVaults && (
                 <button
                   type="button"
-                  className="mt-1 flex w-full items-center gap-3 border-t border-slate-100 px-3 py-2.5 text-left text-sm text-slate-500 transition hover:bg-slate-50 hover:text-sky-700"
+                  className="mt-1 flex w-full items-center gap-3 border-t border-gray-100 px-3 py-2.5 text-left text-sm text-gray-600 transition hover:bg-gray-50 hover:text-gray-900"
                   onClick={() => {
                     setVaultMenuOpen(false)
                     onManageVaults()
