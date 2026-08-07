@@ -9,6 +9,27 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ## Unreleased
 
+## 0.4.2 - 2026-08-07
+
+### Added
+
+- Added an instant-rendering Markdown editor for Notebook: inactive blocks stay
+  rendered while the active block exposes its Markdown source for direct editing.
+
+### Changed
+
+- Simplified the Notebook editing surface by removing the redundant document
+  title and page-level edit/delete controls.
+- Kept heading levels, links, and other Markdown syntax readable while editing
+  without sacrificing the rendered reading view.
+
+### Fixed
+
+- Prevented Markdown headings from behaving like unintended web links.
+- Reduced selection jitter and removed the intrusive floating selection toolbar.
+- Made Wiki-link navigation and revision-aware saves reliable for Vault-backed
+  notes.
+
 ## 0.4.1 - 2026-08-06
 
 ### Added
