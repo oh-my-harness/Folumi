@@ -15,6 +15,8 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
   provider-returned reasoning content.
 - Added a compact composer control for changing the thinking level of the
   current conversation.
+- Removed the duplicate thinking-level field from Settings; the composer now
+  remembers the latest choice for each model and uses it for new conversations.
 - Fixed completed conversations failing to show persisted thinking content
   when a transient WebSocket reasoning event was missed.
 - Removed the standalone Permissions & Data settings tab and its local-data-directory shortcut.

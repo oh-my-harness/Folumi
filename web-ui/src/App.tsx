@@ -29,6 +29,7 @@ import {
   shouldShowOnboarding,
   settingsRequireSessionReset,
   settingsForSession,
+  withModelThinkingLevel,
 } from './settings'
 import type { ThinkingLevel } from './settings'
 import { guideAssistantStarterPrompt, type ProductGuideDestination } from './productGuide'
@@ -1106,26 +1107,33 @@ export default function App() {
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevel) => {
     if (running || level === sessionThinkingLevel) return
     const previousLevel = sessionThinkingLevel
+    const nextSettings = withModelThinkingLevel(llmSettings, selectedLlmConfigId, level)
     setSessionThinkingLevel(level)
-    if (!sessionId) return
+    setLlmSettings(nextSettings)
+    if (!sessionId) {
+      persistSettings(nextSettings)
+      return
+    }
 
     try {
       const res = await fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          llm: settingsForSession(llmSettings, selectedLlmConfigId, level),
+          llm: settingsForSession(nextSettings, selectedLlmConfigId, level),
         }),
       })
       if (!res.ok) {
         throw new Error(`failed to update thinking level: HTTP ${res.status}`)
       }
+      persistSettings(nextSettings)
     } catch (err) {
       setSessionThinkingLevel(previousLevel)
+      setLlmSettings(llmSettings)
       const message = err instanceof Error ? err.message : String(err)
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
     }
-  }, [llmSettings, running, selectedLlmConfigId, sessionId, sessionThinkingLevel])
+  }, [llmSettings, persistSettings, running, selectedLlmConfigId, sessionId, sessionThinkingLevel])
 
   const handleSelectSession = async (id: string) => {
     if (id !== sessionId) {

@@ -19,6 +19,7 @@ const {
   settingsForSession,
   settingsRequireSessionReset,
   shouldShowOnboarding,
+  withModelThinkingLevel,
 } = module.exports
 
 test('keeps supported appearance themes', () => {
@@ -138,4 +139,15 @@ test('changing a model thinking level resets the runtime session', () => {
   const current = { ...defaultLlmSettings, llmConfigs: [profile], activeLlmConfigId: profile.id }
   const next = { ...current, llmConfigs: [{ ...profile, thinkingLevel: 'medium' }] }
   assert.equal(settingsRequireSessionReset(current, next), true)
+})
+
+test('remembers the composer thinking level only for the selected model', () => {
+  const first = { ...defaultLlmSettings.llmConfigs[0], id: 'first', thinkingLevel: 'off' }
+  const second = { ...first, id: 'second', thinkingLevel: 'low' }
+  const current = { ...defaultLlmSettings, llmConfigs: [first, second], activeLlmConfigId: first.id }
+
+  const next = withModelThinkingLevel(current, first.id, 'xhigh')
+  assert.equal(next.llmConfigs[0].thinkingLevel, 'xhigh')
+  assert.equal(next.llmConfigs[1].thinkingLevel, 'low')
+  assert.equal(withModelThinkingLevel(current, 'missing', 'high'), current)
 })

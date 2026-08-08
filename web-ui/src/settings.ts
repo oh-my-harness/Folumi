@@ -158,6 +158,20 @@ export function settingsForSession(
   }
 }
 
+export function withModelThinkingLevel(
+  settings: LlmSettings,
+  configId: string | null,
+  thinkingLevel: ThinkingLevel,
+): LlmSettings {
+  if (!configId || !settings.llmConfigs.some((config) => config.id === configId)) return settings
+  return {
+    ...settings,
+    llmConfigs: settings.llmConfigs.map((config) => (
+      config.id === configId ? { ...config, thinkingLevel } : config
+    )),
+  }
+}
+
 export function hasUsableLlmConfig(settings: LlmSettings): boolean {
   const config = activeLlmConfig(settings)
   if (!config) return false

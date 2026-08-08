@@ -267,10 +267,8 @@ test('composer selectors share one polished dropdown surface', () => {
 
 test('reasoning models expose an adjustable level and inline thinking surface', () => {
   assert.match(settingsSchema, /thinkingLevel: ThinkingLevel/)
-  assert.match(settings, /思考强度/)
-  assert.match(settings, /value="off">关闭/)
-  assert.match(settings, /value="medium">中/)
-  assert.match(settings, /value="xhigh">极高/)
+  assert.doesNotMatch(settings, /思考强度/)
+  assert.match(settingsSchema, /withModelThinkingLevel/)
   assert.match(composer, /ThinkingDisclosure/)
   assert.match(app, /Durable runtime history is authoritative for rich content/)
   assert.match(app, /hydrateSession\(sourceSessionId, true\)/)

@@ -178,8 +178,9 @@ The retained Notebook workspace capabilities are recorded in
   level. Provider-returned displayable reasoning shall stream separately from
   the final answer, render as secondary collapsible text on that answer, and
   remain recoverable from the runtime Session without entering recall or RAG.
-  The composer shall allow changing the level for the current session without
-  changing the model profile default, and shall lock the control during a run.
+  The composer shall be the only visible thinking-level control, persist the
+  level on the current session, remember the latest choice per model for new
+  sessions, and lock the control during a run.
 
 ## 6. Settings, Privacy, and Portability
 
