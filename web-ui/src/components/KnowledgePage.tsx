@@ -25,6 +25,7 @@ interface Props {
   settings: LlmSettings
   onChanged?: () => void
   focusTarget?: Extract<SourceTarget, { type: 'kb' }> | null
+  onConfigureEmbedding: () => void
 }
 
 interface KnowledgeBaseItem {
@@ -92,7 +93,7 @@ interface UploadProgressItem {
   error?: string
 }
 
-export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
+export function KnowledgePage({ settings, onChanged, focusTarget, onConfigureEmbedding }: Props) {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseItem[]>([])
   const [activeKbId, setActiveKbId] = useState<string | null>(null)
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
@@ -730,6 +731,7 @@ export function KnowledgePage({ settings, onChanged, focusTarget }: Props) {
           <EmptyKnowledgeState
             canCreate={settings.embeddingConfigs.length > 0}
             onCreate={openCreateDialog}
+            onConfigureEmbedding={onConfigureEmbedding}
           />
         )}
       </section>
@@ -874,9 +876,11 @@ function KnowledgeListPanel({
 function EmptyKnowledgeState({
   canCreate,
   onCreate,
+  onConfigureEmbedding,
 }: {
   canCreate: boolean
   onCreate: () => void
+  onConfigureEmbedding: () => void
 }) {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-12">
@@ -893,11 +897,10 @@ function EmptyKnowledgeState({
         <button
           className={`${primaryButtonClassName} mt-5`}
           type="button"
-          onClick={onCreate}
-          disabled={!canCreate}
+          onClick={canCreate ? onCreate : onConfigureEmbedding}
         >
-          <Plus size={17} />
-          新建资料集
+          {canCreate ? <Plus size={17} /> : <Settings size={17} />}
+          {canCreate ? '新建资料集' : '配置嵌入模型'}
         </button>
       </div>
     </div>

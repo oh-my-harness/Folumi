@@ -11,6 +11,8 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ### Changed
 
+- Changed the empty Sources action to open Embedding model settings when an
+  embedding model must be configured before creating a source collection.
 - Added per-model thinking levels and an inline, collapsible display for
   provider-returned reasoning content.
 - Added a compact composer control for changing the thinking level of the

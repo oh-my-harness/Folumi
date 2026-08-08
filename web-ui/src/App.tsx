@@ -1393,6 +1393,10 @@ export default function App() {
             settings={llmSettings}
             onChanged={refreshKnowledgeBases}
             focusTarget={knowledgeFocusTarget}
+            onConfigureEmbedding={() => {
+              setSettingsTab('embedding')
+              setView('settings')
+            }}
           />
         )}
 

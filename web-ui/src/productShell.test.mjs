@@ -247,6 +247,9 @@ test('high-frequency interface copy uses short everyday language', () => {
   assert.match(knowledgePage, />\s*查找\s*</)
   assert.match(knowledgePage, />\s*重新整理\s*</)
   assert.match(knowledgePage, /请先在设置中配置“嵌入模型”/)
+  assert.match(knowledgePage, /canCreate \? '新建资料集' : '配置嵌入模型'/)
+  assert.match(knowledgePage, /canCreate \? onCreate : onConfigureEmbedding/)
+  assert.match(app, /onConfigureEmbedding=\{\(\) => \{/)
   assert.doesNotMatch(knowledgePage, /设置中完成“资料查找”/)
 })
 
