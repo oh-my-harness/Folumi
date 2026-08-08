@@ -17,7 +17,6 @@ import {
   Quote,
   RefreshCw,
   Square,
-  Zap,
   X,
 } from 'lucide-react'
 import { chooseDesktopSavePath, isDesktopApp, writeClipboardText } from '../api'
@@ -1077,7 +1076,6 @@ function Composer({
           <ToolbarButton
             active={openMenu === 'thinking'}
             disabled={disabled || running}
-            icon={<Zap size={16} className={thinkingLevel === 'off' ? 'text-gray-400' : 'fill-blue-500 text-blue-500'} />}
             label={`${t('chat.thinking.title')} · ${activeThinkingLabel}`}
             onClick={() => toggleMenu('thinking')}
           />
@@ -1348,7 +1346,7 @@ function ToolbarButton({
 }: {
   active: boolean
   disabled?: boolean
-  icon: ReactNode
+  icon?: ReactNode
   label: string
   onClick: () => void
 }) {
@@ -1363,7 +1361,7 @@ function ToolbarButton({
       disabled={disabled}
       onClick={onClick}
     >
-      <span className="shrink-0">{icon}</span>
+      {icon && <span className="shrink-0">{icon}</span>}
       <span className="truncate">{label}</span>
       <ChevronDown size={14} className={`shrink-0 text-gray-400 transition-transform ${active ? 'rotate-180' : ''}`} />
     </button>
