@@ -141,6 +141,7 @@ export async function saveStoredLlmSettings(settings: LlmSettings): Promise<void
 export function settingsForSession(
   settings: LlmSettings,
   configId: string | null = settings.activeLlmConfigId,
+  thinkingLevel?: ThinkingLevel,
 ) {
   const config = configId === null
     ? null
@@ -152,7 +153,7 @@ export function settingsForSession(
     base_url: (config?.baseUrl ?? settings.baseUrl).trim() || null,
     chat_path: (config?.chatPath ?? settings.chatPath).trim() || null,
     context_window_tokens: Number(config?.contextWindowTokens || DEFAULT_CONTEXT_WINDOW_TOKENS),
-    thinking_level: config?.thinkingLevel ?? 'off',
+    thinking_level: thinkingLevel ?? config?.thinkingLevel ?? 'off',
     require_approval: settings.requireApproval,
   }
 }

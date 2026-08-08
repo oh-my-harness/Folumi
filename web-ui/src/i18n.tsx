@@ -34,6 +34,14 @@ export type TranslationKey =
   | 'chat.model.select'
   | 'chat.model.none'
   | 'chat.model.configureFirst'
+  | 'chat.thinking.title'
+  | 'chat.thinking.session'
+  | 'chat.thinking.off'
+  | 'chat.thinking.minimal'
+  | 'chat.thinking.low'
+  | 'chat.thinking.medium'
+  | 'chat.thinking.high'
+  | 'chat.thinking.xhigh'
   | 'chat.send'
   | 'chat.stop'
   | 'chat.temporary.sidebar'
@@ -96,6 +104,14 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.model.select': '选择模型',
     'chat.model.none': '暂无模型配置',
     'chat.model.configureFirst': '请先到设置中添加对话模型',
+    'chat.thinking.title': '思考强度',
+    'chat.thinking.session': '当前会话',
+    'chat.thinking.off': '关闭',
+    'chat.thinking.minimal': '最少',
+    'chat.thinking.low': '低',
+    'chat.thinking.medium': '中',
+    'chat.thinking.high': '高',
+    'chat.thinking.xhigh': '极高',
     'chat.send': '发送',
     'chat.stop': '停止生成',
     'chat.temporary.sidebar': '临时对话 · 不使用个人信息或过往对话',
@@ -157,6 +173,14 @@ const translations: Record<UiLanguage, Record<TranslationKey, string>> = {
     'chat.model.select': 'Select model',
     'chat.model.none': 'No model profiles',
     'chat.model.configureFirst': 'Add a chat model in Settings first',
+    'chat.thinking.title': 'Thinking',
+    'chat.thinking.session': 'This chat',
+    'chat.thinking.off': 'Off',
+    'chat.thinking.minimal': 'Minimal',
+    'chat.thinking.low': 'Low',
+    'chat.thinking.medium': 'Medium',
+    'chat.thinking.high': 'High',
+    'chat.thinking.xhigh': 'Extra high',
     'chat.send': 'Send',
     'chat.stop': 'Stop generation',
     'chat.temporary.sidebar': 'Temporary · no personal info or past conversations',

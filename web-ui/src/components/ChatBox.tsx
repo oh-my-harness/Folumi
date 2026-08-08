@@ -17,6 +17,7 @@ import {
   Quote,
   RefreshCw,
   Square,
+  Zap,
   X,
 } from 'lucide-react'
 import { chooseDesktopSavePath, isDesktopApp, writeClipboardText } from '../api'
@@ -33,7 +34,7 @@ import {
   titleFromMarkdown,
 } from '../notebookSave'
 import type { NotebookVaultInfo, SaveToNotebookResult } from '../notebookSave'
-import type { LlmModelConfig } from '../settings'
+import type { LlmModelConfig, ThinkingLevel } from '../settings'
 import { useI18n } from '../i18n'
 import { DeepSolveMessage, type DeepSolveTraceEntry } from './DeepSolveMessage'
 import { MarkdownMessage, SourceReferences, sourceTargetFromRaw } from './MarkdownMessage'
@@ -46,7 +47,7 @@ import {
 } from '../chatScrollPosition'
 import { SaveNotebookDialog, SaveNotebookOutcomeDialog } from './SaveNotebookDialog'
 
-type OpenMenu = 'knowledge' | 'model' | null
+type OpenMenu = 'knowledge' | 'thinking' | 'model' | null
 
 export interface SaveToNotebookOptions {
   folderPath?: string
@@ -113,6 +114,7 @@ interface Props {
   contextStats: ContextStats
   llmConfigs: LlmModelConfig[]
   activeLlmConfigId: string | null
+  thinkingLevel: ThinkingLevel
   knowledgeBases: Array<{ id: string; name: string }>
   selectedKnowledgeBaseIds: string[]
   notebookVaults: NotebookVaultInfo[]
@@ -125,6 +127,7 @@ interface Props {
   onKnowledgeBaseToggle: (id: string) => void
   onNotebookVaultToggle: (id: string) => void
   onLlmConfigChange: (id: string) => void
+  onThinkingLevelChange: (level: ThinkingLevel) => void
   notebookFolders?: string[]
   notebookEntryPaths?: string[]
   notebookVault?: NotebookVaultInfo | null
@@ -150,6 +153,7 @@ export function ChatBox({
   contextStats,
   llmConfigs,
   activeLlmConfigId,
+  thinkingLevel,
   knowledgeBases,
   selectedKnowledgeBaseIds,
   notebookVaults,
@@ -162,6 +166,7 @@ export function ChatBox({
   onKnowledgeBaseToggle,
   onNotebookVaultToggle,
   onLlmConfigChange,
+  onThinkingLevelChange,
   notebookFolders = [],
   notebookEntryPaths = [],
   notebookVault,
@@ -484,6 +489,7 @@ export function ChatBox({
               setInput={setInput}
               llmConfigs={llmConfigs}
               activeLlmConfigId={activeLlmConfigId}
+              thinkingLevel={thinkingLevel}
               knowledgeBases={knowledgeBases}
               selectedKnowledgeBaseIds={selectedKnowledgeBaseIds}
               notebookVaults={notebookVaults}
@@ -491,6 +497,7 @@ export function ChatBox({
               onKnowledgeBaseToggle={onKnowledgeBaseToggle}
               onNotebookVaultToggle={onNotebookVaultToggle}
               onLlmConfigChange={onLlmConfigChange}
+              onThinkingLevelChange={onThinkingLevelChange}
               onSend={handleSend}
               onStop={onStop}
               attachments={attachments}
@@ -635,6 +642,7 @@ export function ChatBox({
               setInput={setInput}
               llmConfigs={llmConfigs}
               activeLlmConfigId={activeLlmConfigId}
+              thinkingLevel={thinkingLevel}
               knowledgeBases={knowledgeBases}
               selectedKnowledgeBaseIds={selectedKnowledgeBaseIds}
               notebookVaults={notebookVaults}
@@ -642,6 +650,7 @@ export function ChatBox({
               onKnowledgeBaseToggle={onKnowledgeBaseToggle}
               onNotebookVaultToggle={onNotebookVaultToggle}
               onLlmConfigChange={onLlmConfigChange}
+              onThinkingLevelChange={onThinkingLevelChange}
               onSend={handleSend}
               onStop={onStop}
               attachments={attachments}
@@ -862,6 +871,7 @@ function Composer({
   setInput,
   llmConfigs,
   activeLlmConfigId,
+  thinkingLevel,
   knowledgeBases,
   selectedKnowledgeBaseIds,
   notebookVaults,
@@ -869,6 +879,7 @@ function Composer({
   onKnowledgeBaseToggle,
   onNotebookVaultToggle,
   onLlmConfigChange,
+  onThinkingLevelChange,
   onSend,
   onStop,
   attachments,
@@ -883,6 +894,7 @@ function Composer({
   setInput: (value: string) => void
   llmConfigs: LlmModelConfig[]
   activeLlmConfigId: string | null
+  thinkingLevel: ThinkingLevel
   knowledgeBases: Array<{ id: string; name: string }>
   selectedKnowledgeBaseIds: string[]
   notebookVaults: NotebookVaultInfo[]
@@ -890,6 +902,7 @@ function Composer({
   onKnowledgeBaseToggle: (id: string) => void
   onNotebookVaultToggle: (id: string) => void
   onLlmConfigChange: (id: string) => void
+  onThinkingLevelChange: (level: ThinkingLevel) => void
   onSend: () => void
   onStop?: () => void
   attachments: ChatAttachment[]
@@ -905,6 +918,16 @@ function Composer({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
   const activeModel = llmConfigs.find((item) => item.id === activeLlmConfigId) ?? llmConfigs[0] ?? null
+  const thinkingOptions: Array<{ value: ThinkingLevel; label: string }> = [
+    { value: 'off', label: t('chat.thinking.off') },
+    { value: 'minimal', label: t('chat.thinking.minimal') },
+    { value: 'low', label: t('chat.thinking.low') },
+    { value: 'medium', label: t('chat.thinking.medium') },
+    { value: 'high', label: t('chat.thinking.high') },
+    { value: 'xhigh', label: t('chat.thinking.xhigh') },
+  ]
+  const activeThinkingLabel = thinkingOptions.find((option) => option.value === thinkingLevel)?.label
+    ?? t('chat.thinking.off')
   const selectedSourceCount = selectedKnowledgeBaseIds.length + (selectedNotebookVaultId ? 1 : 0)
   const sourceOptions = [
     ...notebookVaults.map((vault) => ({
@@ -938,6 +961,10 @@ function Composer({
     document.addEventListener('pointerdown', closeOnOutsidePointer, true)
     return () => document.removeEventListener('pointerdown', closeOnOutsidePointer, true)
   }, [openMenu])
+
+  useEffect(() => {
+    if (running) setOpenMenu(null)
+  }, [running])
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
@@ -1047,6 +1074,50 @@ function Composer({
         </div>
 
         <div className="relative ml-auto">
+          <ToolbarButton
+            active={openMenu === 'thinking'}
+            disabled={disabled || running}
+            icon={<Zap size={16} className={thinkingLevel === 'off' ? 'text-gray-400' : 'fill-blue-500 text-blue-500'} />}
+            label={`${t('chat.thinking.title')} · ${activeThinkingLabel}`}
+            onClick={() => toggleMenu('thinking')}
+          />
+          {openMenu === 'thinking' && (
+            <div
+              className="absolute bottom-[calc(100%+0.75rem)] right-0 z-40 w-64 overflow-hidden rounded-2xl border border-gray-200/90 bg-white p-2 shadow-[0_20px_55px_-20px_rgba(15,23,42,0.35)] ring-1 ring-gray-950/5"
+              data-composer-dropdown="true"
+            >
+              <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                <span className="text-sm font-semibold text-gray-950">{t('chat.thinking.title')}</span>
+                <span className="text-xs text-gray-400">{t('chat.thinking.session')}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {thinkingOptions.map((option) => {
+                  const selected = option.value === thinkingLevel
+                  return (
+                    <button
+                      key={option.value}
+                      className={`rounded-xl px-2 py-2 text-sm font-medium transition ${
+                        selected
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-gray-50 text-gray-600 hover:bg-blue-50 hover:text-blue-700'
+                      }`}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => {
+                        onThinkingLevelChange(option.value)
+                        setOpenMenu(null)
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="relative">
           <ToolbarButton
             active={openMenu === 'model'}
             icon={<Brain size={16} />}
@@ -1270,23 +1341,26 @@ function llmApiModeLabel(provider: LlmModelConfig['provider']) {
 
 function ToolbarButton({
   active,
+  disabled = false,
   icon,
   label,
   onClick,
 }: {
   active: boolean
+  disabled?: boolean
   icon: ReactNode
   label: string
   onClick: () => void
 }) {
   return (
     <button
-      className={`inline-flex h-9 max-w-56 items-center gap-2 rounded-xl border px-3 text-sm transition ${
+      className={`inline-flex h-9 max-w-56 items-center gap-2 rounded-xl border px-3 text-sm transition disabled:cursor-not-allowed disabled:border-gray-100 disabled:bg-gray-50 disabled:text-gray-400 ${
         active
           ? 'border-blue-300 bg-blue-50 text-blue-700 shadow-sm ring-2 ring-blue-100/70'
           : 'border-gray-200 bg-gray-50/80 text-gray-700 hover:border-blue-200 hover:bg-blue-50'
       }`}
       type="button"
+      disabled={disabled}
       onClick={onClick}
     >
       <span className="shrink-0">{icon}</span>

@@ -30,6 +30,7 @@ import {
   settingsRequireSessionReset,
   settingsForSession,
 } from './settings'
+import type { ThinkingLevel } from './settings'
 import { guideAssistantStarterPrompt, type ProductGuideDestination } from './productGuide'
 import {
   appendCompletedSessionMessage,
@@ -120,7 +121,7 @@ interface SessionDetailResponse {
   notebook_enabled?: boolean
   notebook_vault_id?: string | null
   temporary?: boolean
-  llm?: { model?: string | null } | null
+  llm?: { model?: string | null; thinking_level?: ThinkingLevel } | null
   messages?: Array<{
     role: 'user' | 'assistant'
     text: string
@@ -171,6 +172,9 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('llm')
   const [starterDraft, setStarterDraft] = useState<{ id: number; text: string } | null>(null)
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(() => loadLlmSettings().activeLlmConfigId)
+  const [sessionThinkingLevel, setSessionThinkingLevel] = useState<ThinkingLevel>(() => (
+    activeLlmConfig(loadLlmSettings())?.thinkingLevel ?? 'off'
+  ))
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [temporaryConversation, setTemporaryConversation] = useState(false)
   const activeSessionIdRef = useRef<string | null>(null)
@@ -288,6 +292,12 @@ export default function App() {
         ? llmSettings.llmConfigs.find((config) => config.model === data.llm?.model)
         : null
       setSelectedLlmConfigId(restoredModelConfig?.id ?? llmSettings.activeLlmConfigId)
+      setSessionThinkingLevel(
+        data.llm?.thinking_level
+          ?? restoredModelConfig?.thinkingLevel
+          ?? activeLlmConfig(llmSettings)?.thinkingLevel
+          ?? 'off',
+      )
       if (data.active_run && !settledHandoff) {
         setRunning(true)
         pushStatus({
@@ -615,6 +625,7 @@ export default function App() {
         if (storedSettings) {
           setLlmSettings(storedSettings)
           setSelectedLlmConfigId(storedSettings.activeLlmConfigId)
+          setSessionThinkingLevel(activeLlmConfig(storedSettings)?.thinkingLevel ?? 'off')
           saveLlmSettings(storedSettings)
         } else if (hasLocalLlmSettings()) {
           const localSettings = loadLlmSettings()
@@ -693,7 +704,7 @@ export default function App() {
               name: llmSettings.assistantName,
               instructions: llmSettings.assistantInstructions,
             },
-            llm: settingsForSession(llmSettings, selectedLlmConfigId),
+            llm: settingsForSession(llmSettings, selectedLlmConfigId, sessionThinkingLevel),
             search: searchForSession(llmSettings),
           }),
         })
@@ -721,7 +732,7 @@ export default function App() {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [sessionId, capability, llmSettings, selectedLlmConfigId, selectedKnowledgeBaseIds, selectedNotebookVaultId, temporaryConversation, send, pushStatus, activateSession])
+  }, [sessionId, capability, llmSettings, selectedLlmConfigId, sessionThinkingLevel, selectedKnowledgeBaseIds, selectedNotebookVaultId, temporaryConversation, send, pushStatus, activateSession])
 
   const handleStopGeneration = useCallback(() => {
     if (!running) return
@@ -781,7 +792,7 @@ export default function App() {
             name: llmSettings.assistantName,
             instructions: llmSettings.assistantInstructions,
           },
-          llm: settingsForSession(llmSettings, selectedLlmConfigId),
+          llm: settingsForSession(llmSettings, selectedLlmConfigId, sessionThinkingLevel),
           search: searchForSession(llmSettings),
         }),
       })
@@ -813,7 +824,7 @@ export default function App() {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
       setRunning(false)
     }
-  }, [capability, llmSettings, selectedLlmConfigId, messages, pushStatus, running, selectedKnowledgeBaseIds, selectedNotebookVaultId, temporaryConversation, send, sessionId, activateSession])
+  }, [capability, llmSettings, selectedLlmConfigId, sessionThinkingLevel, messages, pushStatus, running, selectedKnowledgeBaseIds, selectedNotebookVaultId, temporaryConversation, send, sessionId, activateSession])
 
   const handleSaveToNotebook = useCallback(async (markdown: string, options: SaveToNotebookOptions = {}): Promise<SaveToNotebookResult> => {
     try {
@@ -941,6 +952,7 @@ export default function App() {
     persistSettings(nextSettings)
     if (settingsRequireSessionReset(llmSettings, nextSettings)) {
       activateSession(null)
+      setSessionThinkingLevel(activeLlmConfig(nextSettings)?.thinkingLevel ?? 'off')
     }
   }
 
@@ -949,6 +961,7 @@ export default function App() {
     setTemporaryConversation(false)
     setCapability('chat')
     setSelectedLlmConfigId(llmSettings.activeLlmConfigId)
+    setSessionThinkingLevel(activeLlmConfig(llmSettings)?.thinkingLevel ?? 'off')
     setMessages([])
     setStreamingText('')
     streamingRef.current = ''
@@ -1064,8 +1077,10 @@ export default function App() {
   const handleLlmConfigChange = useCallback(async (id: string) => {
     if (running) return
     const nextSettings = { ...llmSettings, activeLlmConfigId: id }
+    const nextThinkingLevel = nextSettings.llmConfigs.find((config) => config.id === id)?.thinkingLevel ?? 'off'
     setLlmSettings(nextSettings)
     setSelectedLlmConfigId(id)
+    setSessionThinkingLevel(nextThinkingLevel)
     persistSettings(nextSettings)
     if (!sessionId) return
 
@@ -1083,6 +1098,30 @@ export default function App() {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
     }
   }, [llmSettings, persistSettings, running, sessionId])
+
+  const handleThinkingLevelChange = useCallback(async (level: ThinkingLevel) => {
+    if (running || level === sessionThinkingLevel) return
+    const previousLevel = sessionThinkingLevel
+    setSessionThinkingLevel(level)
+    if (!sessionId) return
+
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          llm: settingsForSession(llmSettings, selectedLlmConfigId, level),
+        }),
+      })
+      if (!res.ok) {
+        throw new Error(`failed to update thinking level: HTTP ${res.status}`)
+      }
+    } catch (err) {
+      setSessionThinkingLevel(previousLevel)
+      const message = err instanceof Error ? err.message : String(err)
+      setMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${message}` }])
+    }
+  }, [llmSettings, running, selectedLlmConfigId, sessionId, sessionThinkingLevel])
 
   const handleSelectSession = async (id: string) => {
     if (id !== sessionId) {
@@ -1292,6 +1331,7 @@ export default function App() {
                   contextStats={contextStats}
                   llmConfigs={llmSettings.llmConfigs}
                   activeLlmConfigId={selectedLlmConfigId}
+                  thinkingLevel={sessionThinkingLevel}
                   knowledgeBases={knowledgeBases}
                   selectedKnowledgeBaseIds={selectedKnowledgeBaseIds}
                   notebookVaults={notebookVaults}
@@ -1304,6 +1344,7 @@ export default function App() {
                   onKnowledgeBaseToggle={handleKnowledgeBaseToggle}
                   onNotebookVaultToggle={handleNotebookVaultToggle}
                   onLlmConfigChange={handleLlmConfigChange}
+                  onThinkingLevelChange={handleThinkingLevelChange}
                   notebookFolders={notebookFolders}
                   notebookEntryPaths={notebookEntryPaths}
                   notebookVault={notebookVault}
