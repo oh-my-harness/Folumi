@@ -9,6 +9,8 @@ release titles, or artifact names such as `v0.1.0-alpha.1`.
 
 ## Unreleased
 
+## 0.4.3 - 2026-08-08
+
 ### Changed
 
 - Changed the empty Sources action to open Embedding model settings when an
