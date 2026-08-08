@@ -72,9 +72,9 @@ test('session hydration preserves messages received while history was loading', 
 test('session hydration prefers durable copies without collapsing repeated turns', () => {
   const restored = [
     { role: 'user', text: 'repeat' },
-    { role: 'assistant', text: 'same answer', citations: [{ id: 1 }] },
+    { role: 'assistant', text: 'same answer', thinking: 'durable reasoning 1', citations: [{ id: 1 }] },
     { role: 'user', text: 'repeat' },
-    { role: 'assistant', text: 'same answer', citations: [{ id: 2 }] },
+    { role: 'assistant', text: 'same answer', thinking: 'durable reasoning 2', citations: [{ id: 2 }] },
   ]
   const live = [
     { role: 'assistant', text: 'same answer' },

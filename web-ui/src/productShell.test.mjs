@@ -272,6 +272,8 @@ test('reasoning models expose an adjustable level and inline thinking surface', 
   assert.match(settings, /value="medium">中/)
   assert.match(settings, /value="xhigh">极高/)
   assert.match(composer, /ThinkingDisclosure/)
+  assert.match(app, /Durable runtime history is authoritative for rich content/)
+  assert.match(app, /hydrateSession\(sourceSessionId, true\)/)
   assert.match(composer, /openMenu === 'thinking'/)
   assert.match(composer, /onThinkingLevelChange\(option\.value\)/)
   assert.match(composer, /chat\.thinking\.session/)

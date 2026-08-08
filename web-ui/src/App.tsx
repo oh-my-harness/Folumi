@@ -473,6 +473,10 @@ export default function App() {
           updateRecentSessionRun(setRecentSessions, sourceSessionId, null)
           setLatestUsage((prev) => isTokenUsagePayload(payload.usage) ? payload.usage : prev)
           setMessages((prev) => dropTrailingTransientStatus(prev))
+          // Durable runtime history is authoritative for rich content such as
+          // thinking blocks. Reconcile after every completed run so a missed
+          // transient WebSocket delta cannot leave the final bubble incomplete.
+          void hydrateSession(sourceSessionId, true)
         } else if (kind === 'history_sync') {
           streamingRef.current = ''
           thinkingStreamingRef.current = ''
