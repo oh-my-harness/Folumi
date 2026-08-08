@@ -56,6 +56,7 @@ type Capability = 'chat' | 'deep_solve' | 'code_exec' | 'organize'
 interface Message {
   role: 'user' | 'assistant' | 'status'
   text: string
+  thinking?: string
   kind?: AgentStatus['kind']
   transient?: boolean
   citations?: Citation[]
@@ -123,6 +124,7 @@ interface SessionDetailResponse {
   messages?: Array<{
     role: 'user' | 'assistant'
     text: string
+    thinking?: string
     citations?: Citation[]
   }>
   trace?: Array<{
@@ -183,6 +185,8 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [streamingText, setStreamingText] = useState('')
   const streamingRef = useRef('')
+  const [streamingThinking, setStreamingThinking] = useState('')
+  const thinkingStreamingRef = useRef('')
   const progressStreamingRef = useRef('')
   const pendingSessionSendRef = useRef<{ sessionId: string; content: string } | null>(null)
   const [traceEntries, setTraceEntries] = useState<TraceEntry[]>([])
@@ -271,6 +275,7 @@ export default function App() {
         (data.messages ?? []).map((message) => ({
           role: message.role,
           text: message.text,
+          thinking: message.thinking,
           citations: message.citations,
         })),
         restoredTrace,
@@ -356,12 +361,14 @@ export default function App() {
           const citations = pendingCitationsRef.current
           const deepSolve = pendingDeepSolveRef.current
           const notebookEditProposal = pendingNotebookEditProposalRef.current
+          const thinking = thinkingStreamingRef.current.trim()
           if (finalText.trim() || citations.length > 0 || deepSolve.length > 0 || notebookEditProposal) {
             setMessages((prev) => appendCompletedSessionMessage(
               dropTrailingTransientStatus(prev),
               {
                 role: 'assistant',
                 text: finalText,
+                thinking: thinking || undefined,
                 citations,
                 deepSolve: deepSolve.length > 0 ? deepSolve : undefined,
                 notebookEditProposal,
@@ -374,8 +381,10 @@ export default function App() {
           pendingDeepSolveRef.current = []
           pendingNotebookEditProposalRef.current = undefined
           streamingRef.current = ''
+          thinkingStreamingRef.current = ''
           progressStreamingRef.current = ''
           setStreamingText('')
+          setStreamingThinking('')
           setRunning(false)
           if (citations.length > 0) {
             void persistMessageCitations(sourceSessionId, citations).catch((err) => {
@@ -384,6 +393,13 @@ export default function App() {
           }
           void refreshSessions()
         }
+      } else if (event.type === 'thinking_content') {
+        if (event.payload.chunk) {
+          thinkingStreamingRef.current += event.payload.text
+        } else {
+          thinkingStreamingRef.current = event.payload.text
+        }
+        setStreamingThinking(thinkingStreamingRef.current)
       } else if (event.type === 'progress_content') {
         if (event.payload.chunk) {
           progressStreamingRef.current += event.payload.text
@@ -449,8 +465,10 @@ export default function App() {
           setMessages((prev) => dropTrailingTransientStatus(prev))
         } else if (kind === 'history_sync') {
           streamingRef.current = ''
+          thinkingStreamingRef.current = ''
           progressStreamingRef.current = ''
           setStreamingText('')
+          setStreamingThinking('')
           setRunning(false)
           setMessages((prev) => dropTrailingTransientStatus(prev))
           updateRecentSessionRun(setRecentSessions, sourceSessionId, null)
@@ -736,6 +754,8 @@ export default function App() {
           setLatestUsage(null)
           setStreamingText('')
           streamingRef.current = ''
+          setStreamingThinking('')
+          thinkingStreamingRef.current = ''
           progressStreamingRef.current = ''
           pendingCitationsRef.current = []
           pendingDeepSolveRef.current = []
@@ -778,6 +798,8 @@ export default function App() {
       setLatestUsage(null)
       setStreamingText('')
       streamingRef.current = ''
+      setStreamingThinking('')
+      thinkingStreamingRef.current = ''
       progressStreamingRef.current = ''
       pendingCitationsRef.current = []
       pendingDeepSolveRef.current = []
@@ -930,6 +952,8 @@ export default function App() {
     setMessages([])
     setStreamingText('')
     streamingRef.current = ''
+    setStreamingThinking('')
+    thinkingStreamingRef.current = ''
     progressStreamingRef.current = ''
     setTraceEntries([])
     pendingCitationsRef.current = []
@@ -1066,6 +1090,8 @@ export default function App() {
       setMessages([])
       setStreamingText('')
       streamingRef.current = ''
+      setStreamingThinking('')
+      thinkingStreamingRef.current = ''
       progressStreamingRef.current = ''
       setTraceEntries([])
       pendingCitationsRef.current = []
@@ -1130,6 +1156,8 @@ export default function App() {
       setMessages([])
       setStreamingText('')
       streamingRef.current = ''
+      setStreamingThinking('')
+      thinkingStreamingRef.current = ''
       progressStreamingRef.current = ''
       setTraceEntries([])
       pendingCitationsRef.current = []
@@ -1260,6 +1288,7 @@ export default function App() {
                   sessionId={sessionId}
                   messages={messages}
                   streamingText={streamingText}
+                  streamingThinking={streamingThinking}
                   contextStats={contextStats}
                   llmConfigs={llmSettings.llmConfigs}
                   activeLlmConfigId={selectedLlmConfigId}

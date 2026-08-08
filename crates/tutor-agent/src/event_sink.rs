@@ -14,6 +14,10 @@ pub trait EventSink: Send + Sync {
     fn progress_content(&self, _text: String, _chunk: bool) -> BoxFuture<'static, ()> {
         Box::pin(async {})
     }
+
+    fn thinking_content(&self, _text: String, _chunk: bool) -> BoxFuture<'static, ()> {
+        Box::pin(async {})
+    }
 }
 
 pub type SharedEventSink = Arc<dyn EventSink>;
@@ -41,5 +45,15 @@ pub async fn emit_progress_content(
 ) {
     if let Some(sink) = sink {
         sink.progress_content(text.into(), chunk).await;
+    }
+}
+
+pub async fn emit_thinking_content(
+    sink: &Option<SharedEventSink>,
+    text: impl Into<String>,
+    chunk: bool,
+) {
+    if let Some(sink) = sink {
+        sink.thinking_content(text.into(), chunk).await;
     }
 }

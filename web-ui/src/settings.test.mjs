@@ -95,6 +95,7 @@ test('builds runtime settings from an explicitly selected model config', () => {
         baseUrl: 'https://a.example',
         chatPath: '/v1/chat/completions',
         contextWindowTokens: 64000,
+        thinkingLevel: 'low',
       },
       {
         id: 'model-b',
@@ -105,6 +106,7 @@ test('builds runtime settings from an explicitly selected model config', () => {
         baseUrl: 'https://b.example',
         chatPath: '',
         contextWindowTokens: 200000,
+        thinkingLevel: 'high',
       },
     ],
     activeLlmConfigId: 'model-a',
@@ -115,6 +117,24 @@ test('builds runtime settings from an explicitly selected model config', () => {
   assert.equal(selected.model, 'model-b-name')
   assert.equal(selected.api_key, 'key-b')
   assert.equal(selected.context_window_tokens, 200000)
+  assert.equal(selected.thinking_level, 'high')
   assert.equal('budget_limit_usd' in selected, false)
   assert.equal('budgetLimitUsd' in defaultLlmSettings, false)
+})
+
+test('changing a model thinking level resets the runtime session', () => {
+  const profile = {
+    id: 'model-a',
+    name: 'Model A',
+    provider: 'openai',
+    model: 'model-a-name',
+    apiKey: 'key-a',
+    baseUrl: 'https://a.example',
+    chatPath: '/v1/chat/completions',
+    contextWindowTokens: 64000,
+    thinkingLevel: 'off',
+  }
+  const current = { ...defaultLlmSettings, llmConfigs: [profile], activeLlmConfigId: profile.id }
+  const next = { ...current, llmConfigs: [{ ...profile, thinkingLevel: 'medium' }] }
+  assert.equal(settingsRequireSessionReset(current, next), true)
 })

@@ -13,6 +13,8 @@ pub enum StreamEvent {
     /// Transient model narration/progress that must not be persisted as the
     /// final assistant answer.
     ProgressContent { text: String, chunk: bool },
+    /// Model-provided displayable reasoning, kept separate from final text.
+    ThinkingContent { text: String, chunk: bool },
     /// Internal event for the TracePanel.
     Trace {
         kind: String,
@@ -39,6 +41,7 @@ pub struct StreamSnapshot {
     pub generation: u64,
     pub content: String,
     pub progress_content: String,
+    pub thinking_content: String,
     pub completed: bool,
 }
 
@@ -111,6 +114,19 @@ impl TutorStream {
         });
     }
 
+    pub async fn thinking_content(&self, text: &str, chunk: bool) {
+        let mut snapshot = self.snapshot.lock().unwrap();
+        if chunk {
+            snapshot.thinking_content.push_str(text);
+        } else {
+            snapshot.thinking_content = text.to_string();
+        }
+        let _ = self.tx.send(StreamEvent::ThinkingContent {
+            text: text.to_string(),
+            chunk,
+        });
+    }
+
     pub async fn trace(&self, kind: &str, data: impl Serialize) {
         let _ = self.tx.send(StreamEvent::Trace {
             kind: kind.to_string(),
@@ -155,6 +171,17 @@ impl EventSink for TutorStream {
             stream.progress_content(&text, chunk).await;
         })
     }
+
+    fn thinking_content(
+        &self,
+        text: String,
+        chunk: bool,
+    ) -> futures::future::BoxFuture<'static, ()> {
+        let stream = self.clone();
+        Box::pin(async move {
+            stream.thinking_content(&text, chunk).await;
+        })
+    }
 }
 
 #[cfg(test)]
@@ -197,6 +224,18 @@ mod tests {
         assert_eq!(json["payload"]["chunk"], true);
     }
 
+    #[test]
+    fn thinking_content_event_serializes_to_json() {
+        let event = StreamEvent::ThinkingContent {
+            text: "considering context".into(),
+            chunk: true,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "thinking_content");
+        assert_eq!(json["payload"]["text"], "considering context");
+        assert_eq!(json["payload"]["chunk"], true);
+    }
+
     #[tokio::test]
     async fn tutor_stream_sends_content() {
         let stream = TutorStream::new(16);
@@ -228,6 +267,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tutor_stream_sends_thinking_content() {
+        let stream = TutorStream::new(16);
+        let mut rx = stream.subscribe();
+        stream.thinking_content("thinking", true).await;
+        let event = rx.recv().await.unwrap();
+        match event {
+            StreamEvent::ThinkingContent { text, chunk } => {
+                assert_eq!(text, "thinking");
+                assert!(chunk);
+            }
+            _ => panic!("expected ThinkingContent"),
+        }
+    }
+
+    #[tokio::test]
     async fn snapshot_restores_content_before_continuing_live_stream() {
         let stream = TutorStream::new(16);
         stream.begin_run();
@@ -253,12 +307,14 @@ mod tests {
         let stream = TutorStream::new(16);
         stream.content("old answer", true).await;
         stream.progress_content("old progress", false).await;
+        stream.thinking_content("old thinking", false).await;
 
         stream.begin_run();
         let (_, snapshot) = stream.subscribe_with_snapshot();
 
         assert_eq!(snapshot.content, "");
         assert_eq!(snapshot.progress_content, "");
+        assert_eq!(snapshot.thinking_content, "");
         assert!(!snapshot.completed);
     }
 

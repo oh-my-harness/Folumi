@@ -31,6 +31,7 @@ import type {
   SearchConfig,
   SearchProvider,
   ThemeId,
+  ThinkingLevel,
 } from '../settings'
 import { chooseDesktopDirectory } from '../api'
 import type { ProductGuideDestination } from '../productGuide'
@@ -657,6 +658,24 @@ export function SettingsPage({
                               updateLlmConfig(activeLlmConfig.id, 'contextWindowTokens', Number(value))
                             }
                           />
+                        </Field>
+
+                        <Field label="思考强度">
+                          <select
+                            className={inputClassName}
+                            value={activeLlmConfig.thinkingLevel}
+                            onChange={(event) =>
+                              updateLlmConfig(activeLlmConfig.id, 'thinkingLevel', event.target.value as ThinkingLevel)
+                            }
+                          >
+                            <option value="off">关闭</option>
+                            <option value="minimal">最少</option>
+                            <option value="low">低</option>
+                            <option value="medium">中</option>
+                            <option value="high">高</option>
+                            <option value="xhigh">极高</option>
+                          </select>
+                          <p className="mt-1 text-xs text-gray-500">仅在模型接口支持时生效。</p>
                         </Field>
                       </div>
                     </div>

@@ -5,7 +5,8 @@ use llm_harness_agent::{AgentHarness, HarnessHooks, ModelInfo, Plugin, Session};
 use llm_harness_loop::{ConvertToLlmHook, DefaultConvertToLlm, FinalAnswerMode, LlmClient};
 use llm_harness_runtime::builder::HarnessBuilder;
 use llm_harness_types::{
-    AgentError, AgentMessage, BeforeToolCallHook, ExecutionEnv, PrepareNextTurnHook, Tool,
+    AgentError, AgentMessage, BeforeToolCallHook, ExecutionEnv, PrepareNextTurnHook, ThinkingLevel,
+    Tool,
 };
 
 use crate::error::{Result, TutorError};
@@ -17,6 +18,7 @@ pub struct RuntimeHarnessConfig {
     pub plugins: Vec<Arc<dyn Plugin>>,
     pub system_prompt: String,
     pub final_answer_mode: FinalAnswerMode,
+    pub thinking_level: ThinkingLevel,
     pub before_tool_call: Vec<Arc<dyn BeforeToolCallHook>>,
     pub prepare_next_turn: Vec<Arc<dyn PrepareNextTurnHook>>,
 }
@@ -39,6 +41,7 @@ pub async fn build_runtime_harness(
         .model_info(Some(config.model_info))
         .convert_to_llm(Some(Arc::new(OpenAiSafeContextConverter::default())))
         .final_answer_mode(config.final_answer_mode);
+    builder = builder.thinking_level(config.thinking_level);
 
     for tool in config.tools {
         builder = builder.tool(tool);

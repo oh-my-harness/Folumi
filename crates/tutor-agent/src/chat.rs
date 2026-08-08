@@ -12,7 +12,7 @@ use tutor_tools::{CodeExecTool, WebFetchTool, WebSearchTool};
 
 use crate::capability::CapabilityRouter;
 use crate::error::{Result, TutorError};
-use crate::event_sink::{emit_content, emit_trace};
+use crate::event_sink::{emit_content, emit_thinking_content, emit_trace};
 use crate::runtime_harness::{RuntimeHarnessConfig, build_runtime_harness};
 
 /// Run a single Chat turn through runtime-owned Knowledge and web tools.
@@ -147,6 +147,7 @@ pub(crate) async fn run_conversation_with_request(
                 plugins,
                 system_prompt,
                 final_answer_mode: final_answer_mode_for_capability(capability),
+                thinking_level: router.llm.thinking_level,
                 before_tool_call: vec![],
                 prepare_next_turn: vec![],
             },
@@ -221,6 +222,11 @@ pub(crate) async fn run_conversation_with_request(
                 let TextDeltaRoute::FinalAnswer = text_delta_route_for_capability(capability);
                 emit_content(&router.event_sink, text.clone(), true).await;
                 fallback_text.push_str(text);
+            }
+            AgentHarnessEvent::Agent(AgentEvent::ThinkingDelta { thinking, .. }) => {
+                if !thinking.trim_start().starts_with("[redacted_thinking:") {
+                    emit_thinking_content(&router.event_sink, thinking.clone(), true).await;
+                }
             }
             AgentHarnessEvent::Agent(AgentEvent::ToolExecutionStart {
                 tool_use_id,

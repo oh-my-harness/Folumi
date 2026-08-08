@@ -89,6 +89,7 @@ pub(crate) async fn run_code_exec_with_request(
              runnable code or computable task is provided, ask for the missing details.",
                 ),
                 final_answer_mode: FinalAnswerMode::tool_with_text_fallback(),
+                thinking_level: router.llm.thinking_level,
                 before_tool_call,
                 prepare_next_turn: vec![],
             },

@@ -4,6 +4,7 @@ import { wsUrl } from '../api'
 export type StreamEvent =
   | { type: 'content'; payload: { text: string; chunk: boolean } }
   | { type: 'progress_content'; payload: { text: string; chunk: boolean } }
+  | { type: 'thinking_content'; payload: { text: string; chunk: boolean } }
   | { type: 'trace'; payload: { kind: string; [key: string]: unknown } }
   | { type: 'status'; payload: { kind: string; [key: string]: unknown } }
 

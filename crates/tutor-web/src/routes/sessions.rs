@@ -16,7 +16,7 @@ use crate::knowledge_store::KnowledgeStore;
 use crate::notebook_store::NotebookStore;
 use crate::session::{
     AssistantSessionConfig, KnowledgeSessionBinding, LlmSessionConfig, SearchSessionConfig,
-    SessionCreateConfig, SessionPool, message_role, message_text,
+    SessionCreateConfig, SessionPool, message_role, message_text, message_thinking,
 };
 
 #[derive(Clone)]
@@ -52,6 +52,7 @@ struct CreateLlmConfig {
     base_url: Option<String>,
     chat_path: Option<String>,
     context_window_tokens: Option<u32>,
+    thinking_level: Option<String>,
     require_approval: Option<bool>,
 }
 
@@ -345,6 +346,7 @@ async fn get_session(
         .map(|item| (item.assistant_message_index, item.artifacts))
         .collect::<HashMap<_, _>>();
     let mut assistant_message_index = 0usize;
+    let mut pending_thinking = Vec::<String>::new();
 
     (
         StatusCode::OK,
@@ -365,6 +367,10 @@ async fn get_session(
                 "model": meta.model,
             },
             "messages": messages.into_iter().filter_map(|message| {
+                let thinking = message_thinking(&message);
+                if !thinking.trim().is_empty() {
+                    pending_thinking.push(thinking);
+                }
                 let role = message_role(&message)?;
                 let mut value = serde_json::json!({
                     "role": role,
@@ -372,6 +378,14 @@ async fn get_session(
                 });
                 if role == "assistant" {
                     assistant_message_index += 1;
+                    if !pending_thinking.is_empty()
+                        && let Some(map) = value.as_object_mut()
+                    {
+                        map.insert(
+                            "thinking".into(),
+                            serde_json::Value::String(std::mem::take(&mut pending_thinking).join("\n\n")),
+                        );
+                    }
                     if let Some(citations) = citations_by_assistant_index.get(&assistant_message_index)
                         && let Some(map) = value.as_object_mut()
                     {
@@ -434,6 +448,7 @@ async fn get_session(
                 "base_url": config.base_url,
                 "chat_path": config.chat_path,
                 "context_window_tokens": config.context_window_tokens,
+                "thinking_level": config.thinking_level,
                 "require_approval": config.require_approval,
             })),
             "search": entry.search.map(|config| serde_json::json!({
@@ -806,7 +821,19 @@ fn llm_config_from_request(config: CreateLlmConfig) -> LlmSessionConfig {
         base_url: config.base_url.filter(|value| !value.trim().is_empty()),
         chat_path: config.chat_path.filter(|value| !value.trim().is_empty()),
         context_window_tokens: config.context_window_tokens,
+        thinking_level: normalize_thinking_level(config.thinking_level.as_deref()).into(),
         require_approval: config.require_approval.unwrap_or(false),
+    }
+}
+
+fn normalize_thinking_level(value: Option<&str>) -> &'static str {
+    match value.unwrap_or("off").trim().to_ascii_lowercase().as_str() {
+        "minimal" => "minimal",
+        "low" => "low",
+        "medium" => "medium",
+        "high" => "high",
+        "xhigh" => "xhigh",
+        _ => "off",
     }
 }
 

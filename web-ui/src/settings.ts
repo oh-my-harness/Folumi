@@ -1,6 +1,7 @@
 import type { UiLanguage } from './i18n'
 
 export type LlmProvider = 'anthropic' | 'openai'
+export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 export type EmbeddingProvider = 'openai'
 export type ThemeId = 'cool-light' | 'graphite-dark'
 export type SearchProvider =
@@ -23,6 +24,7 @@ export interface LlmModelConfig {
   baseUrl: string
   chatPath: string
   contextWindowTokens: number
+  thinkingLevel: ThinkingLevel
 }
 
 export interface EmbeddingModelConfig {
@@ -150,6 +152,7 @@ export function settingsForSession(
     base_url: (config?.baseUrl ?? settings.baseUrl).trim() || null,
     chat_path: (config?.chatPath ?? settings.chatPath).trim() || null,
     context_window_tokens: Number(config?.contextWindowTokens || DEFAULT_CONTEXT_WINDOW_TOKENS),
+    thinking_level: config?.thinkingLevel ?? 'off',
     require_approval: settings.requireApproval,
   }
 }
@@ -225,6 +228,7 @@ export function createLlmConfig(provider: LlmProvider = 'openai'): LlmModelConfi
     baseUrl: preset.baseUrl,
     chatPath: preset.chatPath,
     contextWindowTokens: preset.contextWindowTokens,
+    thinkingLevel: 'off',
   }
 }
 
@@ -359,6 +363,7 @@ function normalizeLlmConfigs(value: unknown, legacy: Partial<LlmSettings>): LlmM
         baseUrl: typeof legacy.baseUrl === 'string' ? legacy.baseUrl : defaultLlmSettings.baseUrl,
         chatPath: typeof legacy.chatPath === 'string' ? legacy.chatPath : defaultLlmSettings.chatPath,
         contextWindowTokens: DEFAULT_CONTEXT_WINDOW_TOKENS,
+        thinkingLevel: 'off',
       },
     ]
   }
@@ -450,7 +455,15 @@ function normalizeLlmConfig(value: unknown): LlmModelConfig {
     baseUrl: typeof config.baseUrl === 'string' ? config.baseUrl : preset.baseUrl,
     chatPath: typeof config.chatPath === 'string' ? config.chatPath : preset.chatPath,
     contextWindowTokens: normalizePositiveNumber(config.contextWindowTokens, preset.contextWindowTokens),
+    thinkingLevel: normalizeThinkingLevel(config.thinkingLevel),
   }
+}
+
+function normalizeThinkingLevel(value: unknown): ThinkingLevel {
+  return value === 'minimal' || value === 'low' || value === 'medium'
+    || value === 'high' || value === 'xhigh'
+    ? value
+    : 'off'
 }
 
 function normalizePositiveNumber(value: unknown, fallback: number): number {

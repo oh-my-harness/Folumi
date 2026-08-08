@@ -1,7 +1,13 @@
 use std::sync::Arc;
 
-use llm_adapter::{Provider, anthropic::AnthropicProvider, deepseek, openai::OpenAIProvider};
+use llm_adapter::{
+    Provider,
+    anthropic::AnthropicProvider,
+    deepseek,
+    openai::{OpenAIProvider, ThinkingScheme},
+};
 use llm_harness_agent::ModelInfo;
+use llm_harness_types::ThinkingLevel;
 
 use crate::error::{Result, TutorError};
 
@@ -21,6 +27,7 @@ pub struct LlmConfig {
     pub base_url: Option<String>,
     pub chat_path: Option<String>,
     pub context_window_tokens: Option<u32>,
+    pub thinking_level: ThinkingLevel,
 }
 
 impl LlmConfig {
@@ -66,6 +73,7 @@ impl LlmConfig {
             base_url: None,
             chat_path: None,
             context_window_tokens: Some(200_000),
+            thinking_level: ThinkingLevel::Off,
         }
     }
 
@@ -85,7 +93,13 @@ impl LlmConfig {
             base_url,
             chat_path,
             context_window_tokens,
+            thinking_level: ThinkingLevel::Off,
         }
+    }
+
+    pub fn with_thinking_level(mut self, level: ThinkingLevel) -> Self {
+        self.thinking_level = level;
+        self
     }
 
     fn from_env_for(
@@ -113,6 +127,7 @@ impl LlmConfig {
             base_url,
             chat_path,
             context_window_tokens: Some(default_context_window(provider)),
+            thinking_level: ThinkingLevel::Off,
         })
     }
 
@@ -131,7 +146,8 @@ impl LlmConfig {
                 } else {
                     let mut builder = OpenAIProvider::builder(self.api_key.clone())
                         .parse_reasoning_content(true)
-                        .tolerant_keepalive(true);
+                        .tolerant_keepalive(true)
+                        .thinking_scheme(ThinkingScheme::ThinkingToggle);
                     if let Some(base_url) = &self.base_url {
                         builder = builder.base_url(base_url.clone());
                     } else {
@@ -144,7 +160,18 @@ impl LlmConfig {
                 }
             }
             LlmProviderKind::OpenAI => {
-                let mut builder = OpenAIProvider::builder(self.api_key.clone());
+                let deepseek_compatible = self
+                    .base_url
+                    .as_deref()
+                    .is_some_and(|url| url.to_ascii_lowercase().contains("deepseek"));
+                let mut builder = OpenAIProvider::builder(self.api_key.clone())
+                    .parse_reasoning_content(true)
+                    .tolerant_keepalive(true)
+                    .thinking_scheme(if deepseek_compatible {
+                        ThinkingScheme::ThinkingToggle
+                    } else {
+                        ThinkingScheme::ReasoningEffort
+                    });
                 if let Some(base_url) = &self.base_url {
                     builder = builder.base_url(base_url.clone());
                 }

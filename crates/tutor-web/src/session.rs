@@ -33,7 +33,13 @@ pub struct LlmSessionConfig {
     pub base_url: Option<String>,
     pub chat_path: Option<String>,
     pub context_window_tokens: Option<u32>,
+    #[serde(default = "default_thinking_level")]
+    pub thinking_level: String,
     pub require_approval: bool,
+}
+
+fn default_thinking_level() -> String {
+    "off".into()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1291,6 +1297,21 @@ pub fn message_text(message: &llm_harness_types::AgentMessage) -> String {
         .join("\n")
 }
 
+pub fn message_thinking(message: &llm_harness_types::AgentMessage) -> String {
+    let llm_harness_types::AgentMessage::Assistant(message) = message else {
+        return String::new();
+    };
+    message
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            llm_harness_types::ContentBlock::Thinking { thinking, .. } => Some(thinking.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub fn message_role(message: &llm_harness_types::AgentMessage) -> Option<&'static str> {
     match message {
         llm_harness_types::AgentMessage::User(_) => Some("user"),
@@ -2156,6 +2177,7 @@ mod tests {
                     base_url: Some("https://api.deepseek.com".into()),
                     chat_path: Some("/chat/completions".into()),
                     context_window_tokens: Some(128_000),
+                    thinking_level: "high".into(),
                     require_approval: false,
                 }),
                 None,

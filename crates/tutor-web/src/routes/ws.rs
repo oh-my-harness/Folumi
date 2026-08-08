@@ -228,6 +228,12 @@ async fn handle_socket(socket: WebSocket, state: WsState, session_id: String) {
                 chunk: false,
             });
         }
+        if !snapshot.thinking_content.is_empty() {
+            initial_events.push(StreamEvent::ThinkingContent {
+                text: snapshot.thinking_content,
+                chunk: false,
+            });
+        }
     }
     for event in initial_events {
         let Ok(json) = serde_json::to_string(&event) else {
@@ -755,6 +761,15 @@ fn llm_config_for_session(config: Option<LlmSessionConfig>) -> tutor_agent::Resu
         ));
     }
 
+    let thinking_level = match config.thinking_level.as_str() {
+        "minimal" => llm_harness_types::ThinkingLevel::Minimal,
+        "low" => llm_harness_types::ThinkingLevel::Low,
+        "medium" => llm_harness_types::ThinkingLevel::Medium,
+        "high" => llm_harness_types::ThinkingLevel::High,
+        "xhigh" => llm_harness_types::ThinkingLevel::XHigh,
+        _ => llm_harness_types::ThinkingLevel::Off,
+    };
+
     Ok(LlmConfig::from_parts(
         provider,
         config.model,
@@ -762,7 +777,8 @@ fn llm_config_for_session(config: Option<LlmSessionConfig>) -> tutor_agent::Resu
         config.base_url,
         config.chat_path,
         config.context_window_tokens,
-    ))
+    )
+    .with_thinking_level(thinking_level))
 }
 
 #[cfg(test)]

@@ -174,6 +174,10 @@ The retained Notebook workspace capabilities are recorded in
   reported by category with dataset revision and model/runtime provenance, and
   shall supplement rather than replace Folumi lifecycle, permission, privacy,
   Chinese-language, Saved Memory, and interaction-style regression tests.
+- **REQ-419** Each LLM configuration shall expose a runtime-backed thinking
+  level. Provider-returned displayable reasoning shall stream separately from
+  the final answer, render as secondary collapsible text on that answer, and
+  remain recoverable from the runtime Session without entering recall or RAG.
 
 ## 6. Settings, Privacy, and Portability
 

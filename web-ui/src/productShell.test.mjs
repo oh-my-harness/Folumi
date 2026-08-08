@@ -12,6 +12,8 @@ const i18n = readFileSync(new URL('./i18n.tsx', import.meta.url), 'utf8')
 const knowledge = readFileSync(new URL('./components/KnowledgeBasePage.tsx', import.meta.url), 'utf8')
 const knowledgePage = readFileSync(new URL('./components/KnowledgePage.tsx', import.meta.url), 'utf8')
 const settings = readFileSync(new URL('./components/SettingsPage.tsx', import.meta.url), 'utf8')
+const settingsSchema = readFileSync(new URL('./settings.ts', import.meta.url), 'utf8')
+const websocket = readFileSync(new URL('./hooks/useWebSocket.ts', import.meta.url), 'utf8')
 const memory = readFileSync(new URL('./components/UserMemoryPage.tsx', import.meta.url), 'utf8')
 const notebook = readFileSync(new URL('./components/NotesPage.tsx', import.meta.url), 'utf8')
 const notebookLiveEditor = readFileSync(new URL('./components/NotebookLiveEditor.tsx', import.meta.url), 'utf8')
@@ -261,6 +263,18 @@ test('composer selectors share one polished dropdown surface', () => {
   assert.match(composer, /selectedKnowledgeBaseIds\.includes\(item\.id\)/)
   assert.doesNotMatch(composer, /chat\.knowledge\.none/)
   assert.match(composer, /line-clamp-2/)
+})
+
+test('reasoning models expose an adjustable level and inline thinking surface', () => {
+  assert.match(settingsSchema, /thinkingLevel: ThinkingLevel/)
+  assert.match(settings, /思考强度/)
+  assert.match(settings, /value="off">关闭/)
+  assert.match(settings, /value="medium">中/)
+  assert.match(settings, /value="xhigh">极高/)
+  assert.match(composer, /ThinkingDisclosure/)
+  assert.match(composer, /思考中/)
+  assert.match(composer, /思考过程/)
+  assert.match(websocket, /type: 'thinking_content'/)
 })
 
 test('Notebook supports named vault switching instead of a permanent refresh button', () => {

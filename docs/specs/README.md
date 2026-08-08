@@ -33,6 +33,8 @@ Current product and runtime-facing specs live here.
   “笔记库”、笔记页使用顶部切换器，并让会话绑定具体笔记库 ID。
 - `2026-08-07-notebook-import-export-removal-decision.md` 规定移除与本地
   Markdown 文件夹能力重复的笔记导入、ZIP 备份及 Obsidian 导出。
+- `2026-08-08-model-thinking-experience.md` 规定模型思考档位、可展示
+  reasoning content 的消息内呈现方式及其数据边界。
 - `2026-06-26-memory-consolidation-design.md` is the retired L1/L2/L3 memory
   design and remains only as historical context.
 - `2026-07-15-persistent-tutor-design.md` defines persistent tutor identity,

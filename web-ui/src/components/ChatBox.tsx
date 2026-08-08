@@ -8,6 +8,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Copy,
   Database,
   Edit3,
@@ -58,6 +59,7 @@ export interface SaveToNotebookOptions {
 interface Message {
   role: 'user' | 'assistant' | 'status'
   text: string
+  thinking?: string
   kind?: 'idle' | 'thinking' | 'tool' | 'done' | 'error'
   citations?: Citation[]
   deepSolve?: DeepSolveTraceEntry[]
@@ -107,6 +109,7 @@ interface Props {
   sessionId: string | null
   messages: Message[]
   streamingText: string
+  streamingThinking: string
   contextStats: ContextStats
   llmConfigs: LlmModelConfig[]
   activeLlmConfigId: string | null
@@ -143,6 +146,7 @@ export function ChatBox({
   sessionId,
   messages,
   streamingText,
+  streamingThinking,
   contextStats,
   llmConfigs,
   activeLlmConfigId,
@@ -191,7 +195,7 @@ export function ChatBox({
   const latestScrollPositionRef = useRef<{ sessionId: string; position: ChatScrollPosition } | null>(null)
   const pendingScrollRestoreRef = useRef<{ sessionId: string; position: ChatScrollPosition | null } | null>(null)
   const shouldStickToBottomRef = useRef(true)
-  const empty = messages.length === 0 && !streamingText
+  const empty = messages.length === 0 && !streamingText && !streamingThinking
 
   useEffect(() => {
     if (!initialDraft || consumedDraftIdRef.current === initialDraft.id) return
@@ -407,19 +411,19 @@ export function ChatBox({
     const pending = pendingScrollRestoreRef.current
     const el = scrollRef.current
     if (!pending || pending.sessionId !== sessionId || !el) return
-    if (messages.length === 0 && !streamingText) return
+    if (messages.length === 0 && !streamingText && !streamingThinking) return
 
     el.scrollTop = restoredScrollTop(pending.position, el.scrollHeight, el.clientHeight)
     shouldStickToBottomRef.current = pending.position?.atBottom ?? true
     pendingScrollRestoreRef.current = null
-  }, [messages.length, sessionId, streamingText])
+  }, [messages.length, sessionId, streamingText, streamingThinking])
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el || !shouldStickToBottomRef.current) return
 
     el.scrollTop = el.scrollHeight
-  }, [messages, streamingText])
+  }, [messages, streamingText, streamingThinking])
 
   useEffect(() => () => {
     if (copyFeedbackTimerRef.current !== null) window.clearTimeout(copyFeedbackTimerRef.current)
@@ -527,6 +531,7 @@ export function ChatBox({
                   ) : (
                     <>
                       <div className="assistant-message-surface">
+                        {msg.thinking && <ThinkingDisclosure text={msg.thinking} />}
                         <MarkdownMessage text={msg.text} onSourceNavigate={onSourceNavigate} />
                         {msg.citations && msg.citations.length > 0 && (
                           <CitationList
@@ -612,11 +617,12 @@ export function ChatBox({
               </div>
               )
             })}
-            {streamingText && (
+            {(streamingText || streamingThinking) && (
               <div className="w-full min-w-0 py-2 text-gray-900" aria-live="polite">
                 <div className="assistant-message-surface">
-                  <MarkdownMessage text={streamingText} onSourceNavigate={onSourceNavigate} />
-                  <span className="inline-block h-4 w-0.5 animate-pulse bg-gray-700 align-text-bottom" />
+                  {streamingThinking && <ThinkingDisclosure text={streamingThinking} active />}
+                  {streamingText && <MarkdownMessage text={streamingText} onSourceNavigate={onSourceNavigate} />}
+                  {streamingText && <span className="inline-block h-4 w-0.5 animate-pulse bg-gray-700 align-text-bottom" />}
                 </div>
               </div>
             )}
@@ -647,6 +653,29 @@ export function ChatBox({
             />
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+function ThinkingDisclosure({ text, active = false }: { text: string; active?: boolean }) {
+  const [expanded, setExpanded] = useState(active)
+  const visible = active || expanded
+  return (
+    <div className="mb-2 max-w-3xl text-xs leading-5 text-gray-400">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={visible}
+      >
+        {visible ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <span>{active ? '思考中' : '思考过程'}</span>
+      </button>
+      {visible && (
+        <div className={`mt-1 whitespace-pre-wrap border-l border-gray-200 pl-3 ${active ? 'max-h-20 overflow-hidden [mask-image:linear-gradient(to_bottom,black_65%,transparent)]' : ''}`}>
+          {text}
+        </div>
       )}
     </div>
   )
